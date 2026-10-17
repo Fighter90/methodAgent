@@ -127,7 +127,12 @@ def test_kb_upload_and_search(client) -> None:
 
 def test_skeleton_guards() -> None:
     from app.programs.schemas import Module, Params, Topic
-    from app.skills.skeleton.run import SkeletonDraft, drop_assessment_modules, ensure_topics, must_cover
+    from app.skills.skeleton.run import (
+        SkeletonDraft,
+        drop_assessment_modules,
+        ensure_topics,
+        must_cover,
+    )
 
     mods = [
         Module(id=f'm{i}', n=i, title=t, weight=0.2, topics=[Topic(id=f't{i}.1', n=f'{i}.1', title=t)])
@@ -169,3 +174,31 @@ def test_judge_merge_and_title_cap() -> None:
     rep = Report(stage='kit', rules=[RuleResult(id='V-21', title='', check=None, kind='llm', status='pass')])
     merge(doc, rep)
     assert rep.rules[0].status == 'warn' and rep.rules[0].messages[0].startswith('Судья:')
+
+
+def test_sources_school_and_generic_docs() -> None:
+    from app.kb.registry import literature_for, match_source
+
+    assert match_source('GitLab Docs')['id'] == 'lit-gitlab-ci-docs'
+    kids = [s.id for s in literature_for('Python для школьников, анализ данных pandas', school=True)]
+    assert 'lit-mckinney' not in kids and 'lit-python-docs' in kids
+
+
+def test_interview_questions_vary(client, program) -> None:
+    from app.agent.workflow import interview_questions
+    from app.programs.schemas import ProgramDoc
+
+    doc = ProgramDoc.model_validate(client.get(f'/api/v1/programs/{program}').json())
+    qs = [q for m in doc.modules for q in interview_questions(doc, m)]
+    starts = {q.split('«')[0] for q in qs}
+    assert len(starts) >= 4
+
+
+def test_parse_json_truncated_reasoning() -> None:
+    import json
+
+    from app.llm.client import parse_json
+
+    assert parse_json('<think>шаг {1}</think>{"verdicts": []}') == {'verdicts': []}
+    with pytest.raises(json.JSONDecodeError):
+        parse_json('<think>долго {"x": 1} и обрыв')

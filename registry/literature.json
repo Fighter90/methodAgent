@@ -1,10 +1,10 @@
 [
   {"id": "lit-python-docs", "kind": "url", "bibl": "Документация Python 3", "url": "https://docs.python.org/3/", "tags": ["python"]},
-  {"id": "lit-pandas-docs", "kind": "url", "bibl": "pandas documentation", "url": "https://pandas.pydata.org/docs/", "tags": ["pandas", "данн"]},
+  {"id": "lit-pandas-docs", "kind": "url", "bibl": "pandas documentation", "url": "https://pandas.pydata.org/docs/", "tags": ["pandas", "анализ данн"]},
   {"id": "lit-matplotlib-docs", "kind": "url", "bibl": "Matplotlib documentation", "url": "https://matplotlib.org/stable/", "tags": ["визуализац"]},
   {"id": "lit-postgres-docs", "kind": "url", "bibl": "Документация PostgreSQL (русский перевод Postgres Professional)", "url": "https://postgrespro.ru/docs/postgresql", "tags": ["sql"]},
-  {"id": "lit-mckinney", "kind": "book", "bibl": "Маккинни У. Python и анализ данных. — М.: ДМК Пресс, 2023.", "tags": ["pandas", "данн", "python"]},
-  {"id": "lit-bruce", "kind": "book", "bibl": "Брюс П., Брюс Э., Гедек П. Практическая статистика для специалистов Data Science. — СПб.: БХВ-Петербург, 2021.", "tags": ["статистик", "данн"]},
+  {"id": "lit-mckinney", "kind": "book", "bibl": "Маккинни У. Python и анализ данных. — М.: ДМК Пресс, 2023.", "tags": ["pandas", "анализ данн"]},
+  {"id": "lit-bruce", "kind": "book", "bibl": "Брюс П., Брюс Э., Гедек П. Практическая статистика для специалистов Data Science. — СПб.: БХВ-Петербург, 2021.", "tags": ["статистик", "анализ данн"]},
   {"id": "lit-lutz", "kind": "book", "bibl": "Лутц М. Изучаем Python. — СПб.: Диалектика, 2019.", "tags": ["python", "программир"]},
   {"id": "lit-sweigart", "kind": "book", "bibl": "Свейгарт Э. Автоматизация рутинных задач с помощью Python. — СПб.: Диалектика, 2021.", "tags": ["python", "школ"]},
   {"id": "lit-devops-handbook", "kind": "book", "bibl": "Ким Дж., Дебуа П., Уиллис Дж., Хамбл Дж. Руководство по DevOps. — М.: Манн, Иванов и Фербер, 2018.", "tags": ["devops", "ci/cd"]},

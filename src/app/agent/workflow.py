@@ -21,7 +21,7 @@ from app.agent.sections import build_sections
 from app.core.config import get_settings
 from app.core.db import now_iso
 from app.core.errors import Conflict, NotFound
-from app.kb.registry import literature_for, match_source
+from app.kb.registry import for_school, literature_for, match_source
 from app.llm.client import CallStats, get_llm
 from app.programs.schemas import (
     Approval,
@@ -506,9 +506,10 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
     kit.assessments.append(Assessment(id='final', kind='final', title='ИА'))
     kit.report_requirements = report_req
     if internship:
+        llm_interview = {m.id: res.interview for m, res in results}
+        used_lo: set[str] = set()
         kit.final_assessment['interview_questions'] = {
-            m.title: [f'Расскажите, какие задачи по теме «{t.title}» вы выполнили на стажировке и с каким результатом.' for t in m.topics]
-            for m in doc.modules
+            m.title: llm_interview.get(m.id) if len(llm_interview.get(m.id) or []) >= 3 else interview_questions(doc, m, used_lo) for m in doc.modules
         }
     doc.kit = kit
     await _fix_examples(doc, stats, _report)
@@ -598,13 +599,16 @@ def _sources(doc: ProgramDoc, extra: list[str]) -> None:
     sources = list(doc.norm_base)
     if doc.profstandard:
         sources.append(Source(id=f'ps-{doc.profstandard.code}', kind='ps', bibl=f'Профессиональный стандарт {doc.profstandard.code} «{doc.profstandard.title}» ({doc.profstandard.order})', confirmed=True, checked_at='2026-10-17'))
-    sources += literature_for(text)
+    school = doc.type == ProgramType.DOOP
+    sources += literature_for(text, school=school)
     known = {s.bibl for s in sources}
     for i, bibl in enumerate(dict.fromkeys(extra), start=1):
         bibl = bibl.strip()
         if not bibl or bibl in known:
             continue
         matched = match_source(bibl)
+        if matched and school and not for_school(matched):
+            continue  # взрослая книга из реестра в программе для школьников не нужна
         if matched:
             if matched['bibl'] not in known:
                 sources.append(Source(id=matched['id'], kind=matched['kind'], bibl=matched['bibl'], url=matched.get('url', ''), confirmed=True))
@@ -877,9 +881,31 @@ async def _fix_examples(doc: ProgramDoc, stats: CallStats, report: Callable[[str
                     new_code = out.code if retry['ok'] and out.code.strip() else ''
                 except Exception as exc:  # noqa: BLE001 — без модели пример просто убирается
                     logging.getLogger(__name__).warning('пример кода не исправлен: %s', str(exc)[:200])
+            note = (f'Пример кода к лекции «{lec.title}» не запускался ({res["error"][:80]}) и '
+                    + ('исправлен моделью' if new_code else 'убран из лекции'))
+            doc.agent_notes.append(note)
             if new_code:
                 fixed.append(new_code)
-                await report(f'песочница · пример к лекции «{lec.title}» исправлен')
-            else:
-                await report(f'песочница · пример к лекции «{lec.title}» убран: {res["error"][:80]}')
+            await report('песочница · ' + note)
         lec.code_examples = fixed
+
+
+_INTERVIEW = (
+    'Покажите артефакт по теме «{t}» (конфигурацию, скрипт или схему) и объясните, как он устроен.',
+    'Какие инструменты вы использовали в теме «{t}» и почему выбрали именно их?',
+    'С какой проблемой вы столкнулись в теме «{t}» и как её диагностировали?',
+    'Как вы проверили, что результат работы по теме «{t}» корректен и воспроизводим?',
+    'Что бы вы сделали иначе в задаче по теме «{t}», если бы начинали заново?',
+)
+
+
+def interview_questions(doc: ProgramDoc, m: Module, used: set[str] | None = None) -> list[str]:
+    """Вопросы собеседования с руководителем стажировки: по одному на тему, формулировки не повторяются, плюс вопрос по РО модуля."""
+    out = [_INTERVIEW[(m.n + i) % len(_INTERVIEW)].format(t=t.title) for i, t in enumerate(m.topics)]
+    los = {lo.id: lo for lo in doc.all_outcomes()}
+    used = used if used is not None else set()
+    lo = next((los[x] for t in m.topics for x in t.lo_ids if x in los and x not in used), None)
+    if lo:
+        used.add(lo.id)
+        out.append(f'Продемонстрируйте на рабочем примере результат обучения «{lo.text}»: что вы сделали и как это проверить.')
+    return out

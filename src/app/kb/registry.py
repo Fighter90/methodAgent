@@ -78,11 +78,18 @@ def tf_codes(code: str) -> set[str]:
     return {tf['code'] for tf in ps['tf']} if ps else set()
 
 
-def literature_for(text: str, limit: int = 6) -> list[Source]:
+def for_school(item: dict[str, Any]) -> bool:
+    """Источник годится для школьной программы: книга для детей или официальная документация."""
+    return item['kind'] == 'url' or any(t in ('школ', 'дет') for t in item.get('tags', []))
+
+
+def literature_for(text: str, limit: int = 6, school: bool = False) -> list[Source]:
     low = text.lower()
     scored = []
     for item in registry()['literature']:
-        score = sum(1 for t in item['tags'] if t in low)
+        if school and not for_school(item):
+            continue
+        score = sum(1 for t in item['tags'] if (re.search(rf'\b{re.escape(t)}\b', low) if len(t) <= 3 else t in low))
         if score:
             scored.append((score, item))
     scored.sort(key=lambda x: -x[0])
@@ -102,6 +109,8 @@ def _site(host: str) -> str:
     return '.'.join(host.split('.')[-2:]) if host else ''
 
 
+_GENERIC = {'документация', 'documentation', 'docs', 'русский', 'перевод', 'project', 'hashicorp', 'format', 'guide', 'reference', 'manual', 'официальная'}
+
 _DOC_WORDS = ('документац', 'documentation', 'docs', 'руководство', 'официальн', 'reference', 'manual')
 
 
@@ -120,7 +129,7 @@ def match_source(bibl: str) -> dict[str, Any] | None:
         for item in registry()['literature']:
             if item['kind'] != 'url':
                 continue
-            names = {w for w in _norm(item['bibl']).split() if len(w) > 3} - {'документация', 'documentation', 'русский', 'перевод', 'project', 'hashicorp'}
+            names = {w for w in _norm(item['bibl']).split() if len(w) > 3} - _GENERIC
             if names and names & words:
                 return item
     for item in registry()['literature'] + registry()['npa']:

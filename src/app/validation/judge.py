@@ -47,7 +47,7 @@ def _view(doc: ProgramDoc) -> dict:
         'outcomes': [f'{lo.code}: {lo.text}' for lo in doc.all_outcomes()],
         'modules': [
             {'n': m.n, 'title': m.title, 'hours': m.hours.total,
-             'topics': [{'n': t.n, 'title': t.title, 'text': (content.get(t.id) or t.description)[:300]} for t in m.topics]}
+             'topics': [{'n': t.n, 'title': t.title, 'text': (content.get(t.id) or t.description)[:200]} for t in m.topics]}
             for m in doc.modules
         ],
         'agent_notes': doc.agent_notes[-5:],
@@ -62,12 +62,12 @@ async def judge(doc: ProgramDoc, stats: CallStats | None = None) -> list[str]:
     system = (
         'Ты — эксперт-методист, проверяешь программу дополнительного образования по четырём правилам. '
         'Для каждого правила верни status pass или warn и 0–3 коротких конкретных замечания с номерами тем или кодами РО. '
-        'Замечание — только если нарушение явное. Верни только JSON {"verdicts": [{"rule": "V-21", "status": "pass", "messages": []}]}.'
+        'Замечание — только если нарушение явное. Рассуждай кратко, ответ — сразу JSON без пояснений: {"verdicts": [{"rule": "V-21", "status": "pass", "messages": []}]}.'
     )
     user = json.dumps({'rules': RULES, 'program': _view(doc)}, ensure_ascii=False)
     try:
         out: JudgeOut = await llm.complete_json(
-            skill='judge', role='judge', system=system, user=user, schema=JudgeOut, temperature=0.0, max_tokens=2500, stats=stats,
+            skill='judge', role='judge', system=system, user=user, schema=JudgeOut, temperature=0.0, max_tokens=4096, stats=stats,
         )
     except Exception as exc:  # noqa: BLE001 — без судьи остаются оценки кода
         logging.getLogger(__name__).warning('судья недоступен: %s', str(exc)[:200])

@@ -85,7 +85,7 @@ def _upper_first(text: str) -> str:
 
 
 def _software(doc: ProgramDoc) -> list[str]:
-    text = ' '.join([doc.title, doc.params.direction, *(t.title for t in doc.all_topics()), *(c for lec in doc.kit.lectures for c in lec.code_examples)]).lower()
+    text = ' '.join([doc.title, doc.params.direction, *(f'{t.title} {t.description}' for t in doc.all_topics()), *(c for lec in doc.kit.lectures for c in lec.code_examples)]).lower()
     cur = tools()['current']
     names = {
         'python': 'Python', 'pandas': 'pandas', 'numpy': 'NumPy', 'matplotlib': 'Matplotlib', 'seaborn': 'seaborn',
@@ -95,7 +95,9 @@ def _software(doc: ProgramDoc) -> list[str]:
     }
     keys = {'scikit-learn': ('scikit', 'sklearn'), 'ansible-core': ('ansible',), 'gitlab-ci': ('gitlab', 'ci/cd'), 'postgresql': ('postgres', 'sql'), 'kubernetes': ('kubernetes', 'k8s')}
     out = [f'{names[k]} {v}' for k, v in cur.items() if k in names and any(x in text for x in keys.get(k, (k,)))]
-    if any(x in text for x in ('ии', 'нейросет', 'искусственн', 'gigachat', 'llm')):
+    if 'linux' in text:
+        out.insert(0, 'ОС семейства Linux (Ubuntu Server, Astra Linux или РЕД ОС) для учебного стенда')
+    if re.search(r'\bии\b|нейросет|искусственн\w* интеллект|gigachat|yandexgpt|\bllm\b', text):
         out.append('GigaChat, YandexGPT (Алиса) — сервисы ИИ, доступные в России')
     out += ['Браузер (Яндекс Браузер, Chrome или Firefox)', 'Офисный пакет (МойОфис или Р7-Офис) и средство подготовки презентаций',
             'Электронная информационно-образовательная среда организации', 'Платформа видеоконференцсвязи (МТС Линк или Яндекс Телемост)']

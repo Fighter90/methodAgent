@@ -52,7 +52,8 @@ class CallStats:
 
 def parse_json(text: str) -> Any:
     """Снимает обрамление ```json, блоки рассуждений и лишние запятые, затем разбирает JSON."""
-    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    cleaned = re.sub(r'<think>.*$', '', cleaned, flags=re.DOTALL).strip()  # рассуждение оборвано лимитом — ответа нет
     fence = re.search(r'```(?:json)?\s*(.*?)```', cleaned, flags=re.DOTALL)
     if fence:
         cleaned = fence.group(1).strip()
@@ -153,7 +154,9 @@ class LLMClient:
         last_error: Exception | None = None
         for model in self._models(role):
             messages: list[dict[str, str]] = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
-            for attempt in range(len(_RETRY_PAUSES) + 1):
+            # Ответ судьи дорогой (модель рассуждений): две попытки, затем резервная модель
+            attempts = 2 if model == self.settings.llm_model_judge else len(_RETRY_PAUSES) + 1
+            for attempt in range(attempts):
                 started = time.monotonic()
                 try:
                     async with sem:
@@ -183,12 +186,17 @@ class LLMClient:
                     return data
                 except (json.JSONDecodeError, ValidationError) as exc:
                     last_error = exc
-                    # Модель получает текст ошибки и исправляет ответ — это одна из попыток
-                    messages = [
-                        *messages[:2],
-                        {'role': 'assistant', 'content': (content or '')[:6000]},
-                        {'role': 'user', 'content': f'Ответ не прошёл проверку схемы: {str(exc)[:800]}. Верни только исправленный JSON.'},
-                    ]
+                    if not re.sub(r'<think>.*?(</think>|$)', '', content, flags=re.DOTALL).strip():
+                        # Пустой ответ (модель рассуждений израсходовала лимит): повтор исходного запроса,
+                        # пустое сообщение ассистента шлюз отклоняет с 400
+                        messages = messages[:2]
+                    else:
+                        # Модель получает текст ошибки и исправляет ответ — это одна из попыток
+                        messages = [
+                            *messages[:2],
+                            {'role': 'assistant', 'content': content[:6000]},
+                            {'role': 'user', 'content': f'Ответ не прошёл проверку схемы: {str(exc)[:800]}. Верни только исправленный JSON.'},
+                        ]
                 except Exception as exc:  # noqa: BLE001 — сеть, 429, 5xx, авторизация
                     last_error = exc
                     code = getattr(exc, 'status_code', None)
@@ -198,7 +206,7 @@ class LLMClient:
                         break
                     if code == 429:
                         await asyncio.sleep(_RETRY_PAUSES[-1])
-                if attempt < len(_RETRY_PAUSES):
+                if attempt < attempts - 1:
                     await asyncio.sleep(_RETRY_PAUSES[attempt])
         raise LLMUnavailable(f'{skill}: модель не ответила ({type(last_error).__name__})')
 

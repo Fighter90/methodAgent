@@ -74,6 +74,7 @@ class ModuleContentLLM(BaseModel):
     tasks: list[TaskLLM] = Field(default_factory=list)
     lectures: list[LectureLLM] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+    interview: list[str] = Field(default_factory=list)
 
 
 class ModuleContent(BaseModel):
@@ -83,6 +84,7 @@ class ModuleContent(BaseModel):
     lectures: list[Lecture]
     sources: list[str]
     source: str
+    interview: list[str] = Field(default_factory=list)
 
 
 def _module_los(doc: ProgramDoc, m: Module) -> list[LearningOutcome]:
@@ -135,7 +137,9 @@ async def run(
             'tool_versions_2026': _relevant_tools(doc, m),
             'question_rules': 'Вопросы теста — только по темам и РО этого модуля и на уровне аудитории; не упоминать инструменты, которых нет в темах; дистракторы правдоподобные, без абсурдных вариантов.',
             'note': instruction_extra
-            or ('Стажировка: задания — практические задания на рабочем месте под руководством наставника.' if internship else ''),
+            or ('Стажировка: задания — практические задания на рабочем месте под руководством наставника. '
+                'interview — 3–5 разных вопросов собеседования с руководителем стажировки по темам модуля: '
+                'про конкретные действия, инструменты, артефакты и разбор проблем, без шаблона «расскажите, какие задачи».' if internship else ''),
         }
         try:
             data: ModuleContentLLM = await llm.complete_json(
@@ -215,7 +219,8 @@ def _from_llm(
                 plan=plan or _default_plan(t.title), code_examples=[lec.code] if lec.code else [], slides=slides,
             )
         )
-    return ModuleContent(program=program, questions=questions, tasks=tasks, lectures=lectures, sources=data.sources[:3], source='llm')
+    interview = [q.strip() for q in data.interview if len(q.strip()) > 15][:6]
+    return ModuleContent(program=program, questions=questions, tasks=tasks, lectures=lectures, sources=data.sources[:3], source='llm', interview=interview)
 
 
 def _default_criteria() -> list[Criterion]:
