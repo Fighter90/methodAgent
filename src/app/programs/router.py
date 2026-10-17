@@ -149,7 +149,7 @@ async def create_program(
             await svc.save(doc, p.user_id)
             job_id = await svc.create_job(doc.id, 'auto')
 
-            async def _job(progress):  # noqa: ANN001
+            async def _job(progress):
                 d = await svc.load(doc.id)
                 await _auto_pipeline(d, p.user_id)
 
@@ -191,7 +191,7 @@ async def create_program_upload(
 
 
 def _skeleton_job(program_id: str, owner: str, comment: str = ''):
-    async def _job(progress):  # noqa: ANN001
+    async def _job(progress):
         await progress({'step': 'skeleton', 'text': 'Собираю каркас: компетенции, модули, темы, часы'})
         d = await svc.load(program_id)
         await wf.skeleton_step(d, comment)
@@ -201,9 +201,15 @@ def _skeleton_job(program_id: str, owner: str, comment: str = ''):
     return _job
 
 
-@router.get('', summary='Список программ')
-async def list_programs(p: Principal = Depends(current_principal)) -> list[dict[str, Any]]:
-    return await svc.list_programs()
+@router.get('', summary='Список программ; status=on_approval,approved и since/until (ГГГГ-ММ-ДД) — фильтр руководителя')
+async def list_programs(
+    status: str = Query('', description='Статусы через запятую'),
+    since: str = Query('', pattern=r'^(\d{4}-\d{2}-\d{2})?$'),
+    until: str = Query('', pattern=r'^(\d{4}-\d{2}-\d{2})?$'),
+    p: Principal = Depends(current_principal),
+) -> list[dict[str, Any]]:
+    statuses = {x.strip() for x in status.split(',') if x.strip()} or None
+    return await svc.list_programs(statuses=statuses, since=since, until=until)
 
 
 @router.get('/{program_id}', summary='Состояние программы: вопросы, каркас или комплект в JSON')
@@ -280,7 +286,7 @@ async def approve(program_id: str, body: ApproveIn, p: Principal = Depends(requi
     await svc.log_event(program_id, p.user_id, 'skeleton_approved', 'Каркас утверждён методистом', version=doc.version)
     job_id = await svc.create_job(program_id, 'kit')
 
-    async def _job(progress):  # noqa: ANN001
+    async def _job(progress):
         d = await svc.load(program_id)
         await wf.generate_kit(d, progress)
         await svc.save(d, p.user_id, reason='комплект', snapshot=True)

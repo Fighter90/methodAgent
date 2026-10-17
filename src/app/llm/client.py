@@ -52,8 +52,8 @@ class CallStats:
 
 def parse_json(text: str) -> Any:
     """Снимает обрамление ```json, блоки рассуждений и лишние запятые, затем разбирает JSON."""
-    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.S).strip()
-    fence = re.search(r'```(?:json)?\s*(.*?)```', cleaned, flags=re.S)
+    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+    fence = re.search(r'```(?:json)?\s*(.*?)```', cleaned, flags=re.DOTALL)
     if fence:
         cleaned = fence.group(1).strip()
     start = min((i for i in (cleaned.find('{'), cleaned.find('[')) if i >= 0), default=-1)
@@ -73,8 +73,36 @@ class LLMClient:
         self.settings = get_settings()
         self._client: Any = None
         self._sem = asyncio.Semaphore(max(1, self.settings.llm_concurrency))
-        self._judge_sem = asyncio.Semaphore(4)
+        self._judge_sem = self._sem  # шлюз допускает 2 параллельных запроса на команду: общий лимит
         self.status: dict[str, Any] = {}
+        self._day = ''
+        self._spent = 0.0
+        self._load_spend()
+
+    def _spend_file(self):
+        return self.settings.data_dir / 'llm_spend.json'
+
+    def _load_spend(self) -> None:
+        try:
+            data = json.loads(self._spend_file().read_text(encoding='utf-8'))
+            self._day, self._spent = data.get('day', ''), float(data.get('rub', 0.0))
+        except (OSError, ValueError):
+            pass
+
+    def _spend(self, cost: float) -> None:
+        """Расход за сутки переживает перезапуск контейнера: файл в data_dir."""
+        day = time.strftime('%Y-%m-%d')
+        if self._day != day:
+            self._day, self._spent = day, 0.0
+        self._spent += cost
+        try:
+            self.settings.data_dir.mkdir(parents=True, exist_ok=True)
+            self._spend_file().write_text(json.dumps({'day': self._day, 'rub': round(self._spent, 4)}), encoding='utf-8')
+        except OSError:
+            logger.warning('llm spend: не удалось записать расход')
+
+    def spent_today(self) -> float:
+        return self._spent if self._day == time.strftime('%Y-%m-%d') else 0.0
 
     @property
     def enabled(self) -> bool:
@@ -119,6 +147,8 @@ class LLMClient:
         """Вызывает модель и возвращает JSON, проверенный Pydantic-схемой навыка."""
         if not self.enabled:
             raise LLMUnavailable('LLM не настроен')
+        if self.spent_today() >= self.settings.llm_daily_budget_rub:
+            raise LLMUnavailable(f'Дневной бюджет LLM {self.settings.llm_daily_budget_rub:.0f} ₽ исчерпан')
         sem = self._judge_sem if role == 'judge' else self._sem
         last_error: Exception | None = None
         for model in self._models(role):
@@ -141,6 +171,7 @@ class LLMClient:
                     cost = (tin * pin + tout * pout) / 1_000_000
                     if stats is not None:
                         stats.add(skill, tin, tout, cost)
+                    self._spend(cost)
                     logger.info(
                         'llm skill=%s model=%s in=%d out=%d latency=%.1fs attempt=%d',
                         skill, model, tin, tout, time.monotonic() - started, attempt,
@@ -170,6 +201,19 @@ class LLMClient:
                 if attempt < len(_RETRY_PAUSES):
                     await asyncio.sleep(_RETRY_PAUSES[attempt])
         raise LLMUnavailable(f'{skill}: модель не ответила ({type(last_error).__name__})')
+
+    async def embed(self, texts: list[str], stats: CallStats | None = None) -> list[list[float]]:
+        """Векторы текстов моделью эмбеддингов шлюза (база знаний организации, FR-09)."""
+        if not self.enabled:
+            raise LLMUnavailable('LLM не настроен')
+        out: list[list[float]] = []
+        for i in range(0, len(texts), 16):
+            async with self._sem:
+                resp = await self._get().embeddings.create(model=self.settings.llm_model_embed, input=texts[i : i + 16])
+            out += [list(d.embedding) for d in resp.data]
+            if stats is not None:
+                stats.add('embed', int(getattr(getattr(resp, 'usage', None), 'prompt_tokens', 0) or 0), 0, 0.0)
+        return out
 
     async def ping(self) -> dict[str, Any]:
         """Проверочный запрос для GET /api/v1/llm/status."""

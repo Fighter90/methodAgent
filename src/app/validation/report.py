@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from app.programs.schemas import ProgramDoc, Report, RuleResult
-from app.validation.rules import CHECK_TITLES, assessment_map, planned_assessment_map, run_rules
+from app.validation.rules import (
+    CHECK_TITLES,
+    assessment_map,
+    planned_assessment_map,
+    run_rules,
+)
 
 
 def blocking_status(rules: list[RuleResult]) -> dict[int, bool]:
@@ -85,10 +90,19 @@ def _proposal_for(rule: RuleResult, doc: ProgramDoc) -> list[dict]:
 
 def build_report(doc: ProgramDoc, stage: str) -> Report:
     rules = run_rules(doc, stage)
+    if stage == 'kit' and doc.kit.judge:
+        from app.validation.judge import merge
+
+        tmp = Report(stage=stage, rules=rules)
+        merge(doc, tmp)
     blocking = blocking_status(rules)
     passed = sum(1 for n, ok in blocking.items() if ok and (stage == 'kit' or n in {1, 2, 3, 5, 7}))
     total = 10 if stage == 'kit' else 5
     actions = []
+    if stage == 'kit':
+        drafted = [m for m in doc.modules if m.id in doc.kit.drafts]
+        actions += [f'Модуль {m.n} «{m.title}» собран по шаблону без ответа модели — нужна доработка эксперта' for m in drafted]
+        actions += [f'Судья ({k}): {v[0]}' for k, v in doc.kit.judge.items()]
     for r in rules:
         if r.status == 'fail':
             actions.extend(r.messages[:3])

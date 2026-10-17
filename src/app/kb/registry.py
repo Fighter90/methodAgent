@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ def registry() -> dict[str, Any]:
         'ps': _load('profstandards.json'),
         'tools': _load('tools.json'),
         'literature': _load('literature.json'),
+        'org': _load('org_profile.json'),
     }
 
 
@@ -90,14 +92,43 @@ def literature_for(text: str, limit: int = 6) -> list[Source]:
     ]
 
 
+def _domain(url: str) -> str:
+    m = re.search(r'https?://(?:www\.)?([^/\s]+)', url) or re.search(r'\b((?:[a-z0-9-]+\.)+(?:io|org|com|ru|dev|net))\b', url.lower())
+    return m.group(1).lower().removeprefix('www.') if m else ''
+
+
+def _site(host: str) -> str:
+    """Регистрируемый домен: docs.python.org и python.org — один сайт."""
+    return '.'.join(host.split('.')[-2:]) if host else ''
+
+
+_DOC_WORDS = ('документац', 'documentation', 'docs', 'руководство', 'официальн', 'reference', 'manual')
+
+
 def match_source(bibl: str) -> dict[str, Any] | None:
-    """Ищет источник в реестре по совпадению значимых слов описания."""
+    """Ищет источник в реестре: по сайту ссылки, по «документации <инструмента>», затем по значимым словам."""
     words = {w for w in _norm(bibl).split() if len(w) > 3}
     if not words:
         return None
+    low = bibl.lower()
+    site = _site(_domain(bibl))
+    if site:
+        for item in registry()['literature']:
+            if item.get('url') and _site(_domain(item['url'])) == site:
+                return item
+    if any(k in low for k in _DOC_WORDS):
+        for item in registry()['literature']:
+            if item['kind'] != 'url':
+                continue
+            names = {w for w in _norm(item['bibl']).split() if len(w) > 3} - {'документация', 'documentation', 'русский', 'перевод', 'project', 'hashicorp'}
+            if names and names & words:
+                return item
     for item in registry()['literature'] + registry()['npa']:
         ref = {w for w in _norm(item['bibl']).split() if len(w) > 3}
         if ref and len(words & ref) / len(ref) >= 0.6:
+            return item
+        surname = _norm(item['bibl']).split()[0] if item['kind'] == 'book' else ''
+        if surname in words and len(words & ref) >= 2:
             return item
     return None
 
@@ -112,3 +143,7 @@ def tools() -> dict[str, Any]:
 
 def registry_path() -> Path:
     return REGISTRY_DIR
+
+
+def org_profile() -> dict[str, Any]:
+    return registry()['org']

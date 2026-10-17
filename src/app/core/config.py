@@ -61,12 +61,18 @@ class Settings(BaseSettings):
     # cloudru — рабочий режим; fixtures — без сети, детерминированные ответы навыков
     llm_providers: str = 'cloudru'
     # Судья тратит токены рассуждающей модели: включается явно
-    llm_judge_enabled: bool = False
+    llm_judge_enabled: bool = True
     # Тарифы, ₽ за 1 млн токенов (вход, выход) — для отчёта о стоимости
     llm_price_in_rub: float = 73.03
     llm_price_out_rub: float = 176.39
     llm_judge_price_in_rub: float = 96.22
     llm_judge_price_out_rub: float = 288.60
+    # Дневной бюджет шлюза хакатона 100 ₽: после порога навыки уходят в резервную генерацию
+    llm_daily_budget_rub: float = 90.0
+    # FR-30: модули генерируются параллельно (не меньше 4 потоков); к шлюзу одновременно идут не больше llm_concurrency запросов
+    gen_workers: int = 6
+    # Анонимный доступ (роль api) — только автопрогон POST /programs?mode=auto, с ограничением частоты на IP
+    anon_runs_per_hour: int = 12
 
     @property
     def max_file_size_bytes(self) -> int:

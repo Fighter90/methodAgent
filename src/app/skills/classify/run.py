@@ -44,7 +44,7 @@ def run(text: str, params: Params) -> ClassifyResult:
     if ptype != ProgramType.DOOP:
         ps = pick_ps(' '.join([text, params.direction, params.title, ' '.join(params.required_topics)]), params.ps_hint)
     if ptype == ProgramType.DOOP:
-        msg = f'Это дополнительная общеразвивающая программа, беру шаблон ДООП (273-ФЗ, приказ Минпросвещения № 629). Раздел профстандартов не нужен.'
+        msg = 'Это дополнительная общеразвивающая программа, беру шаблон ДООП (273-ФЗ, приказ Минпросвещения № 629). Раздел профстандартов не нужен.'
     else:
         msg = f'Это программа повышения квалификации, беру шаблон {template} (273-ФЗ, приказ Минобрнауки № 499).'
         if ps:

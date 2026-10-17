@@ -286,6 +286,8 @@ class Kit(BaseModel):
     sections: dict[str, str] = Field(default_factory=dict)  # разделы шаблона АЦР
     final_assessment: dict[str, Any] = Field(default_factory=dict)
     report_requirements: list[str] = Field(default_factory=list)
+    drafts: list[str] = Field(default_factory=list)  # модули, собранные по шаблону без ответа модели
+    judge: dict[str, list[str]] = Field(default_factory=dict)  # замечания судьи по смысловым правилам
 
 
 class RuleResult(BaseModel):

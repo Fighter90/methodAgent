@@ -15,5 +15,20 @@
   {"id": "lit-fstec", "kind": "url", "bibl": "Банк данных угроз безопасности информации ФСТЭК России", "url": "https://bdu.fstec.ru/", "tags": ["кибербез", "безопасност"]},
   {"id": "lit-gigachat", "kind": "url", "bibl": "Документация GigaChat API", "url": "https://developers.sber.ru/docs/ru/gigachat/overview", "tags": ["ии", "нейросет", "учител"]},
   {"id": "lit-yandexgpt", "kind": "url", "bibl": "Документация YandexGPT (Yandex Cloud AI Studio)", "url": "https://yandex.cloud/ru/docs/foundation-models/", "tags": ["ии", "нейросет", "учител"]},
-  {"id": "lit-moodle-gift", "kind": "url", "bibl": "GIFT format — Moodle Docs", "url": "https://docs.moodle.org/en/GIFT_format", "tags": []}
+  {"id": "lit-moodle-gift", "kind": "url", "bibl": "GIFT format — Moodle Docs", "url": "https://docs.moodle.org/en/GIFT_format", "tags": []},
+  {"id": "lit-prometheus-docs", "kind": "url", "bibl": "Prometheus Documentation", "url": "https://prometheus.io/docs/", "tags": ["мониторинг", "prometheus", "devops"]},
+  {"id": "lit-grafana-docs", "kind": "url", "bibl": "Grafana Documentation", "url": "https://grafana.com/docs/grafana/latest/", "tags": ["мониторинг", "grafana", "devops"]},
+  {"id": "lit-terraform-docs", "kind": "url", "bibl": "Terraform Documentation (HashiCorp)", "url": "https://developer.hashicorp.com/terraform/docs", "tags": ["terraform", "инфраструктур", "devops"]},
+  {"id": "lit-opentofu-docs", "kind": "url", "bibl": "OpenTofu Documentation", "url": "https://opentofu.org/docs/", "tags": ["opentofu", "инфраструктур"]},
+  {"id": "lit-ansible-docs", "kind": "url", "bibl": "Ansible Documentation", "url": "https://docs.ansible.com/", "tags": ["ansible", "инфраструктур", "devops"]},
+  {"id": "lit-gitlab-ci-docs", "kind": "url", "bibl": "GitLab CI/CD Documentation", "url": "https://docs.gitlab.com/ci/", "tags": ["ci/cd", "gitlab", "devops"]},
+  {"id": "lit-nginx-docs", "kind": "url", "bibl": "Документация nginx", "url": "https://nginx.org/ru/docs/", "tags": ["nginx", "веб-сервер", "devops"]},
+  {"id": "lit-progit", "kind": "url", "bibl": "Чакон С., Штрауб Б. Pro Git (русский перевод)", "url": "https://git-scm.com/book/ru/v2", "tags": ["git", "ci/cd", "devops"]},
+  {"id": "lit-man-pages", "kind": "url", "bibl": "The Linux man-pages project", "url": "https://man7.org/linux/man-pages/", "tags": ["linux"]},
+  {"id": "lit-sklearn-docs", "kind": "url", "bibl": "scikit-learn documentation", "url": "https://scikit-learn.org/stable/", "tags": ["машинн", "sklearn"]},
+  {"id": "lit-jupyter-docs", "kind": "url", "bibl": "Project Jupyter Documentation", "url": "https://docs.jupyter.org/", "tags": ["jupyter"]},
+  {"id": "lit-owasp-top10", "kind": "url", "bibl": "OWASP Top 10", "url": "https://owasp.org/Top10/", "tags": ["кибербез", "безопасност", "веб"]},
+  {"id": "lit-shotts", "kind": "book", "bibl": "Шоттс У. Командная строка Linux. Полное руководство. — СПб.: Питер, 2017.", "tags": ["linux", "devops", "администрир"]},
+  {"id": "lit-brikman", "kind": "book", "bibl": "Брикман Е. Terraform: инфраструктура на уровне кода. — СПб.: Питер, 2020.", "tags": ["terraform", "инфраструктур", "devops"]},
+  {"id": "lit-payne", "kind": "book", "bibl": "Пэйн Б. Python для детей и родителей. — М.: Эксмо, 2017.", "tags": ["python", "школ", "дет"]}
 ]

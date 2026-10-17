@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, CircleHelp, FolderKanban, LogOut, Moon, Sun, ClipboardCheck } from 'lucide-react'
+import { Bell, CircleHelp, FolderKanban, LibraryBig, LogOut, Moon, Sun, ClipboardCheck } from 'lucide-react'
 import { api, getSession, login, setSession, ROLE_LABEL, type User } from './api'
 import { Logo, useTheme, useToast } from './components/ui'
 import Landing from './pages/Landing'
@@ -9,17 +9,20 @@ import Help from './pages/Help'
 import Programs from './pages/Programs'
 import Program from './pages/Program'
 import Reviews from './pages/Reviews'
+import Kb from './pages/Kb'
 
 const SWITCH = [
   { id: 'u-madina', name: 'Мадина', role: 'methodist' },
   { id: 'u-timur', name: 'Тимур', role: 'expert' },
   { id: 'u-ahmed', name: 'Ахмед', role: 'head' },
+  { id: 'u-admin', name: 'Админ', role: 'admin' },
 ]
 
 function Shell({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(getSession()?.user || null)
   const [notes, setNotes] = useState<any[]>([])
   const [open, setOpen] = useState(false)
+  const [tasks, setTasks] = useState<Record<string, number>>({})
   const [theme, toggle] = useTheme()
   const nav = useNavigate()
   const toast = useToast()
@@ -28,7 +31,10 @@ function Shell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return
     let alive = true
-    const load = () => api('/notifications').then((n) => alive && setNotes(n)).catch(() => {})
+    const load = () => {
+      api('/notifications').then((n) => alive && setNotes(n)).catch(() => {})
+      api('/me/tasks').then((t) => alive && setTasks(t.tasks || {})).catch(() => {})
+    }
     load()
     const t = setInterval(load, 15000)
     return () => { alive = false; clearInterval(t) }
@@ -42,6 +48,7 @@ function Shell({ children }: { children: ReactNode }) {
       setUser(u)
       toast(`Вы вошли как ${u.name} · ${ROLE_LABEL[u.role]}`)
       if (u.role === 'expert' && !loc.pathname.includes('/p/')) nav('/app/reviews')
+      else if (u.role === 'admin') nav('/app/kb')
       else nav(loc.pathname, { replace: true })
       window.dispatchEvent(new Event('ma:user'))
     } catch (e: any) {
@@ -54,15 +61,17 @@ function Shell({ children }: { children: ReactNode }) {
       <header className="topbar">
         <Link to="/app"><Logo /></Link>
         <nav className="row" style={{ gap: 4 }}>
-          <NavLink to="/app" end className="nav-link"><FolderKanban size={16} /> Программы</NavLink>
-          {user.role === 'expert' && <NavLink to="/app/reviews" className="nav-link"><ClipboardCheck size={16} /> Вычитка</NavLink>}
-          <NavLink to="/help" className="nav-link"><CircleHelp size={16} /> Справка</NavLink>
+          <NavLink to="/app" end className="nav-link" title="Программы"><FolderKanban size={16} /> <span className="nav-label">Программы</span></NavLink>
+          {user.role === 'expert' && <NavLink to="/app/reviews" className="nav-link" title="Вычитка"><ClipboardCheck size={16} /> <span className="nav-label">Вычитка</span></NavLink>}
+          {['admin', 'methodist', 'head'].includes(user.role) && <NavLink to="/app/kb" className="nav-link" title="База знаний"><LibraryBig size={16} /> <span className="nav-label">База знаний</span></NavLink>}
+          <NavLink to="/help" className="nav-link" title="Справка"><CircleHelp size={16} /> <span className="nav-label">Справка</span></NavLink>
         </nav>
         <div className="grow" />
         <div className="roles" role="tablist" aria-label="Роль">
           {SWITCH.map((u) => (
             <button key={u.id} className={`role-pill ${user.id === u.id || (u.role === user.role && u.role === 'expert') ? 'active' : ''}`} onClick={() => switchTo(u.id)} title={`Войти как ${u.name}`}>
-              <span className={`avatar av-${u.role}`}>{u.name[0]}</span>{u.name} · {ROLE_LABEL[u.role]}
+              <span className={`avatar av-${u.role}`}>{u.name[0]}</span><span className="role-name">{u.name} · {ROLE_LABEL[u.role]}</span>
+              {tasks[u.role] > 0 && <span className="role-count" title="Задачи, которые ждут эту роль">{tasks[u.role]}</span>}
             </button>
           ))}
         </div>
@@ -98,6 +107,7 @@ export default function App() {
       <Route path="/help" element={<Help />} />
       <Route path="/app" element={<Shell><Programs /></Shell>} />
       <Route path="/app/reviews" element={<Shell><Reviews /></Shell>} />
+      <Route path="/app/kb" element={<Shell><Kb /></Shell>} />
       <Route path="/app/p/:id" element={<Shell><Program /></Shell>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

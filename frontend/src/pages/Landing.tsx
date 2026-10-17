@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, BookOpenCheck, Calculator, FileDown, GitBranch, LifeBuoy, Network, ShieldCheck, Sparkles, Users, Wand2, Workflow,
+  ArrowRight, BookOpenCheck, Calculator, FileDown, GitBranch, LifeBuoy, Menu, Network, ShieldCheck, Sparkles, Users, Wand2, Workflow, X,
 } from 'lucide-react'
 import { CountUp, Logo, Reveal, spotlight, useMouseParallax, useScrollY } from '../components/ui'
 
@@ -31,6 +31,7 @@ export default function Landing() {
   const m = useMouseParallax(1)
   const y = useScrollY()
   const [glow, setGlow] = useState({ x: -999, y: -999 })
+  const [menu, setMenu] = useState(false)
   useEffect(() => {
     const on = (e: MouseEvent) => setGlow({ x: e.clientX, y: e.clientY })
     window.addEventListener('mousemove', on)
@@ -49,11 +50,14 @@ export default function Landing() {
       <nav className={`night-nav ${y > 20 ? 'scrolled' : ''}`}>
         <Logo light />
         <div className="grow" />
-        <a className="nl" href="#features">Возможности</a>
-        <a className="nl" href="#flow">Как работает</a>
-        <a className="nl" href="#roles">Роли</a>
-        <Link className="nl" to="/help">Справка</Link>
-        <Link className="btn btn-glass btn-sm" to="/login">Войти</Link>
+        <div className={`nn-links ${menu ? 'open' : ''}`} onClick={() => setMenu(false)}>
+          <a className="nl" href="#features">Возможности</a>
+          <a className="nl" href="#flow">Как работает</a>
+          <a className="nl" href="#roles">Роли</a>
+          <Link className="nl" to="/help">Справка</Link>
+        </div>
+        <Link className="btn btn-glass btn-sm nn-login" to="/login">Войти</Link>
+        <button className="nn-burger" aria-label={menu ? 'Закрыть меню' : 'Открыть меню'} aria-expanded={menu} onClick={() => setMenu((x) => !x)}>{menu ? <X size={20} /> : <Menu size={20} />}</button>
       </nav>
 
       <header className="hero">

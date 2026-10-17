@@ -10,7 +10,16 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.core.db import EventRow, JobRow, NotificationRow, ProgramRow, VersionRow, max_version, now_iso, sessionmaker
+from app.core.db import (
+    EventRow,
+    JobRow,
+    NotificationRow,
+    ProgramRow,
+    VersionRow,
+    max_version,
+    now_iso,
+    sessionmaker,
+)
 from app.core.errors import NotFound
 from app.programs.schemas import ProgramDoc
 
@@ -85,11 +94,25 @@ async def version_doc(program_id: str, version: int) -> ProgramDoc:
         return ProgramDoc.model_validate(row.doc)
 
 
-async def list_programs(owner: str | None = None) -> list[dict[str, Any]]:
+async def list_programs(owner: str | None = None, statuses: set[str] | None = None, since: str = '', until: str = '') -> list[dict[str, Any]]:
+    """Список программ; руководитель фильтрует «на утверждении» и утверждённые за период (FR-50)."""
     async with sessionmaker()() as s:
-        q = select(ProgramRow).order_by(ProgramRow.updated_at.desc()).limit(100)
+        q = select(ProgramRow).order_by(ProgramRow.updated_at.desc()).limit(200)
+        if statuses:
+            q = q.where(ProgramRow.status.in_(statuses))
         rows = (await s.execute(q)).scalars()
-        return [{'id': r.id, 'title': r.title, 'status': r.status, 'version': r.version, 'updated_at': r.updated_at.isoformat() if r.updated_at else ''} for r in rows]
+        out = []
+        for r in rows:
+            at = r.updated_at.isoformat() if r.updated_at else ''
+            if (since and at[:10] < since) or (until and at[:10] > until):
+                continue
+            doc = r.doc or {}
+            out.append({
+                'id': r.id, 'title': r.title, 'status': r.status, 'version': r.version, 'updated_at': at, 'owner': r.owner,
+                'type': doc.get('type'), 'template': doc.get('template', ''), 'volume_h': doc.get('volume_h', 0),
+                'blocking': (doc.get('report') or {}).get('blocking_passed'), 'cost_rub': round((doc.get('usage') or {}).get('cost_rub', 0.0), 2),
+            })
+        return out
 
 
 # --- Задания ---
@@ -134,7 +157,7 @@ def run_job(job_id: str, coro_factory: Callable[[Callable[[dict[str, Any]], Awai
         try:
             await coro_factory(_progress)
             await update_job(job_id, status='done')
-        except Exception as exc:  # noqa: BLE001 — статус failed, состояние программы сохранено
+        except Exception as exc:
             logger.exception('Задание %s упало', job_id)
             msg = getattr(exc, 'message_ru', None) or f'{type(exc).__name__}'
             await update_job(job_id, status='failed', error=msg)

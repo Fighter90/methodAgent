@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import io
-import json
 import re
 from xml.sax.saxutils import escape
 
@@ -20,9 +19,9 @@ from pptx.util import Pt as PptxPt
 
 from app.agent.sections import BLANK, build_sections
 from app.core.errors import BadRequest
-from app.programs.schemas import ProgramDoc
-from app.programs.schemas import ProgramType
-from app.validation.rules import SECTION_GROUPS, sections_for
+from app.kb.registry import org_profile
+from app.programs.schemas import ProgramDoc, ProgramType
+from app.validation.rules import sections_for
 
 DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
@@ -64,21 +63,29 @@ def _table(d: Document, header: list[str], rows: list[list[object]]) -> None:
 
 
 def _curriculum(d: Document, doc: ProgramDoc, with_topics: bool) -> None:
-    header = ['№', 'Наименование', 'Всего', 'ЛК', 'ПР', 'ЛБ', 'СРС', 'Форма контроля']
+    fa = doc.final_assessment
+    tot = doc.totals()
     rows: list[list[object]] = []
+    if doc.type == ProgramType.DOOP and not with_topics:
+        # Шапка образца ДООП: общая трудоёмкость, аудиторные часы, теория и практика, самостоятельная работа
+        for m in doc.modules:
+            h = m.hours
+            rows.append([m.n, m.title, h.total, h.contact, h.lk, h.pr + h.lb, h.srs, m.control])
+        rows.append(['', 'Итоговая аттестация', fa.hours, '—', '—', '—', '—', fa.form])
+        rows.append(['', 'Итого часов', tot.total + fa.hours, tot.contact, tot.lk, tot.pr + tot.lb, tot.srs, ''])
+        _table(d, ['№ п/п', 'Наименование разделов/дисциплин/модулей', 'Общая трудоемкость', 'Всего аудиторных часов', 'Лекции/теория', 'Практические занятия', 'Самостоятельная работа', 'Форма контроля'], rows)
+        return
     for m in doc.modules:
         h = m.hours
-        rows.append([m.n, m.title, h.total, h.lk, h.pr, h.lb, h.srs, m.control])
+        rows.append([f'{m.n}.', m.title, h.total, h.lk, h.pr, h.lb, h.srs, m.control])
         if with_topics:
             for t in m.topics:
                 th = t.hours
                 rows.append([t.n, t.title, th.total, th.lk, th.pr, th.lb, th.srs, ''])
-    fa = doc.final_assessment
     z = 0 if doc.type == ProgramType.DPP_PK_INTERNSHIP else ''
-    rows.append(['', f'Итоговая аттестация ({fa.form})', fa.hours, z, z, z, '', fa.form])
-    tot = doc.totals()
-    rows.append(['', 'Итого', tot.total + fa.hours, tot.lk, tot.pr, tot.lb, tot.srs, ''])
-    _table(d, header, rows)
+    rows.append(['', 'Итоговая аттестация', fa.hours, z, z, z, '', fa.form])
+    rows.append(['', 'Итого (час.)', tot.total + fa.hours, tot.lk, tot.pr, tot.lb, tot.srs, ''])
+    _table(d, ['№ п/п', 'Наименование разделов программы', 'Трудоёмкость, всего (час.)', 'ЛК', 'ПР', 'ЛБ', 'СРС (час.)', 'Форма аттестации'], rows)
 
 
 def _calendar(d: Document, doc: ProgramDoc) -> None:
@@ -87,85 +94,196 @@ def _calendar(d: Document, doc: ProgramDoc) -> None:
         _table(d, ['Неделя', 'Учебных дней', 'Часов', 'Содержание'], rows)
 
 
+TITLES = {
+    ProgramType.DPP_PK: 'ДОПОЛНИТЕЛЬНАЯ ПРОФЕССИОНАЛЬНАЯ ПРОГРАММА\nПОВЫШЕНИЯ КВАЛИФИКАЦИИ',
+    ProgramType.DPP_PK_INTERNSHIP: 'ДОПОЛНИТЕЛЬНАЯ ПРОФЕССИОНАЛЬНАЯ ПРОГРАММА\nПОВЫШЕНИЯ КВАЛИФИКАЦИИ В ФОРМЕ СТАЖИРОВКИ',
+    ProgramType.DOOP: 'ДОПОЛНИТЕЛЬНАЯ ОБЩЕОБРАЗОВАТЕЛЬНАЯ\nОБЩЕРАЗВИВАЮЩАЯ ПРОГРАММА',
+}
+
+
+def _para(d: Document, text: str, *, bold: bool = False, align=None, size: int | None = None):
+    p = d.add_paragraph()
+    r = p.add_run(text)
+    r.bold = bold
+    if size:
+        r.font.size = Pt(size)
+    if align is not None:
+        p.alignment = align
+    return p
+
+
+def _text(d: Document, text: str) -> None:
+    """Абзацы; строки «— …» — маркированный список."""
+    for line in (text or '').split('\n'):
+        if not line.strip():
+            continue
+        if line.startswith('— '):
+            d.add_paragraph(line[2:], style='List Bullet')
+        else:
+            d.add_paragraph(line)
+
+
+def _title_page(d: Document, doc: ProgramDoc, sections: dict[str, str]) -> None:
+    org = org_profile()
+    for line in org.get('header', []):
+        _para(d, line, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    _para(d, '___________________________________________', align=WD_ALIGN_PARAGRAPH.CENTER)
+    for line in (org.get('requisites', ''), org.get('address', '')):
+        if line:
+            _para(d, line, align=WD_ALIGN_PARAGRAPH.CENTER, size=10)
+    d.add_paragraph()
+    for line in sections.get('approval', '').split('\n'):
+        _para(d, line, bold=line.startswith('УТВ'), align=WD_ALIGN_PARAGRAPH.RIGHT)
+    for _ in range(4):
+        d.add_paragraph()
+    _para(d, TITLES.get(doc.type, (doc.template or 'Программа').upper()), bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, size=14)
+    _para(d, f'«{doc.title}»', bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, size=14)
+    for _ in range(6):
+        d.add_paragraph()
+    year = (doc.created_at or '2026')[:4]
+    _para(d, f'{org.get("city", "")}\n{year}', align=WD_ALIGN_PARAGRAPH.CENTER)
+    d.add_page_break()
+
+
+def _results_table(d: Document, doc: ProgramDoc) -> None:
+    tf_titles = {t.code: re.sub(r'\s*\(код ТФ[^)]*\)', '', t.title) for t in (doc.profstandard.tf if doc.profstandard else [])}
+    rows = []
+    for c in doc.competencies:
+        activity = '; '.join(tf_titles.get(code, code) for code in c.tf_codes) or (doc.params.direction or doc.title)
+        by = {k: '; '.join(lo.text for i in c.indicators if i.kind == k for lo in i.outcomes) for k in ('own', 'can', 'know')}
+        rows.append([activity, f'{c.code}. {c.title}', by['own'], by['can'], by['know']])
+    _table(d, ['Виды деятельности', 'Профессиональные компетенции', 'Практический опыт', 'Умения', 'Знания'], rows)
+
+
+def _work_program(d: Document, doc: ProgramDoc) -> None:
+    """2.4: компоненты программы, содержание и часы — как в образце."""
+    rows: list[list[object]] = []
+    for m in doc.modules:
+        mp = next((x for x in doc.kit.module_programs if x.module_id == m.id), None)
+        rows.append([f'Раздел {m.n}. {m.title}', (mp.annotation if mp else ''), m.hours.total])
+        content = {c.get('topic_id'): c.get('text', '') for c in (mp.content if mp else [])}
+        for t in m.topics:
+            kinds = ', '.join(f'{lbl} – {v} ч' for lbl, v in (('лекции', t.hours.lk), ('практические занятия', t.hours.pr), ('лабораторные работы', t.hours.lb), ('СРС', t.hours.srs)) if v)
+            rows.append([f'Тема {t.n}. {t.title}', f'{content.get(t.id) or t.description} ({kinds})'.strip(), t.hours.total])
+        rows.append(['Текущий контроль', m.control, ''])
+    fa = doc.final_assessment
+    rows.append(['Итоговая аттестация', fa.form, fa.hours])
+    rows.append(['Итого', '', doc.totals().total + fa.hours])
+    _table(d, ['Наименование компонентов программы', 'Содержание учебного материала и формы организации деятельности слушателей', 'Всего (час.)'], rows)
+
+
+def _doop_utp(d: Document, doc: ProgramDoc) -> None:
+    rows: list[list[object]] = []
+    for m in doc.modules:
+        mp = next((x for x in doc.kit.module_programs if x.module_id == m.id), None)
+        content = {c.get('topic_id'): c.get('text', '') for c in (mp.content if mp else [])}
+        rows.append([f'Модуль {m.n}. {m.title}', '', '', m.hours.total])
+        for t in m.topics:
+            kinds = '; '.join(f'{lbl} – {v} ч' for lbl, v in (('Теоретическое занятие', t.hours.lk), ('Практическое занятие', t.hours.pr + t.hours.lb), ('Самостоятельная работа', t.hours.srs)) if v)
+            rows.append([f'Тема {t.n}. {t.title}', kinds, content.get(t.id) or t.description, t.hours.total])
+    rows.append(['Итоговая аттестация', doc.final_assessment.form, doc.final_assessment.description, doc.final_assessment.hours])
+    _table(d, ['Тема', 'Виды учебных занятий', 'Содержание', 'Часы'], rows)
+
+
+def _doop_stages(d: Document, doc: ProgramDoc) -> None:
+    rows = []
+    for a in doc.kit.assessments:
+        if a.kind == 'final':
+            continue
+        m = doc.module_by_id(a.module_id) if a.module_id else None
+        what = {'test': 'Тест с ключом', 'seminar': 'Практическое задание', 'project': 'Проект', 'interview': 'Собеседование'}[a.kind]
+        n_q = sum(1 for q in doc.kit.questions if q.assessment_id == a.id)
+        stage = f'Контрольная точка по модулю {m.n} (текущий контроль)' if m else 'Итоговый тест'
+        rows.append([stage, f'{what}' + (f' из {n_q} вопросов' if a.kind == 'test' and n_q else '') + (f' по модулю «{m.title}»' if m else ''), 'Педагог по ключу и критериям; обратная связь обучающемуся'])
+    rows.append(['Итоговая аттестация', doc.final_assessment.form, 'Комиссия по критериям; результат — зачтено / не зачтено'])
+    _table(d, ['Этап', 'Артефакт', 'Кто и как оценивает'], rows)
+
+
+def _interview(doc: ProgramDoc) -> dict[str, list[str]]:
+    iq = doc.kit.final_assessment.get('interview_questions') if doc.kit.final_assessment else None
+    return iq if isinstance(iq, dict) else {}
+
+
+def _app_current(d: Document, doc: ProgramDoc) -> None:
+    iq = _interview(doc)
+    if iq:
+        d.add_paragraph().add_run('Примерные вопросы для собеседования:').bold = True
+        n = 0
+        for qs in iq.values():
+            for q in qs:
+                n += 1
+                d.add_paragraph(f'{n}. {q}')
+    _assessment(d, doc, final=False)
+
+
+def _app_final(d: Document, doc: ProgramDoc) -> None:
+    fa = doc.kit.final_assessment or {}
+    d.add_paragraph().add_run('Методические указания к подготовке итоговой аттестации').bold = True
+    d.add_paragraph(f'{doc.final_assessment.form}. {fa.get("statement") or doc.final_assessment.description}')
+    if doc.kit.report_requirements:
+        d.add_paragraph().add_run('Требования к работе:').bold = True
+        for r in doc.kit.report_requirements:
+            d.add_paragraph(r, style='List Bullet')
+    crit = fa.get('criteria') or []
+    if crit:
+        total = sum(int(c.get('points', 0)) for c in crit)
+        d.add_paragraph().add_run('Детализированные критерии оценки').bold = True
+        d.add_paragraph(f'Максимальный итоговый балл: {total}. Для получения результата «зачтено» необходимо набрать не менее {round(total * 0.7)} баллов (70 %).')
+        for i, c in enumerate(crit, 1):
+            d.add_paragraph(f'Критерий {i}: {c.get("text")} (до {c.get("points")} б.)')
+    d.add_paragraph().add_run('Процедура').bold = True
+    d.add_paragraph('Выступление слушателя (5–7 минут) и ответы на вопросы комиссии (5–7 минут). Итоговое решение выносится на основании суммы баллов по всем критериям.')
+
+
 def render_docx(doc: ProgramDoc) -> bytes:
     d = _base_document()
-    p = d.add_paragraph('УТВЕРЖДАЮ\nРуководитель ' + BLANK + '\n«__» ________ 20__ г.')
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    t = d.add_paragraph()
-    t.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = t.add_run((doc.template or 'Программа').upper() + f'\n«{doc.title}»\n{doc.volume_h} ак. ч')
-    r.bold = True
-    r.font.size = Pt(14)
     sections = doc.kit.sections or build_sections(doc)
-    kind = 'doop' if doc.type == ProgramType.DOOP else 'dpp'
-    group = ''
-    for key, title in sections_for(doc):
-        g = title.split('.', 1)[0] if title[:1].isdigit() else ''
-        if g and g != group:
-            group = g
-            _heading(d, SECTION_GROUPS[g][kind], 1)
-        _heading(d, title, 2 if g else 1)
+    _title_page(d, doc, sections)
+    doop = doc.type == ProgramType.DOOP
+    for key, title, level in sections_for(doc):
+        if key.startswith('app'):
+            d.add_page_break()
+            _heading(d, title, 1)
+            _para(d, sections.get(key, ''), bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+            (_app_final if key == 'app2' else _app_current)(d, doc)
+            continue
+        _heading(d, title, level)
         text = sections.get(key, '')
-        if key == 'curriculum':
-            d.add_paragraph(text)
+        if key == 'results' and not doop:
+            d.add_paragraph(text.split('\n', 1)[0])
+            _results_table(d, doc)
+        elif key == 'curriculum':
+            _text(d, text)
             _curriculum(d, doc, with_topics=False)
-            continue
-        if key == 'utp':
-            d.add_paragraph(text)
-            _curriculum(d, doc, with_topics=True)
-            continue
-        if key == 'calendar':
-            d.add_paragraph('Календарный учебный график по неделям:')
+        elif key == 'utp':
+            _text(d, text)
+            _doop_utp(d, doc) if doop else _curriculum(d, doc, with_topics=True)
+        elif key == 'calendar':
+            _text(d, text)
             _calendar(d, doc)
-            continue
-        if key == 'content':
-            for m in doc.modules:
-                _heading(d, f'Модуль {m.n}. {m.title} ({m.hours.total} ч)', 3)
-                mp = next((x for x in doc.kit.module_programs if x.module_id == m.id), None)
-                if mp and mp.annotation:
-                    d.add_paragraph(mp.annotation)
-                content = {c.get('topic_id'): c.get('text', '') for c in (mp.content if mp else [])}
-                for tp in m.topics:
-                    para = d.add_paragraph()
-                    para.add_run(f'Тема {tp.n}. {tp.title}. ').bold = True
-                    para.add_run(content.get(tp.id) or tp.description)
-                if mp and mp.control_questions:
-                    d.add_paragraph('Вопросы для самоконтроля: ' + '; '.join(mp.control_questions))
-            continue
-        if key == 'assessment':
-            d.add_paragraph(text)
-            _assessment(d, doc)
-            continue
-        if key == 'form' and sections.get('regime'):
-            text = f"{text}\n{sections['regime']}"
-        if key == 'conditions_it' and doc.norm_base:
-            d.add_paragraph().add_run('Нормативные правовые акты').bold = True
-            for src in doc.norm_base:
-                d.add_paragraph(f'— {src.bibl}')
-            d.add_paragraph().add_run('Основная и дополнительная литература, интернет-ресурсы').bold = True
-        for line in (text or '').split('\n'):
-            d.add_paragraph(line)
-    interview = doc.kit.final_assessment.get('interview_questions') if doc.kit.final_assessment else None
-    if interview or doc.type == ProgramType.DPP_PK_INTERNSHIP:
-        _heading(d, 'Приложение 1. Вопросы для собеседования с руководителем стажировки', 1)
-        if isinstance(interview, dict):
-            for section, qs in interview.items():
-                p = d.add_paragraph()
-                p.add_run(f'Раздел «{section}»').bold = True
-                for i, q in enumerate(qs, 1):
-                    d.add_paragraph(f'{i}. {q}')
+        elif key == 'content':
+            _work_program(d, doc)
+        elif key == 'assessment' and doop:
+            _text(d, text)
+            _doop_stages(d, doc)
+        else:
+            _text(d, text)
     buf = io.BytesIO()
     d.save(buf)
     return buf.getvalue()
 
 
-def _assessment(d: Document, doc: ProgramDoc) -> None:
+def _assessment(d: Document, doc: ProgramDoc, final: bool = True) -> None:
     for a in doc.kit.assessments:
+        if a.kind == 'final' and not final:
+            continue
         qs = [q for q in doc.kit.questions if q.assessment_id == a.id]
         ts = [t for t in doc.kit.tasks if t.assessment_id == a.id]
         if not qs and not ts:
             continue
-        _heading(d, a.title, 3)
+        m = doc.module_by_id(a.module_id) if a.module_id else None
+        names = {'test': 'Тест', 'seminar': 'Практическое задание', 'project': 'Проект', 'interview': 'Задания стажировки', 'final': 'Итоговая аттестация'}
+        _heading(d, f'{names[a.kind]} по разделу {m.n} «{m.title}»' if m else (a.title if a.kind != 'test' else 'Итоговый тест'), 3)
         for i, q in enumerate(qs, 1):
             d.add_paragraph(f'{i}. {q.stem}')
             for j, opt in enumerate(q.options):
@@ -180,22 +298,6 @@ def _assessment(d: Document, doc: ProgramDoc) -> None:
                 d.add_paragraph('Ожидаемый результат: ' + t.expected_result)
             if t.criteria:
                 d.add_paragraph('Критерии: ' + '; '.join(f'{c.text} — {c.points} б.' for c in t.criteria))
-    if doc.kit.report_requirements:
-        _heading(d, 'Требования к отчёту', 3)
-        for r in doc.kit.report_requirements:
-            d.add_paragraph(f'— {r}')
-    fa = doc.kit.final_assessment
-    if fa:
-        _heading(d, 'Материалы итоговой аттестации', 3)
-        for k, v in fa.items():
-            if k == 'interview_questions':
-                continue
-            if isinstance(v, list):
-                d.add_paragraph(f'{k}:')
-                for x in v:
-                    d.add_paragraph(f'— {x if isinstance(x, str) else json.dumps(x, ensure_ascii=False)}')
-            elif v:
-                d.add_paragraph(f'{k}: {v}')
 
 
 def render_lectures(doc: ProgramDoc) -> bytes:

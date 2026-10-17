@@ -7,9 +7,8 @@
 
 from __future__ import annotations
 
-import logging
-
 import json
+import logging
 
 from pydantic import BaseModel, Field
 
@@ -17,8 +16,8 @@ from app.kb.registry import tools
 from app.llm.client import CallStats, get_llm
 from app.programs.schemas import (
     Criterion,
-    Lecture,
     LearningOutcome,
+    Lecture,
     Module,
     ModuleProgram,
     ProgramDoc,
@@ -91,6 +90,13 @@ def _module_los(doc: ProgramDoc, m: Module) -> list[LearningOutcome]:
     return [lo for lo in doc.all_outcomes() if lo.id in ids]
 
 
+def _relevant_tools(doc: ProgramDoc, m: Module) -> dict[str, str]:
+    """Версии только тех инструментов, что встречаются в программе: иначе модель тянет в тесты лишнее."""
+    text = ' '.join([doc.title, doc.params.direction, m.title, *(t.title + ' ' + t.description for t in m.topics)]).lower()
+    aliases = {'scikit-learn': 'sklearn', 'postgresql': 'sql', 'kubernetes': 'k8s', 'ansible-core': 'ansible', 'gitlab-ci': 'ci/cd'}
+    return {k: v for k, v in tools()['current'].items() if k in text or aliases.get(k, '#') in text or (k == 'python' and 'python' in doc.title.lower())}
+
+
 async def run(
     doc: ProgramDoc,
     m: Module,
@@ -126,7 +132,8 @@ async def run(
             'n_questions': n_questions,
             'need_slides': need_slides,
             'internship': internship,
-            'tool_versions_2026': tools()['current'],
+            'tool_versions_2026': _relevant_tools(doc, m),
+            'question_rules': 'Вопросы теста — только по темам и РО этого модуля и на уровне аудитории; не упоминать инструменты, которых нет в темах; дистракторы правдоподобные, без абсурдных вариантов.',
             'note': instruction_extra
             or ('Стажировка: задания — практические задания на рабочем месте под руководством наставника.' if internship else ''),
         }
@@ -137,7 +144,7 @@ async def run(
                 user=json.dumps(payload, ensure_ascii=False),
                 schema=ModuleContentLLM,
                 temperature=spec.temperature,
-                max_tokens=spec.max_tokens if need_slides else min(spec.max_tokens, 3000),
+                max_tokens=spec.max_tokens if need_slides else min(spec.max_tokens, 4500),
                 stats=stats,
             )
             return _from_llm(doc, m, los, data, n_questions, test_id, slide_topics)
@@ -228,7 +235,7 @@ def _default_plan(title: str) -> list[dict]:
     ]
 
 
-def _fallback_lecture(m: Module, t) -> Lecture:  # noqa: ANN001
+def _fallback_lecture(m: Module, t) -> Lecture:
     slides = [
         Slide(id=f'sl{t.n}.1', n=1, title=t.title, bullets=[f'Модуль {m.n}. {m.title}', f'Тема {t.n}']),
         Slide(id=f'sl{t.n}.2', n=2, title='Зачем это нужно', bullets=[t.description or t.title, 'Где применяется на практике']),
@@ -251,22 +258,29 @@ def fallback(doc: ProgramDoc, m: Module, los: list[LearningOutcome], n_questions
         control_questions=[f'Раскройте содержание темы «{t.title}».' for t in m.topics],
     )
     questions: list[Question_] = []
+    # Дистракторы — реальные РО других модулей: правдоподобно, но к этой теме не относится
+    foreign = [lo.text for lo in doc.all_outcomes() if lo.id not in {x.id for x in los}]
+    foreign += [t.description or t.title for mm in doc.modules if mm.id != m.id for t in mm.topics]
+    foreign = list(dict.fromkeys(foreign)) or ['Настраивает оборудование локальной сети', 'Составляет бухгалтерский баланс', 'Пишет эссе по истории']
+    stems = ('Какой результат формирует тема «{t}»?', 'Что слушатель умеет после темы «{t}»?', 'Какое действие относится к теме «{t}»?')
+    lo_by_id = {lo.id: lo for lo in los}
     for i in range(n_questions):
-        lo = los[i % len(los)] if los else None
         topic = m.topics[i % len(m.topics)]
+        topic_los = [lo_by_id[x] for x in topic.lo_ids if x in lo_by_id] or los
+        lo = topic_los[(i // len(m.topics)) % len(topic_los)] if topic_los else None
         correct = lo.text if lo else topic.description or topic.title
-        options = [
-            correct,
-            f'Тема «{topic.title}» не связана с практикой',
-            'Ни один из вариантов не относится к модулю',
-            'Это делается только вручную без инструментов',
-        ]
+        distract = [f for f in foreign if f != correct]
+        k0 = (i * 3) % max(1, len(distract))
+        options = [correct, *[distract[(k0 + j) % len(distract)] for j in range(3)]]
+        options = list(dict.fromkeys(options))
+        while len(options) < 4:
+            options.append(f'Не относится к модулю «{m.title}» (вариант {len(options)})')
         key = i % 4
         options[0], options[key] = options[key], options[0]
         questions.append(
             Question_(
                 id=f'q{m.n}.{i + 1}', assessment_id=test_id, module_id=m.id,
-                stem=f'Что относится к результату изучения темы «{topic.title}»?',
+                stem=stems[(i // max(1, len(m.topics))) % len(stems)].format(t=topic.title),
                 options=options, key=key, lo_ids=[lo.id] if lo else [],
             )
         )

@@ -88,7 +88,7 @@ def _structure(lines: list[str]) -> list[str]:
     for ln in lines:
         if len(ln) > 140:
             continue
-        if re.match(r'^(\d+(\.\d+)*\.?\s+[А-ЯA-Z]|раздел\s+\d|модуль\s+\d|тема\s+\d)', ln, flags=re.I):
+        if re.match(r'^(\d+(\.\d+)*\.?\s+[А-ЯA-Z]|раздел\s+\d|модуль\s+\d|тема\s+\d)', ln, flags=re.IGNORECASE):
             out.append(ln)
     return out[:80]
 

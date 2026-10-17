@@ -6,9 +6,8 @@
 
 from __future__ import annotations
 
-import logging
-
 import json
+import logging
 import re
 
 from pydantic import BaseModel, Field
@@ -25,7 +24,7 @@ from app.programs.schemas import (
     Topic,
 )
 from app.skills.base import skill
-from app.skills.skeleton.library import generic_domain, pick_domain
+from app.skills.skeleton.library import MUST_COVER, generic_domain, pick_domain
 
 
 class OutcomeLLM(BaseModel):
@@ -96,6 +95,7 @@ async def run(
     comment: str = '',
 ) -> SkeletonDraft:
     llm = get_llm()
+    must = must_cover(params)
     if llm.enabled:
         spec = skill('skeleton')
         payload = {
@@ -107,7 +107,7 @@ async def run(
             'entry_level': params.entry_level,
             'form': params.form,
             'final_assessment': params.final_assessment_form,
-            'required_topics': params.required_topics,
+            'required_topics': list(dict.fromkeys([*params.required_topics, *(t for t, _d, _k in must)])),
             'constraints': params.constraints,
             'customer_expectation': params.customer_expectation,
             'structure_hint': _module_count_hint(params.volume_h or 72),
@@ -127,6 +127,8 @@ async def run(
                 stats=stats,
             )
             draft = _from_llm(data, params, program_type, ps)
+            drop_assessment_modules(draft)
+            ensure_topics(draft, must)
             if len(draft.modules) >= 2:
                 return draft
         except Exception as exc:  # noqa: BLE001 — сбой модели или разбора ответа: работает резервная генерация
@@ -260,3 +262,43 @@ def link_outcomes(draft: SkeletonDraft) -> None:
             t_words = _words(t.title + ' ' + t.description)
             best = max(by_load, key=lambda lo: len(t_words & _words(lo.text)))
             t.lo_ids.append(best.id)
+
+
+def must_cover(params: Params) -> list[tuple[str, str, tuple[str, ...]]]:
+    text = ' '.join([params.title, params.direction, params.audience, ' '.join(params.required_topics)])
+    domain = pick_domain(text)
+    return MUST_COVER.get(domain['key'], []) if domain else []
+
+
+_ASSESSMENT_MODULE = re.compile(r'итогов\w*\s+аттестац|защит\w*\s+отч|подготовк\w*\s+к\s+(итогов|аттестац|защит)', re.IGNORECASE)
+
+
+def drop_assessment_modules(draft: SkeletonDraft) -> None:
+    """Итоговая аттестация считается отдельной строкой учебного плана: модуль с тем же назначением дублирует её часы."""
+    keep = [m for m in draft.modules if not _ASSESSMENT_MODULE.search(m.title)]
+    if len(keep) == len(draft.modules) or len(keep) < 2:
+        return
+    draft.modules = keep
+    _renumber(draft)
+    link_outcomes(draft)
+
+
+def ensure_topics(draft: SkeletonDraft, must: list[tuple[str, str, tuple[str, ...]]]) -> None:
+    """Обязательные темы направления: если модель пропустила тему, она добавляется в ближайший по смыслу модуль."""
+    for title, desc, keys in must:
+        text = ' '.join(f'{m.title} {t.title} {t.description}' for m in draft.modules for t in m.topics).lower() + ' '
+        if any(k in text for k in keys):
+            continue
+        t_words = _words(title + ' ' + desc)
+        target = max(draft.modules, key=lambda m: (len(t_words & _words(m.title + ' ' + ' '.join(t.title for t in m.topics))), m.weight))
+        mi = target.n
+        n = len(target.topics) + 1
+        target.topics.append(Topic(id=f't{mi}.{n}', n=f'{mi}.{n}', title=title, description=desc, weight=1.0))
+    link_outcomes(draft)
+
+
+def _renumber(draft: SkeletonDraft) -> None:
+    for mi, m in enumerate(draft.modules, start=1):
+        m.id, m.n = f'm{mi}', mi
+        for ti, t in enumerate(m.topics, start=1):
+            t.id, t.n = f't{mi}.{ti}', f'{mi}.{ti}'

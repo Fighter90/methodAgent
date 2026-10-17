@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import time
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
 import jwt
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 
 from app.core.config import get_settings
-from app.core.errors import ForbiddenRole, Unauthorized
+from app.core.errors import ForbiddenRole, RateLimited, Unauthorized
 
 ROLES = ('methodist', 'expert', 'head', 'admin', 'api')
 
@@ -81,9 +83,37 @@ def _anonymous_api() -> Principal:
     return Principal('u-api', 'api', 'API-клиент')
 
 
-async def current_principal(authorization: str | None = Header(default=None)) -> Principal:
-    if not authorization:
+_anon_runs: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get('x-forwarded-for', '')
+    return fwd.split(',')[0].strip() or (request.client.host if request.client else 'unknown')
+
+
+def _anonymous(request: Request) -> Principal:
+    """Без токена: чтение и автопрогон POST /programs?mode=auto с лимитом частоты; остальное — только после входа.
+
+    Публичный адрес открыт всем, а дневной бюджет шлюза общий — поэтому запись и интерфейсные методы требуют токен.
+    """
+    if request.method in ('GET', 'HEAD', 'OPTIONS'):
         return _anonymous_api()
+    if request.method == 'POST' and request.url.path.rstrip('/').endswith('/programs') and request.query_params.get('mode') == 'auto':
+        limit = get_settings().anon_runs_per_hour
+        q = _anon_runs[_client_ip(request)]
+        now = time.monotonic()
+        while q and now - q[0] > 3600:
+            q.popleft()
+        if len(q) >= limit:
+            raise RateLimited(f'Без токена — не больше {limit} автопрогонов в час с одного адреса. Войдите или повторите позже.')
+        q.append(now)
+        return _anonymous_api()
+    raise Unauthorized('Нужен вход: заголовок Authorization: Bearer <токен> (POST /api/v1/auth/login)')
+
+
+async def current_principal(request: Request, authorization: str | None = Header(default=None)) -> Principal:
+    if not authorization:
+        return _anonymous(request)
     scheme, _, token = authorization.partition(' ')
     if scheme.lower() != 'bearer' or not token:
         raise Unauthorized('Нужен заголовок Authorization: Bearer <токен>')

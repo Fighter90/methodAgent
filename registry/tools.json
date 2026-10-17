@@ -1,10 +1,25 @@
 {
   "checked_at": "2026-10-17",
   "current": {
-    "python": "3.12", "pandas": "2.2", "numpy": "2.1", "matplotlib": "3.9", "seaborn": "0.13",
-    "scikit-learn": "1.5", "jupyterlab": "4.2", "postgresql": "16", "sqlalchemy": "2.0",
-    "docker": "27", "kubernetes": "1.31", "terraform": "1.9", "opentofu": "1.8", "ansible-core": "2.17",
-    "prometheus": "2.54", "grafana": "11", "gitlab-ci": "17", "nginx": "1.27", "fastapi": "0.115"
+    "python": "3.13",
+    "pandas": "2.3",
+    "numpy": "2.3",
+    "matplotlib": "3.10",
+    "seaborn": "0.13",
+    "scikit-learn": "1.7",
+    "jupyterlab": "4.4",
+    "postgresql": "17",
+    "sqlalchemy": "2.0",
+    "docker": "28",
+    "kubernetes": "1.33",
+    "terraform": "1.12",
+    "opentofu": "1.10",
+    "ansible-core": "2.19",
+    "prometheus": "3.5",
+    "grafana": "12",
+    "gitlab-ci": "18",
+    "nginx": "1.28",
+    "fastapi": "0.116"
   },
   "outdated": {
     "python 2": "Python 2 не поддерживается с 2020 года — используйте Python 3.12",
@@ -13,8 +28,61 @@
     "tensorflow 1": "TensorFlow 1.x не поддерживается",
     "docker-compose v1": "docker-compose v1 снят с поддержки — используйте docker compose",
     "python 3.7": "Python 3.7 снят с поддержки",
-    "python 3.8": "Python 3.8 снят с поддержки"
+    "python 3.8": "Python 3.8 снят с поддержки",
+    "python 3.9": "Python 3.9 снят с поддержки в октябре 2025 года — используйте Python 3.13",
+    "df.ix": "DataFrame.ix удалён — используйте .loc или .iloc",
+    "iteritems(": "Series.iteritems удалён в pandas 2.0 — используйте .items()",
+    "print \"": "Оператор print из Python 2 — используйте функцию print()",
+    "raw_input(": "raw_input из Python 2 — используйте input()",
+    "sklearn.externals": "sklearn.externals удалён — импортируйте joblib напрямую",
+    "docker-compose up": "docker-compose v1 снят с поддержки — используйте docker compose up",
+    "extensions/v1beta1": "API extensions/v1beta1 удалён из Kubernetes — используйте apps/v1",
+    "internet explorer": "Internet Explorer снят с поддержки — используйте актуальные браузеры",
+    "windows 7": "Windows 7 снята с поддержки — используйте актуальную ОС",
+    "adobe flash": "Adobe Flash не поддерживается с 2021 года — используйте HTML5"
   },
-  "ai_services_ru": ["GigaChat", "YandexGPT (Алиса)", "Kandinsky", "Шедеврум", "Яндекс Учебник", "СФЕРУМ"],
-  "ai_services_blocked": ["ChatGPT", "OpenAI", "Midjourney", "Gemini", "Claude", "Copilot", "DALL-E", "Perplexity"]
+  "ai_services_ru": [
+    "GigaChat",
+    "YandexGPT (Алиса)",
+    "Kandinsky",
+    "Шедеврум",
+    "Яндекс Учебник",
+    "СФЕРУМ"
+  ],
+  "ai_services_blocked": [
+    "ChatGPT",
+    "OpenAI",
+    "Midjourney",
+    "Gemini",
+    "Claude",
+    "Copilot",
+    "DALL-E",
+    "Perplexity"
+  ],
+  "min_supported": {
+    "python": "3.10",
+    "pandas": "2.0",
+    "numpy": "1.26",
+    "matplotlib": "3.8",
+    "scikit-learn": "1.4",
+    "postgresql": "14",
+    "docker": "25",
+    "kubernetes": "1.31",
+    "terraform": "1.6",
+    "ansible-core": "2.16",
+    "prometheus": "2.53",
+    "grafana": "10",
+    "gitlab-ci": "17",
+    "nginx": "1.26",
+    "jupyterlab": "4.0"
+  },
+  "outdated_replacements": {
+    "df.append": "pd.concat([df, row])",
+    "python 2": "Python 3.13",
+    "iteritems(": "items(",
+    "raw_input(": "input(",
+    "docker-compose up": "docker compose up",
+    "extensions/v1beta1": "apps/v1",
+    "df.ix": "df.loc"
+  }
 }

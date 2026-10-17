@@ -95,9 +95,7 @@ def _set(p: Params, field: str, value: Any) -> None:
         text = str(value)
         if not p.audience:
             p.audience = text
-        if not p.entry_level:
-            p.entry_level = text
-        elif p.audience == text:
+        if not p.entry_level or p.audience == text:
             p.entry_level = text
         else:
             p.audience = f'{p.audience}; {text}' if text not in p.audience else p.audience

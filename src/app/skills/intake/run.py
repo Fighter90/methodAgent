@@ -6,9 +6,8 @@
 
 from __future__ import annotations
 
-import logging
-
 import json
+import logging
 import re
 
 from pydantic import BaseModel, Field
@@ -59,9 +58,7 @@ def parse_numbers(text: str) -> Params:
         p.program_type = ProgramType.DOOP
     elif 'стажировк' in low:
         p.program_type = ProgramType.DPP_PK_INTERNSHIP
-    elif 'повышени' in low and 'квалификац' in low:
-        p.program_type = ProgramType.DPP_PK
-    elif 'переподготовк' in low:
+    elif 'повышени' in low and 'квалификац' in low or 'переподготовк' in low:
         p.program_type = ProgramType.DPP_PK
 
     # Название в кавычках
@@ -225,7 +222,7 @@ def _heuristic_semantics(text: str, p: Params) -> None:
     m = re.search(r'(?:знают|умеют|работают\s+в)\s+([^.]{3,80})', low)
     if m and not p.entry_level:
         p.entry_level = m.group(0).strip().capitalize()
-    m = re.search(r'(?:основные\s+темы|темы)\s*(?:это|:|—|-)?\s*([^.]{5,200})', text, flags=re.I)
+    m = re.search(r'(?:основные\s+темы|темы)\s*(?:это|:|—|-)?\s*([^.]{5,200})', text, flags=re.IGNORECASE)
     if m:
         parts = re.split(r',\s*|\s+и\s+', m.group(1))
         p.required_topics = [x.strip(' .') for x in parts if 2 < len(x.strip()) < 60][:10]

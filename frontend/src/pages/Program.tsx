@@ -7,6 +7,7 @@ import {
 import { api, download, getSession, STATUS_LABEL, waitJob } from '../api'
 import { Avatar, Spinner, useToast } from '../components/ui'
 import { REVIEW_LABEL } from './Reviews'
+import { EditableText, TemplateSwitch, ToolsPanel } from './ProgramTools'
 
 type Doc = any
 const STEPS = ['Запрос', 'Вопросы', 'Каркас', 'Проверка', 'Комплект', 'Согласование']
@@ -32,6 +33,7 @@ export default function Program() {
   const [doc, setDoc] = useState<Doc | null>(null)
   const [step, setStep] = useState(0)
   const [sub, setSub] = useState<'report' | 'edit'>('report')
+  const [editInit, setEditInit] = useState<{ target?: string; instruction?: string }>({})
   const [job, setJob] = useState<any>(null)
   const [user, setUser] = useState(getSession()?.user)
   const toast = useToast()
@@ -119,8 +121,8 @@ export default function Program() {
           {!building && step === 4 && <CheckView doc={doc} setDoc={setDoc} reload={load} onJob={(j) => { setStep(5); track(j) }} />}
           {!building && step === 5 && (job || doc.status === 'generating' || doc.status === 'skeleton_approved'
             ? <Generation doc={doc} job={job} reload={load} />
-            : sub === 'edit' ? <EditView doc={doc} setDoc={setDoc} back={() => setSub('report')} />
-              : <ReportView doc={doc} onEdit={() => setSub('edit')} onNext={() => setStep(6)} />)}
+            : sub === 'edit' ? <EditView doc={doc} setDoc={setDoc} init={editInit} back={() => setSub('report')} />
+              : <ReportView doc={doc} onEdit={(target, instruction) => { setEditInit({ target, instruction }); setSub('edit') }} onNext={() => setStep(6)} />)}
           {!building && step === 6 && (role === 'head' ? <ApproveView doc={doc} reload={load} /> : <TeamView doc={doc} setDoc={setDoc} reload={load} />)}
         </div>
       )}
@@ -270,7 +272,7 @@ function QuestionsView({ doc, onJob }: { doc: Doc; onJob: (j: string) => void })
 }
 
 /* ---------------- 3. Каркас ---------------- */
-function HoursTable({ doc, editable, onChange }: { doc: Doc; editable: boolean; onChange?: (mid: string, k: string, v: number) => void }) {
+function HoursTable({ doc, editable, onChange, onPatch }: { doc: Doc; editable: boolean; onChange?: (mid: string, k: string, v: number) => void; onPatch?: (patch: any) => Promise<void> }) {
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const tot = doc.totals || {}
   const fa = doc.final_assessment || {}
@@ -285,7 +287,8 @@ function HoursTable({ doc, editable, onChange }: { doc: Doc; editable: boolean; 
               <tr key={m.id}>
                 <td><b>{m.n}</b></td>
                 <td><button onClick={() => setOpen({ ...open, [m.id]: !open[m.id] })} style={{ border: 0, background: 'none', padding: 0, color: 'inherit', fontWeight: 700, textAlign: 'left' }}>
-                  <ChevronRight size={14} style={{ transform: open[m.id] ? 'rotate(90deg)' : '', transition: 'transform .2s', verticalAlign: -2 }} /> {m.title}</button></td>
+                  <ChevronRight size={14} style={{ transform: open[m.id] ? 'rotate(90deg)' : '', transition: 'transform .2s', verticalAlign: -2 }} /> </button>
+                  <b><EditableText value={m.title} disabled={!editable || !onPatch} onSave={(v) => onPatch!({ modules: [{ id: m.id, title: v }] })} /></b></td>
                 <td className="num"><b style={{ color: sum !== m.hours.total ? 'var(--red)' : undefined }}>{sum}</b></td>
                 {KINDS.map((k) => (
                   <td key={k} className="num">{editable ? <input className="hours-input" type="number" min={0} value={m.hours[k]} onChange={(e) => onChange?.(m.id, k, Number(e.target.value))} /> : m.hours[k]}</td>
@@ -293,7 +296,7 @@ function HoursTable({ doc, editable, onChange }: { doc: Doc; editable: boolean; 
                 <td className="small">{m.control}</td>
               </tr>,
               ...(open[m.id] ? m.topics.map((t: any) => (
-                <tr key={t.id} className="sub"><td>{t.n}</td><td>{t.title}</td><td className="num">{t.hours.total}</td>{KINDS.map((k) => <td key={k} className="num">{t.hours[k]}</td>)}<td /></tr>
+                <tr key={t.id} className="sub"><td>{t.n}</td><td><EditableText value={t.title} disabled={!editable || !onPatch} onSave={(v) => onPatch!({ modules: [{ id: m.id, topics: [{ id: t.id, title: v }] }] })} /></td><td className="num">{t.hours.total}</td>{KINDS.map((k) => <td key={k} className="num">{t.hours[k]}</td>)}<td /></tr>
               )) : []),
             ]
           })}
@@ -311,6 +314,14 @@ function SkeletonView({ doc, setDoc, onNext }: { doc: Doc; setDoc: (d: Doc) => v
   const [saving, setSaving] = useState(false)
   const all = (doc.totals?.total || 0) + (doc.final_assessment?.hours || 0)
   const ok = all === doc.volume_h
+
+  async function patch(body: any) {
+    setSaving(true)
+    try {
+      const r = await api(`/programs/${doc.id}/skeleton`, { method: 'PATCH', json: body })
+      setDoc({ ...r.program, totals: r.totals, readiness: doc.readiness })
+    } catch (e: any) { toast(e.message, true) } finally { setSaving(false) }
+  }
 
   async function change(mid: string, k: string, v: number) {
     const local = structuredClone(doc)
@@ -330,8 +341,8 @@ function SkeletonView({ doc, setDoc, onNext }: { doc: Doc; setDoc: (d: Doc) => v
       <div className="col">
         <section className="card card-pad">
           <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Учебный план</h2>{saving && <span className="small muted row"><Spinner /> пересчитываю</span>}<span className={`chip ${ok ? 'chip-ok' : 'chip-err'}`}>{all} из {doc.volume_h} ч</span></div>
-          <p className="small muted">{editable ? 'Часы в жёлтых полях можно менять. Итоги и проверки пересчитываются сразу. Нажмите на модуль, чтобы увидеть темы.' : 'Каркас утверждён: часы меняются только точечной правкой.'}</p>
-          <HoursTable doc={doc} editable={editable} onChange={change} />
+          <p className="small muted">{editable ? 'Часы в полях и названия модулей и тем можно менять: итоги и проверки пересчитываются сразу. Стрелка раскрывает темы.' : 'Каркас утверждён: часы меняются только точечной правкой.'}</p>
+          <HoursTable doc={doc} editable={editable} onChange={change} onPatch={patch} />
           {!ok && <div className="callout warn small" style={{ marginTop: 12 }}>Сначала исправьте часы: сумма с аттестацией должна быть {doc.volume_h} ч.</div>}
         </section>
         <section className="card card-pad">
@@ -352,9 +363,10 @@ function SkeletonView({ doc, setDoc, onNext }: { doc: Doc; setDoc: (d: Doc) => v
         </section>
       </div>
       <aside className="col col-16">
+        {editable && <section className="card card-pad"><TemplateSwitch doc={doc} setDoc={setDoc} /></section>}
         <section className="card card-pad">
           <h3 className="h3">Цель и компетенции</h3>
-          <p className="small" style={{ color: 'var(--ink-2)' }}>{doc.goal}</p>
+          <p className="small" style={{ color: 'var(--ink-2)' }}><EditableText multiline value={doc.goal} disabled={!editable} onSave={(v) => patch({ goal: v })} /></p>
           {doc.profstandard && (
             <div className="callout small" style={{ margin: '10px 0' }}>Профстандарт <b>{doc.profstandard.code}</b> «{doc.profstandard.title}», {doc.profstandard.order} · {doc.profstandard.confirmed ? 'из реестра' : 'коды ТФ сверить с реестром Минтруда'}</div>
           )}
@@ -363,10 +375,10 @@ function SkeletonView({ doc, setDoc, onNext }: { doc: Doc; setDoc: (d: Doc) => v
               const cnt = (k: string) => c.indicators.filter((i: any) => i.kind === k).reduce((s: number, i: any) => s + i.outcomes.length, 0)
               return (
                 <details key={c.id} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '8px 12px' }}>
-                  <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>{c.code} {c.title} <span className="tiny muted">З {cnt('know')} · У {cnt('can')} · Н {cnt('own')}</span></summary>
+                  <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>{c.code} <EditableText value={c.title} disabled={!editable} onSave={(v) => patch({ competencies: [{ id: c.id, title: v }] })} /> <span className="tiny muted">З {cnt('know')} · У {cnt('can')} · Н {cnt('own')}</span></summary>
                   {c.tf_codes?.length > 0 && <div className="tiny muted" style={{ marginTop: 6 }}>ТФ {c.tf_codes.join(', ')}</div>}
                   <ul className="small" style={{ paddingLeft: 18, margin: '6px 0 0', color: 'var(--ink-2)' }}>
-                    {c.indicators.flatMap((i: any) => i.outcomes.map((o: any) => <li key={o.id}><b>{o.code}</b> {o.text}</li>))}
+                    {c.indicators.flatMap((i: any) => i.outcomes.map((o: any) => <li key={o.id}><b>{o.code}</b> <EditableText value={o.text} disabled={!editable} onSave={(v) => patch({ outcomes: [{ id: o.id, text: v }] })} /></li>))}
                   </ul>
                 </details>
               )
@@ -520,7 +532,7 @@ function Generation({ doc, job, reload }: { doc: Doc; job: any; reload: () => vo
   return (
     <div className="grid-main">
       <section className="card card-pad">
-        <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Собираю комплект по модулям</h2><span className="chip chip-blue"><Spinner /> модули идут параллельно</span></div>
+        <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Собираю комплект по модулям</h2><span className="chip chip-blue"><Spinner /> {done} из {mods.length} готово</span></div>
         <div className="progress" style={{ margin: '16px 0' }}><i style={{ width: `${mods.length ? (done / mods.length) * 100 : 5}%` }} /></div>
         <div className="stagger" style={{ display: 'grid', gap: 8 }}>
           {mods.map((m: any) => (
@@ -543,6 +555,8 @@ function Generation({ doc, job, reload }: { doc: Doc; job: any; reload: () => vo
         </section>
         <section className="card card-pad">
           <div className="param"><span className="k">Время</span><span className="v">{p.elapsed_s ? `${Math.round(p.elapsed_s)} с` : '—'} · лимит ТЗ 20 мин</span></div>
+          <div className="param"><span className="k">Осталось</span><span className="v">{p.eta_s != null ? `≈ ${Math.max(1, Math.round(p.eta_s))} с` : 'оцениваю'}</span></div>
+          <div className="param"><span className="k">Потоков</span><span className="v">{p.workers || 6} модулей параллельно</span></div>
           <div className="param"><span className="k">Токены</span><span className="v">{p.usage?.tokens ?? 0}</span></div>
           <div className="param"><span className="k">Стоимость</span><span className="v">{p.usage?.cost_rub ?? 0} ₽ по тарифу Cloud.ru</span></div>
           <p className="tiny muted">GigaChat 3 Pro собирает содержание, код проверяет часы и 23 правила из 27.</p>
@@ -639,7 +653,7 @@ function ModuleContent({ doc, module }: { doc: Doc; module: any }) {
   )
 }
 
-function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: () => void; onNext: () => void }) {
+function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: (target?: string, instruction?: string) => void; onNext: () => void }) {
   const rep = doc.report || { rules: [] }
   const [mod, setMod] = useState(doc.modules[0]?.id)
   const unconfirmed = (doc.sources || []).filter((s: any) => !s.confirmed)
@@ -652,6 +666,7 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: () => void; onN
             <span className={`chip ${rep.blocking_passed === rep.blocking_total ? 'chip-ok' : 'chip-err'}`}>{rep.blocking_passed} из {rep.blocking_total} блокирующих</span></div>
           <div style={{ marginTop: 14 }}><RuleList rules={rep.rules} /></div>
           {unconfirmed.length > 0 && <div className="callout warn small">Для методиста: {unconfirmed.length} источн. не найдено в реестре и помечено «не подтверждено» в списке литературы. Проверьте вручную или замените.</div>}
+          {(doc.kit?.drafts || []).length > 0 && <div className="callout warn small">Модель не ответила для модулей {doc.modules.filter((x: any) => doc.kit.drafts.includes(x.id)).map((x: any) => x.n).join(', ')}: их содержание собрано по шаблону из каркаса. Пересоберите модуль точечной правкой или передайте эксперту.</div>}
         </section>
         <aside className="col col-16">
           <section className="card card-pad">
@@ -676,9 +691,10 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: () => void; onN
           </select></div>
         <div style={{ marginTop: 12 }}>{m && <ModuleContent doc={doc} module={m} />}</div>
       </section>
+      <ToolsPanel doc={doc} onEdit={(t, i) => onEdit(t, i)} />
       <section className="card card-pad row row-wrap">
         <div className="grow"><b>Нужно поменять тему, тест или задание?</b><div className="small muted">Агент пересоберёт только связанные части.</div></div>
-        <button className="btn btn-ghost" onClick={onEdit}><GitBranch size={16} /> Точечная правка</button>
+        <button className="btn btn-ghost" onClick={() => onEdit()}><GitBranch size={16} /> Точечная правка</button>
         <button className="btn btn-primary" onClick={onNext}>Перейти к согласованию <ArrowRight size={16} /></button>
       </section>
     </div>
@@ -686,16 +702,16 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: () => void; onN
 }
 
 /* ---------------- Точечная правка ---------------- */
-function EditView({ doc, setDoc, back }: { doc: Doc; setDoc: (d: Doc) => void; back: () => void }) {
+function EditView({ doc, setDoc, back, init }: { doc: Doc; setDoc: (d: Doc) => void; back: () => void; init?: { target?: string; instruction?: string } }) {
   const toast = useToast()
   const targets = useMemo(() => [
     ...doc.modules.flatMap((m: any) => m.topics.map((t: any) => ({ id: t.id, label: `Тема ${t.n}. ${t.title}`, kind: 'topic', title: t.title, desc: t.description, hours: t.hours }))),
     ...(doc.kit?.tasks || []).map((t: any) => ({ id: t.id, label: `Задание: ${t.title}`, kind: 'task' })),
     ...(doc.kit?.questions || []).slice(0, 60).map((q: any) => ({ id: q.id, label: `Вопрос: ${q.stem.slice(0, 70)}`, kind: 'question' })),
   ], [doc])
-  const [target, setTarget] = useState(targets[0]?.id)
+  const [target, setTarget] = useState(init?.target && targets.some((x: any) => x.id === init.target) ? init.target : targets[0]?.id)
   const [title, setTitle] = useState('')
-  const [instr, setInstr] = useState('')
+  const [instr, setInstr] = useState(init?.instruction || '')
   const [plan, setPlan] = useState<any>(null)
   const [result, setResult] = useState<any>(null)
   const [busy, setBusy] = useState('')
@@ -894,6 +910,7 @@ function ApproveView({ doc, reload }: { doc: Doc; reload: () => void }) {
   }
   const people = (doc.approvals || []).slice(-8)
   return (
+    <div className="col">
     <div className="grid-main">
       <div className="col">
         <section className="card card-pad row row-wrap" style={{ gap: 24 }}>
@@ -956,6 +973,8 @@ function ApproveView({ doc, reload }: { doc: Doc; reload: () => void }) {
         </section>
         <section className="card card-pad"><h3 className="h3">Документы</h3><ExportBlock doc={doc} /></section>
       </aside>
+    </div>
+    <ToolsPanel doc={doc} only={['text', 'versions', 'actual']} />
     </div>
   )
 }

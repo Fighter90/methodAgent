@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, FileText, Paperclip, Plus, Sparkles, Upload, X } from 'lucide-react'
+import { ArrowRight, FileText, Paperclip, Plus, RefreshCw, Sparkles, Upload, X } from 'lucide-react'
 import { api, getSession, STATUS_LABEL } from '../api'
 import { Spinner, useToast } from '../components/ui'
+import { FindingsList } from './ProgramTools'
 
 export const EXAMPLES = [
   { t: 'Python для школьников · 16 ч', q: 'Нужна дополнительная общеразвивающая программа «Первые шаги в Python» для школьников 8 и 9 классов без опыта программирования. Объем 16 часов, занятия очно по 2 часа два раза в неделю. Практики должно быть не меньше половины всех часов. В конце каждый ученик защищает небольшой проект, например простую игру или чат-бота. Нужны итоговый тест на 10 вопросов и слайды для первых двух занятий.' },
@@ -25,8 +26,18 @@ export default function Programs() {
   const nav = useNavigate()
   const toast = useToast()
   const role = getSession()?.user.role
+  const [filter, setFilter] = useState(role === 'head' ? 'on_approval,approved' : '')
+  const [since, setSince] = useState('')
+  const [until, setUntil] = useState('')
 
-  useEffect(() => { api('/programs').then(setList).catch((e) => { setList([]); toast(e.message, true) }) }, [toast])
+  useEffect(() => {
+    const q = new URLSearchParams()
+    if (filter) q.set('status', filter)
+    if (since) q.set('since', since)
+    if (until) q.set('until', until)
+    setList(null)
+    api(`/programs${q.toString() ? `?${q}` : ''}`).then(setList).catch((e) => { setList([]); toast(e.message, true) })
+  }, [toast, filter, since, until])
 
   async function create() {
     if (text.trim().length < 5) return toast('Опишите программу хотя бы в одном предложении', true)
@@ -97,6 +108,15 @@ export default function Programs() {
             <h2 className="h2" style={{ margin: 0 }}>{role === 'head' ? 'Программы организации' : 'Мои программы'}</h2>
             <span className="chip">{list?.length ?? 0}</span>
           </div>
+          <div className="filters">
+            {[['', 'Все'], ['on_approval', 'На утверждении'], ['approved', 'Утверждённые'], ['on_approval,approved', 'Оба статуса'], ['kit_ready', 'Комплект готов']].map(([v, l]) => (
+              <button key={v} className={`chip ${filter === v ? 'chip-ok' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setFilter(v)}>{l}</button>
+            ))}
+            <span className="grow" />
+            <span className="tiny muted">за период</span>
+            <input type="date" className="field" style={{ width: 'auto', padding: '6px 10px' }} value={since} onChange={(e) => setSince(e.target.value)} aria-label="С даты" />
+            <input type="date" className="field" style={{ width: 'auto', padding: '6px 10px' }} value={until} onChange={(e) => setUntil(e.target.value)} aria-label="По дату" />
+          </div>
           {list === null && <div style={{ display: 'grid', gap: 10 }}>{[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 74 }} />)}</div>}
           {list && list.length === 0 && (
             <div className="card empty"><FileText size={34} /><p>Программ пока нет. {role === 'methodist' ? 'Опишите первую в форме выше.' : 'Методист ещё не создал ни одной.'}</p></div>
@@ -107,7 +127,7 @@ export default function Programs() {
                 <span className="glass-icon" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'transparent', width: 42, height: 42 }}><FileText size={19} /></span>
                 <div className="grow">
                   <b>{p.title || 'Программа без названия'}</b>
-                  <div className="tiny muted">версия {p.version} · обновлена {(p.updated_at || '').slice(0, 16).replace('T', ' ')}</div>
+                  <div className="tiny muted">{p.template ? `${p.template} · ` : ''}{p.volume_h ? `${p.volume_h} ч · ` : ''}версия {p.version} · обновлена {(p.updated_at || '').slice(0, 16).replace('T', ' ')}{p.blocking != null ? ` · проверки ${p.blocking}/10` : ''}</div>
                 </div>
                 <span className={`chip ${STATUS_CHIP[p.status] || ''}`}>{STATUS_LABEL[p.status] || p.status}</span>
                 <ArrowRight size={18} className="muted" />
@@ -127,6 +147,7 @@ export default function Programs() {
           </div>
           <Link to="/help" className="btn btn-ghost btn-sm" style={{ marginTop: 6 }}><Plus size={14} /> Подробнее в справке</Link>
         </div>
+        {role === 'methodist' && <ActualizeCard />}
         <div className="card card-pad" style={{ background: 'linear-gradient(135deg, var(--accent-soft), var(--blue-soft))', border: 0 }}>
           <h3 className="h3">Гарантии</h3>
           <ul className="small" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7, color: 'var(--ink-2)' }}>
@@ -137,6 +158,37 @@ export default function Programs() {
           </ul>
         </div>
       </aside>
+    </div>
+  )
+}
+
+/* Актуализация старой программы из файла (FR-61) */
+function ActualizeCard() {
+  const toast = useToast()
+  const input = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [res, setRes] = useState<any>(null)
+  async function run(f: File | undefined) {
+    if (!f) return
+    setBusy(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', f)
+      setRes(await api('/actualize', { method: 'POST', body: fd }))
+    } catch (e: any) { toast(e.message, true) } finally { setBusy(false) }
+  }
+  return (
+    <div className="card card-pad">
+      <h3 className="h3"><RefreshCw size={16} style={{ verticalAlign: -3 }} /> Актуализация старой программы</h3>
+      <p className="small muted" style={{ marginTop: 0 }}>Загрузите прошлую программу: агент найдёт устаревшие инструменты, версии, сервисы и источники по реестру 2026 года и предложит замену.</p>
+      <div className="kb-drop" onClick={() => input.current?.click()}>{busy ? <Spinner /> : <Upload size={16} style={{ verticalAlign: -3 }} />} Выбрать .docx, .pdf или .txt</div>
+      <input ref={input} type="file" hidden accept=".docx,.pdf,.txt" onChange={(e) => run(e.target.files?.[0])} />
+      {res && (
+        <div style={{ marginTop: 12 }}>
+          <div className="tiny muted" style={{ marginBottom: 8 }}>{res.name} · {Math.round(res.chars / 1000)} тыс. знаков · находок {res.total}</div>
+          <FindingsList items={res.findings} />
+        </div>
+      )}
     </div>
   )
 }

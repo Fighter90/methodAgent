@@ -15,11 +15,14 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from pydantic import BaseModel
+
 from app.agent.sections import build_sections
+from app.core.config import get_settings
 from app.core.db import now_iso
 from app.core.errors import Conflict, NotFound
 from app.kb.registry import literature_for, match_source
-from app.llm.client import CallStats
+from app.llm.client import CallStats, get_llm
 from app.programs.schemas import (
     Approval,
     Assessment,
@@ -42,13 +45,21 @@ from app.programs.schemas import (
     Task,
     Topic,
 )
-from app.skills.classify import run as classify
 from app.skills.clarify import run as clarify
+from app.skills.classify import run as classify
 from app.skills.content import run as content
 from app.skills.intake import run as intake
 from app.skills.skeleton import run as skeleton
 from app.solver.calendar import CalendarOut, apply_option, plan_calendar
-from app.solver.hours import KINDS, HoursRow, ModuleIn, TopicIn, largest_remainder, solve
+from app.solver.hours import (
+    KINDS,
+    HoursRow,
+    ModuleIn,
+    TopicIn,
+    largest_remainder,
+    solve,
+)
+from app.validation.judge import judge
 from app.validation.repair import repair
 from app.validation.report import build_report
 
@@ -269,11 +280,15 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
         raise Conflict('Сначала ответьте на вопросы: тип программы не определён', code='QUESTIONS_PENDING')
     stats = CallStats()
     started = time.monotonic()
+    if doc.norm_mode == 'org' and not any(n.startswith(('Использую документы организации', 'Режим «документы организации»')) for n in doc.agent_notes):
+        from app.agent.extras import apply_org_docs
+
+        await apply_org_docs(doc)
     structure = [s for r in doc.references for s in r.structure]
     draft = await skeleton.run(doc.params, doc.type, doc.profstandard, structure, stats, comment)
     if draft.source != 'llm':
         doc.agent_notes.append('Каркас собран по типовой структуре направления (модель недоступна) — проверьте темы.')
-    doc.title = doc.params.title or draft.title
+    doc.title = _cap((doc.params.title or draft.title).strip())
     doc.goal = draft.goal
     doc.competencies = draft.competencies
     if doc.type == ProgramType.DOOP:
@@ -425,12 +440,26 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
     module_state = {m.id: {'n': m.n, 'title': m.title, 'status': 'ждёт', 'parts': ''} for m in doc.modules}
     feed: list[dict[str, str]] = []
 
+    workers = max(4, get_settings().gen_workers)
+    gate = asyncio.Semaphore(workers)
+
     async def _report(extra: str = '') -> None:
         if extra:
             feed.append({'t': time.strftime('%H:%M:%S'), 'text': extra})
-        await progress({'modules': list(module_state.values()), 'feed': feed[-12:], 'usage': {'tokens': stats.tokens_in + stats.tokens_out, 'cost_rub': round(stats.cost_rub, 2)}, 'elapsed_s': round(time.monotonic() - started, 1)})
+        elapsed = time.monotonic() - started
+        done = sum(1 for x in module_state.values() if x['status'] == 'готово')
+        eta = round(elapsed / done * (len(module_state) - done), 0) if done else None
+        await progress({
+            'modules': list(module_state.values()), 'feed': feed[-12:], 'workers': workers,
+            'usage': {'tokens': stats.tokens_in + stats.tokens_out, 'cost_rub': round(stats.cost_rub, 2), 'by_skill': stats.by_skill},
+            'elapsed_s': round(elapsed, 1), 'eta_s': eta, 'done': done, 'total': len(module_state),
+        })
 
     async def _one(m: Module):
+        async with gate:
+            return await _one_inner(m)
+
+    async def _one_inner(m: Module):
         module_state[m.id]['status'] = 'идёт'
         await _report(f'content · модуль {m.n} «{m.title}»')
         test_id = 'test-final' if final_split else f'test-{m.id}'
@@ -450,6 +479,8 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
         kit.tasks += res.tasks
         kit.lectures += res.lectures
         extra_sources += res.sources
+        if res.source != 'llm':
+            kit.drafts.append(m.id)
         if res.questions and not final_split:
             kit.assessments.append(Assessment(id=f'test-{m.id}', module_id=m.id, kind='test', title=f'Тест М{m.n}'))
         if res.tasks:
@@ -480,6 +511,7 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
             for m in doc.modules
         }
     doc.kit = kit
+    await _fix_examples(doc, stats, _report)
     _sources(doc, extra_sources)
     doc.kit.sections = build_sections(doc)
     await _report('validate · 27 правил')
@@ -491,6 +523,11 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
         if log:
             await _report('repair · ' + '; '.join(log[:3]))
         doc.kit.sections = build_sections(doc)
+        doc.report = build_report(doc, 'kit')
+    if get_settings().llm_judge_enabled and get_llm().enabled:
+        await _report('judge · смысловые правила V-21, V-22, V-26, V-27')
+        for line in await judge(doc, stats):
+            await _report('judge · ' + line[:120])
         doc.report = build_report(doc, 'kit')
     doc.status = Status.KIT_READY
     _stats_to_usage(doc, stats)
@@ -538,6 +575,18 @@ def _final_assessment(doc: ProgramDoc) -> tuple[dict[str, Any], Task, list[str]]
     else:
         statement = f'Итоговая аттестация в форме: {form}. Слушатель выполняет комплексное задание по материалам программы.'
         criteria = [Criterion(text='Задание выполнено полностью', points=5), Criterion(text='Ответы на вопросы', points=5)]
+    if not report_req:
+        if 'проект' in low and doc.type != ProgramType.DOOP:
+            report_req = [
+                'Постановка задачи и описание исходных данных (данные обезличены, источник указан)',
+                'Ход решения: подготовка данных, применённые методы и инструменты',
+                'Результаты: таблицы, графики, выводы и рекомендации для заказчика',
+                'Презентация для защиты на 5–7 минут и ссылка на файлы проекта',
+            ]
+        elif 'проект' in low:
+            report_req = ['Работающая программа или прототип', 'Короткий рассказ: идея, как устроена программа, что получилось', 'Демонстрация на защите до 5 минут']
+        elif 'портфолио' in low:
+            report_req = ['Три материала, созданных с помощью ИИ, с указанием сервиса и промпта', 'Проверка каждого материала на ошибки и соответствие ФГОС', 'Краткая рефлексия: что сократило время подготовки и какие риски учтены']
     task = Task(id='final-task', assessment_id='final', title=f'Итоговая аттестация: {form}', statement=statement,
                 expected_result='Результат, соответствующий критериям', criteria=criteria, lo_ids=all_lo)
     doc.final_assessment.description = statement
@@ -600,7 +649,7 @@ def descendants(doc: ProgramDoc, target: str) -> dict[str, list[str]]:
         return {
             'rebuild': [f'Тема {topic.n} в программе и УТП', *[f'План лекции и слайды {topic.n}' for _ in lecs], f'{len(qs)} вопрос(а) теста модуля {module.n}', *[f'Задание семинара {topic.n} и критерии' for _ in tasks]],
             'nodes': [topic.id, *qs, *tasks, *lecs],
-            'keep': ['Учебный план и все часы', 'Компетенции и остальные РО', f'Остальные модули и их материалы', 'Итоговая аттестация'],
+            'keep': ['Учебный план и все часы', 'Компетенции и остальные РО', 'Остальные модули и их материалы', 'Итоговая аттестация'],
         }
     q = next((x for x in doc.kit.questions if x.id == target), None)
     if q is not None:
@@ -789,3 +838,48 @@ def head_decision(doc: ProgramDoc, actor: str, decision: str, comment: str = '')
 
 
 __all__ = ['Topic']
+
+
+def _cap(text: str) -> str:
+    """Название программы с прописной буквы, даже если в запросе оно написано строчными."""
+    return text[:1].upper() + text[1:] if text else text
+
+
+class _CodeFix(BaseModel):
+    code: str
+
+
+async def _fix_examples(doc: ProgramDoc, stats: CallStats, report: Callable[[str], Awaitable[None]]) -> None:
+    """V-24 до проверки: пример, упавший в песочнице, модель переписывает один раз; не помогло — пример убирается."""
+    from app.validation.sandbox import run_detailed
+
+    llm = get_llm()
+    checked = 0
+    for lec in doc.kit.lectures:
+        fixed: list[str] = []
+        for code in lec.code_examples:
+            checked += 1
+            res = await asyncio.to_thread(run_detailed, code) if checked <= 12 else {'ok': True}
+            if res['ok']:
+                fixed.append(code)
+                continue
+            new_code = ''
+            if llm.enabled:
+                try:
+                    out = await llm.complete_json(
+                        skill='content',
+                        system='Исправь учебный пример кода на Python. Только стандартная библиотека, без input(), сети, файлов и сторонних модулей; '
+                               'пример запускается сам и печатает результат через print. Уровень — как у аудитории. Верни JSON {"code": "..."}.',
+                        user=json.dumps({'audience': doc.params.audience, 'topic': lec.title, 'code': code, 'error': res['error']}, ensure_ascii=False),
+                        schema=_CodeFix, temperature=0.2, max_tokens=900, stats=stats,
+                    )
+                    retry = await asyncio.to_thread(run_detailed, out.code)
+                    new_code = out.code if retry['ok'] and out.code.strip() else ''
+                except Exception as exc:  # noqa: BLE001 — без модели пример просто убирается
+                    logging.getLogger(__name__).warning('пример кода не исправлен: %s', str(exc)[:200])
+            if new_code:
+                fixed.append(new_code)
+                await report(f'песочница · пример к лекции «{lec.title}» исправлен')
+            else:
+                await report(f'песочница · пример к лекции «{lec.title}» убран: {res["error"][:80]}')
+        lec.code_examples = fixed

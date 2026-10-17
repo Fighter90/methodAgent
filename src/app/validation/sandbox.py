@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
+import time
+from typing import Any
 
 from app.programs.schemas import ProgramDoc
 
@@ -22,34 +25,57 @@ def _limits() -> None:  # pragma: no cover — выполняется в доч�
     resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
 
 
-def run_snippet(code: str) -> str | None:
-    """Выполняет пример; возвращает текст ошибки или None. Сеть запрещена через пустой прокси."""
-    if not code.strip() or 'import os' in code or 'subprocess' in code or 'socket' in code:
-        return None
-    if any(lib in code for lib in ('import pandas', 'import numpy', 'import matplotlib', 'import seaborn', 'sqlite3', 'requests')):
+_HEAVY = ('pandas', 'numpy', 'matplotlib', 'seaborn', 'sklearn', 'requests', 'sqlalchemy')
+
+
+def libraries(code: str) -> list[str]:
+    """Импортируемые библиотеки примера."""
+    found = re.findall(r'^\s*(?:from|import)\s+([a-zA-Z_][\w]*)', code, flags=re.MULTILINE)
+    return list(dict.fromkeys(found))
+
+
+def run_detailed(code: str) -> dict[str, Any]:
+    """Выполняет пример в песочнице: статус, вывод, время, режим (запуск или только синтаксис)."""
+    started = time.monotonic()
+    res: dict[str, Any] = {'ok': True, 'mode': 'run', 'error': '', 'stdout': '', 'seconds': 0.0}
+    if not code.strip():
+        return res | {'mode': 'skip'}
+    if 'import os' in code or 'subprocess' in code or 'socket' in code:
+        return res | {'mode': 'skip', 'error': 'Пример обращается к системе — не запускается, проверьте вручную'}
+    if any(lib in _HEAVY for lib in libraries(code)) or 'sqlite3' in code:
         # Тяжёлые библиотеки проверяются только на синтаксис: в образе ВМ их может не быть
+        res['mode'] = 'syntax'
         try:
             compile(code, '<example>', 'exec')
-            return None
         except SyntaxError as exc:
-            return f'Синтаксическая ошибка: {exc.msg} (строка {exc.lineno})'
+            res |= {'ok': False, 'error': f'Синтаксическая ошибка: {exc.msg} (строка {exc.lineno})'}
+        res['seconds'] = round(time.monotonic() - started, 3)
+        return res
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            proc = subprocess.run(  # noqa: S603 — фиксированный интерпретатор, код только из комплекта
+            proc = subprocess.run(
                 [sys.executable, '-I', '-c', code],
                 cwd=tmp,
                 capture_output=True,
                 timeout=_TIMEOUT_S,
                 env={'PATH': '/usr/bin:/bin', 'HTTP_PROXY': 'http://0.0.0.0:9', 'HTTPS_PROXY': 'http://0.0.0.0:9'},
-                preexec_fn=_limits if os.name == 'posix' else None,  # noqa: PLW1509
+                preexec_fn=_limits if os.name == 'posix' else None,
                 input=b'5\n5\n5\n',
             )
         except subprocess.TimeoutExpired:
-            return 'Пример выполняется дольше 10 с'
+            return res | {'ok': False, 'error': 'Пример выполняется дольше 10 с', 'seconds': float(_TIMEOUT_S)}
+        res['stdout'] = proc.stdout.decode('utf-8', 'ignore')[:800]
         if proc.returncode != 0:
             last = proc.stderr.decode('utf-8', 'ignore').strip().splitlines()[-1:] or ['ошибка']
-            return last[0][:200]
-    return None
+            res |= {'ok': False, 'error': last[0][:200]}
+    res['seconds'] = round(time.monotonic() - started, 3)
+    return res
+
+
+def run_snippet(code: str) -> str | None:
+    """Выполняет пример; возвращает текст ошибки или None. Сеть запрещена через пустой прокси."""
+    r = run_detailed(code)
+    return None if r['ok'] else r['error']
 
 
 def check_examples(doc: ProgramDoc, limit: int = 12) -> list[str]:

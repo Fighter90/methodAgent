@@ -13,7 +13,7 @@ $DC up -d --build
 # на случай выключенного docker.service — запись @reboot в crontab.
 sudo systemctl enable docker >/dev/null 2>&1 || true
 LINE="@reboot cd $(pwd) && $DC up -d >> $(pwd)/logs/reboot.log 2>&1"
-( crontab -l 2>/dev/null | grep -v 'metodagent-autostart' ; echo "$LINE # metodagent-autostart" ) | crontab -
+{ crontab -l 2>/dev/null | grep -v 'metodagent-autostart' || true; echo "$LINE # metodagent-autostart"; } | crontab -
 for i in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:8000/health >/dev/null; then echo "OK: $(curl -s http://127.0.0.1:8000/health)"; exit 0; fi
   sleep 2

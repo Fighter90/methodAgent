@@ -14,7 +14,7 @@ services:
       ENVIRONMENT: production
       SECRET_KEY: ${SECRET_KEY:-}
       LLM_PROVIDERS: ${LLM_PROVIDERS:-cloudru}
-      LLM_JUDGE_ENABLED: ${LLM_JUDGE_ENABLED:-false}
+      LLM_JUDGE_ENABLED: ${LLM_JUDGE_ENABLED:-true}
       DATA_DIR: /app/data/runtime
     volumes:
       - ./data:/app/data

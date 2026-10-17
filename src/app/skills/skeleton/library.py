@@ -289,3 +289,22 @@ def pick_domain(text: str) -> Domain | None:
         if score > best_score:
             best, best_score = d, score
     return best
+
+
+# Темы, без которых программа направления неполна (чек-листы АЦР): название, описание, признаки в тексте
+MUST_COVER: dict[str, list[tuple[str, str, tuple[str, ...]]]] = {
+    'devops': [
+        ('Администрирование Linux', 'Командная строка, службы systemd, журналы, скрипты bash', ('linux', 'bash', 'systemd')),
+        ('Компьютерные сети', 'TCP/IP, DNS, HTTP, диагностика сети', ('сет', 'tcp', 'dns')),
+        ('Контейнеризация', 'Docker, образы, Docker Compose, основы Kubernetes', ('контейнер', 'docker', 'kubernetes')),
+        ('Конвейеры CI/CD', 'Git, конвейеры сборки, тестирования и доставки', ('ci/cd', 'ci ', 'конвейер', 'pipeline')),
+        ('Мониторинг и логирование', 'Метрики, алерты, сбор и анализ логов', ('мониторинг', 'prometheus', 'grafana', 'метрик')),
+        ('Инфраструктура как код: Terraform и Ansible', 'Описание инфраструктуры в Terraform/OpenTofu, плейбуки Ansible, идемпотентность', ('инфраструктура как код', 'iac', 'terraform', 'ansible', 'opentofu')),
+    ],
+    'data_analysis': [
+        ('Обработка данных в pandas', 'DataFrame, фильтрация, группировка, объединение таблиц', ('pandas', 'dataframe')),
+        ('Визуализация данных', 'Графики matplotlib и seaborn, выбор типа графика', ('визуализац', 'график', 'matplotlib')),
+        ('SQL для аналитика', 'SELECT, JOIN, GROUP BY, подключение к базе из Python', ('sql', 'запрос')),
+        ('Основы статистики', 'Описательная статистика, распределения, проверка гипотез', ('статистик', 'гипотез')),
+    ],
+}
