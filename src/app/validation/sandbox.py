@@ -25,6 +25,12 @@ def _limits() -> None:  # pragma: no cover — выполняется в доч�
     resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
 
 
+# Всё, чем пример может выйти за пределы учебной задачи: система, сеть, файлы, динамический импорт и eval
+_SYSTEM = re.compile(
+    r'\b(os|sys|subprocess|socket|shutil|pathlib|ctypes|importlib|builtins|signal|threading|multiprocessing|asyncio|urllib|http|ftplib|pickle|marshal)\b'
+    r'|__\w+__|\b(eval|exec|compile|open|getattr|setattr|globals|locals|vars|breakpoint)\s*\('
+)
+
 _HEAVY = ('pandas', 'numpy', 'matplotlib', 'seaborn', 'sklearn', 'requests', 'sqlalchemy')
 
 
@@ -40,7 +46,7 @@ def run_detailed(code: str) -> dict[str, Any]:
     res: dict[str, Any] = {'ok': True, 'mode': 'run', 'error': '', 'stdout': '', 'seconds': 0.0}
     if not code.strip():
         return res | {'mode': 'skip'}
-    if 'import os' in code or 'subprocess' in code or 'socket' in code:
+    if _SYSTEM.search(code):
         return res | {'mode': 'skip', 'error': 'Пример обращается к системе — не запускается, проверьте вручную'}
     if any(lib in _HEAVY for lib in libraries(code)) or 'sqlite3' in code:
         # Тяжёлые библиотеки проверяются только на синтаксис: в образе ВМ их может не быть

@@ -19,3 +19,13 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+    # Примеры кода из лекций исполняются в песочнице внутри контейнера: файловая система только для чтения, без привилегий
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 256
