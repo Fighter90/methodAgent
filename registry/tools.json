@@ -57,7 +57,10 @@
     "Claude",
     "Copilot",
     "DALL-E",
-    "Perplexity"
+    "Perplexity",
+    "DeepMind",
+    "Bard",
+    "Grok"
   ],
   "min_supported": {
     "python": "3.10",

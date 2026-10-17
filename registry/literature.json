@@ -30,5 +30,7 @@
   {"id": "lit-owasp-top10", "kind": "url", "bibl": "OWASP Top 10", "url": "https://owasp.org/Top10/", "tags": ["кибербез", "безопасност", "веб"]},
   {"id": "lit-shotts", "kind": "book", "bibl": "Шоттс У. Командная строка Linux. Полное руководство. — СПб.: Питер, 2017.", "tags": ["linux", "devops", "администрир"]},
   {"id": "lit-brikman", "kind": "book", "bibl": "Брикман Е. Terraform: инфраструктура на уровне кода. — СПб.: Питер, 2020.", "tags": ["terraform", "инфраструктур", "devops"]},
-  {"id": "lit-payne", "kind": "book", "bibl": "Пэйн Б. Python для детей и родителей. — М.: Эксмо, 2017.", "tags": ["python", "школ", "дет"]}
+  {"id": "lit-payne", "kind": "book", "bibl": "Пэйн Б. Python для детей и родителей. — М.: Эксмо, 2017.", "tags": ["python", "школ", "дет"]},
+  {"id": "lit-briggs", "kind": "book", "bibl": "Бриггс Дж. Python для детей. Самоучитель по программированию. — М.: Манн, Иванов и Фербер, 2017.", "tags": ["python", "школ", "дет"]},
+  {"id": "lit-dawson", "kind": "book", "bibl": "Доусон М. Программируем на Python. — СПб.: Питер, 2014.", "tags": ["python", "школ", "программир"]}
 ]

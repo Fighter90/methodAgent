@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from pydantic import BaseModel, Field
 
@@ -135,7 +136,8 @@ async def run(
             'need_slides': need_slides,
             'internship': internship,
             'tool_versions_2026': _relevant_tools(doc, m),
-            'question_rules': 'Вопросы теста — только по темам и РО этого модуля и на уровне аудитории; не упоминать инструменты, которых нет в темах; дистракторы правдоподобные, без абсурдных вариантов.',
+            'question_rules': 'Вопросы теста — только по темам и РО этого модуля и на уровне аудитории; не упоминать инструменты, которых нет в темах; дистракторы правдоподобные, без абсурдных вариантов. '
+            'Не упоминай сервисы, недоступные в России (' + ', '.join(tools().get('ai_services_blocked', [])) + '), нигде, даже в неверных вариантах ответа.',
             'note': instruction_extra
             or ('Стажировка: задания — практические задания на рабочем месте под руководством наставника. '
                 'interview — 3–5 разных вопросов собеседования с руководителем стажировки по темам модуля: '
@@ -151,7 +153,7 @@ async def run(
                 max_tokens=spec.max_tokens if need_slides else min(spec.max_tokens, 4500),
                 stats=stats,
             )
-            return _from_llm(doc, m, los, data, n_questions, test_id, slide_topics)
+            return _from_llm(doc, m, los, scrub_blocked(data), n_questions, test_id, slide_topics)
         except Exception as exc:  # noqa: BLE001 — сбой модели или разбора ответа: работает резервная генерация
             logging.getLogger(__name__).warning('%s: резервная генерация (%s: %s)', __name__, type(exc).__name__, str(exc)[:200])
     return fallback(doc, m, los, n_questions, test_id, slide_topics)
@@ -305,3 +307,37 @@ def fallback(doc: ProgramDoc, m: Module, los: list[LearningOutcome], n_questions
         )
     lectures = [_fallback_lecture(m, t) for t in m.topics if t.id in slide_topics]
     return ModuleContent(program=program, questions=questions, tasks=tasks, lectures=lectures, sources=[], source='template')
+
+
+
+def _blocked_rx() -> re.Pattern[str] | None:
+    names = tools().get('ai_services_blocked', [])
+    return re.compile(r'\b(' + '|'.join(re.escape(n) for n in names) + r')\b(\s*\([^)]*\))?', re.I) if names else None
+
+
+def scrub_blocked(data: ModuleContentLLM) -> ModuleContentLLM:
+    """Сервисы, недоступные в России, не попадают в комплект даже как неверные варианты теста.
+
+    Вопрос с таким сервисом отбрасывается (его место займёт шаблонный), в остальном тексте сервис
+    заменяется словами «зарубежный сервис».
+    """
+    rx = _blocked_rx()
+    if rx is None:
+        return data
+    # Замена в вариантах может дать второй верный ответ («какой сервис доступен в России?») — вопрос отбрасывается целиком
+    kept = [q for q in data.questions if not rx.search(' '.join([q.stem, *q.options]))]
+    data.questions = kept
+    raw = data.model_dump()
+    raw.pop('questions')
+
+    def walk(x):  # noqa: ANN001, ANN202
+        if isinstance(x, str):
+            return rx.sub('зарубежный сервис', x)
+        if isinstance(x, list):
+            return [walk(i) for i in x]
+        if isinstance(x, dict):
+            return {k: walk(v) for k, v in x.items()}
+        return x
+
+    cleaned = ModuleContentLLM.model_validate({**walk(raw), 'questions': [q.model_dump() for q in kept]})
+    return cleaned

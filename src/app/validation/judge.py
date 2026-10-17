@@ -35,7 +35,7 @@ class JudgeOut(BaseModel):
 
 
 def _view(doc: ProgramDoc) -> dict:
-    content = {c['topic_id']: c['text'] for mp in doc.kit.module_programs for c in mp.content}
+    # Только то, что нужно четырём правилам: короткий вход — короткое рассуждение, ответ укладывается в 4096 токенов
     return {
         'title': doc.title,
         'type': doc.template,
@@ -47,10 +47,11 @@ def _view(doc: ProgramDoc) -> dict:
         'outcomes': [f'{lo.code}: {lo.text}' for lo in doc.all_outcomes()],
         'modules': [
             {'n': m.n, 'title': m.title, 'hours': m.hours.total,
-             'topics': [{'n': t.n, 'title': t.title, 'text': (content.get(t.id) or t.description)[:200]} for t in m.topics]}
+             'topics': [f'{t.n} {t.title}' for t in m.topics]}
             for m in doc.modules
         ],
-        'agent_notes': doc.agent_notes[-5:],
+        'sample_text': [mp.annotation[:200] for mp in doc.kit.module_programs[:2]],
+        'agent_notes': [n[:160] for n in doc.agent_notes[-3:]],
     }
 
 
@@ -62,7 +63,7 @@ async def judge(doc: ProgramDoc, stats: CallStats | None = None) -> list[str]:
     system = (
         'Ты — эксперт-методист, проверяешь программу дополнительного образования по четырём правилам. '
         'Для каждого правила верни status pass или warn и 0–3 коротких конкретных замечания с номерами тем или кодами РО. '
-        'Замечание — только если нарушение явное. Рассуждай кратко, ответ — сразу JSON без пояснений: {"verdicts": [{"rule": "V-21", "status": "pass", "messages": []}]}.'
+        'Замечание — только если нарушение явное. Рассуждай не дольше нескольких абзацев, ответ — сразу JSON без пояснений: {"verdicts": [{"rule": "V-21", "status": "pass", "messages": []}]}.'
     )
     user = json.dumps({'rules': RULES, 'program': _view(doc)}, ensure_ascii=False)
     try:

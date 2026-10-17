@@ -202,3 +202,17 @@ def test_parse_json_truncated_reasoning() -> None:
     assert parse_json('<think>шаг {1}</think>{"verdicts": []}') == {'verdicts': []}
     with pytest.raises(json.JSONDecodeError):
         parse_json('<think>долго {"x": 1} и обрыв')
+
+
+def test_blocked_services_scrubbed() -> None:
+    from app.skills.content.run import ModuleContentLLM, scrub_blocked
+
+    data = ModuleContentLLM.model_validate({
+        'annotation': 'Сравним ChatGPT и GigaChat',
+        'questions': [
+            {'stem': 'Какой сервис доступен в России?', 'options': ['ChatGPT', 'YandexGPT', 'DeepMind', 'Bard'], 'key': 1},
+            {'stem': 'Что такое промпт?', 'options': ['Запрос к модели', 'Файл', 'Вирус', 'Диск'], 'key': 0},
+        ],
+    })
+    out = scrub_blocked(data)
+    assert 'ChatGPT' not in out.annotation and [q.stem for q in out.questions] == ['Что такое промпт?']
