@@ -1,0 +1,17 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+ai.env
+logs/*.log
+logs/autorun/
+data/runtime/
+.idea/
+.vscode/
+node_modules/
+frontend/node_modules/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+frontend/dist/

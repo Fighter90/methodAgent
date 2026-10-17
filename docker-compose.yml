@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    image: metodagent:latest
+    container_name: metodagent
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8000:8000"
+    env_file:
+      - /opt/hackathon/ai.env
+    environment:
+      ENVIRONMENT: production
+      SECRET_KEY: ${SECRET_KEY:-}
+      LLM_PROVIDERS: ${LLM_PROVIDERS:-cloudru}
+      LLM_JUDGE_ENABLED: ${LLM_JUDGE_ENABLED:-false}
+      DATA_DIR: /app/data/runtime
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs

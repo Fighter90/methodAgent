@@ -1,0 +1,20 @@
+{
+  "checked_at": "2026-10-17",
+  "current": {
+    "python": "3.12", "pandas": "2.2", "numpy": "2.1", "matplotlib": "3.9", "seaborn": "0.13",
+    "scikit-learn": "1.5", "jupyterlab": "4.2", "postgresql": "16", "sqlalchemy": "2.0",
+    "docker": "27", "kubernetes": "1.31", "terraform": "1.9", "opentofu": "1.8", "ansible-core": "2.17",
+    "prometheus": "2.54", "grafana": "11", "gitlab-ci": "17", "nginx": "1.27", "fastapi": "0.115"
+  },
+  "outdated": {
+    "python 2": "Python 2 не поддерживается с 2020 года — используйте Python 3.12",
+    "df.append": "DataFrame.append удалён в pandas 2.0 — используйте pd.concat",
+    "pandas 1.": "pandas 1.x устарела — актуальная ветка 2.2",
+    "tensorflow 1": "TensorFlow 1.x не поддерживается",
+    "docker-compose v1": "docker-compose v1 снят с поддержки — используйте docker compose",
+    "python 3.7": "Python 3.7 снят с поддержки",
+    "python 3.8": "Python 3.8 снят с поддержки"
+  },
+  "ai_services_ru": ["GigaChat", "YandexGPT (Алиса)", "Kandinsky", "Шедеврум", "Яндекс Учебник", "СФЕРУМ"],
+  "ai_services_blocked": ["ChatGPT", "OpenAI", "Midjourney", "Gemini", "Claude", "Copilot", "DALL-E", "Perplexity"]
+}
