@@ -24,7 +24,9 @@ def test_core_and_keyword_acts():
     assert dpp[:2] == ['law-273', 'order-266']
     assert 'decree-1678' not in dpp, 'очно-заочная форма сама по себе не означает ДОТ'
     assert 'law-152' in dpp, 'обезличенные данные — 152-ФЗ'
-    assert 'decree-1678' in ids(ProgramType.DPP_PK, CASES[2])
+    ai = ids(ProgramType.DPP_PK, CASES[2])
+    assert {'decree-1678', 'decree-490', 'letter-sk-702-08'} <= set(ai), 'ДОТ и ИИ в школе'
+    assert 'decree-490' not in dpp
     doop = ids(ProgramType.DOOP, CASES[1])
     assert {'law-273', 'order-629', 'sanpin-sp-2-4-2-4283-26'} <= set(doop) and 'order-266' not in doop
     assert 'order-885-390' in ids(ProgramType.DPP_PK_INTERNSHIP, CASES[5])
@@ -39,7 +41,7 @@ def test_profstandards_for_cases():
 def test_norm_digests_link_to_registry():
     acts = {i['id'] for i in registry()['npa']}
     docs = norms.norms()
-    assert len(docs) >= 10
+    assert len(docs) >= 24
     assert all(d['npa_id'] in acts for d in docs if d['npa_id'])
     hits = norms.search('стажировка наставник практическая подготовка', 'dpp_pk_internship')
     assert hits and hits[0]['npa_id'] in ('order-885-390', 'order-266')
