@@ -36,9 +36,11 @@ function Shell({ children }: { children: ReactNode }) {
     const onUser = () => setUser(getSession()?.user || null)
     let shown = 0
     const onOffline = () => { if (Date.now() - shown > 20000) { shown = Date.now(); toast(NETWORK_MSG, true) } }
+    const onOnline = () => { if (shown) { shown = 0; toast('Связь с сервером восстановлена') } }
     window.addEventListener('ma:user', onUser)
     window.addEventListener('ma:offline', onOffline)
-    return () => { window.removeEventListener('ma:user', onUser); window.removeEventListener('ma:offline', onOffline) }
+    window.addEventListener('ma:online', onOnline)
+    return () => { window.removeEventListener('ma:user', onUser); window.removeEventListener('ma:offline', onOffline); window.removeEventListener('ma:online', onOnline) }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

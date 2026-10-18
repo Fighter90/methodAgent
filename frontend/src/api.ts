@@ -41,13 +41,19 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
     headers['Content-Type'] = 'application/json'
     body = JSON.stringify(opts.json)
   }
-  let res: Response
-  try {
-    res = await fetch(`/api/v1${path}`, { ...opts, headers, body })
-  } catch {
-    // Запрос оборван до сервера: нет сети или истекла сессия хаба, который пускает на адрес команды только с его cookie
-    window.dispatchEvent(new Event('ma:offline'))
-    throw new ApiError(0, NETWORK_MSG)
+  const safe = !opts.method || ['GET', 'HEAD'].includes(opts.method.toUpperCase())
+  let res: Response | null = null
+  // Чтение повторяем: короткий обрыв (перезапуск контейнера при выкладке) пользователь не должен видеть
+  for (let attempt = 0; !res; attempt++) {
+    try {
+      res = await fetch(`/api/v1${path}`, { ...opts, headers, body })
+    } catch {
+      if (safe && attempt < 3) { await sleep(1000 * (attempt + 1)); continue }
+      const state = await probe()
+      if (state === 'hub') { reloadThroughHub(); throw new ApiError(0, 'Сессия хаба истекла, открываю вход заново…') }
+      watchServer()
+      throw new ApiError(0, safe ? NETWORK_MSG : 'Запрос не дошёл до сервера. Повторите действие через несколько секунд.')
+    }
   }
   if (!res.ok) {
     let msg = `Ошибка ${res.status}`
@@ -66,7 +72,45 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
   return (ct.includes('json') ? res.json() : res.text()) as Promise<T>
 }
 
-export const NETWORK_MSG = 'Нет связи с сервером. Если демо открыто через хаб, его сессия могла истечь: обновите страницу.'
+export const NETWORK_MSG = 'Сервер временно недоступен, повторяю подключение…'
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/* 'hub' — хаб перенаправляет на свой вход (истекла его cookie), 'down' — сервер не отвечает, 'ok' — отвечает */
+async function probe(): Promise<'ok' | 'hub' | 'down'> {
+  try {
+    const r = await fetch('/api/v1/health', { redirect: 'manual', cache: 'no-store' })
+    if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) return 'hub'
+    return r.ok ? 'ok' : 'down'
+  } catch {
+    return 'down'
+  }
+}
+
+/* Перезагрузка страницы проводит браузер через вход хаба и возвращает в демо; не чаще раза в минуту */
+function reloadThroughHub() {
+  try {
+    const last = Number(sessionStorage.getItem('ma:hub-reload') || 0)
+    if (Date.now() - last < 60000) { window.dispatchEvent(new Event('ma:offline')); return }
+    sessionStorage.setItem('ma:hub-reload', String(Date.now()))
+  } catch { /* хранилище недоступно */ }
+  window.location.reload()
+}
+
+let watching = false
+/* Пока сервер недоступен, проверяем его раз в 3 с и сообщаем, когда связь вернулась */
+function watchServer() {
+  window.dispatchEvent(new Event('ma:offline'))
+  if (watching) return
+  watching = true
+  const tick = async () => {
+    const state = await probe()
+    if (state === 'ok') { watching = false; window.dispatchEvent(new Event('ma:online')); return }
+    if (state === 'hub') { watching = false; reloadThroughHub(); return }
+    setTimeout(tick, 3000)
+  }
+  setTimeout(tick, 3000)
+}
 
 export async function login(login: string, password: string) {
   const r = await api<{ access_token: string; user: User }>('/auth/login', { method: 'POST', json: { login, password } })

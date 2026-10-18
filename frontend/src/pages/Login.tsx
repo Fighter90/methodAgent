@@ -30,10 +30,15 @@ export default function Login() {
   const L = (d: number) => ({ transform: `translate3d(${m.x * d}px, ${m.y * d}px, 0)` })
 
   useEffect(() => {
-    api<AuthConfig>('/auth/config').then((c) => {
+    const load = () => api<AuthConfig>('/auth/config').then((c) => {
       setCfg(c)
+      setError((e) => (e?.offline ? null : e))
       if (!c.demo_accounts.length) { setLoginName(''); setPassword('') }
     }).catch((e) => setError({ text: e.message, offline: e instanceof ApiError && e.status === 0 }))
+    load()
+    // сервер вернулся после перезапуска: убираем ошибку и подгружаем учётки без ручного обновления
+    window.addEventListener('ma:online', load)
+    return () => window.removeEventListener('ma:online', load)
   }, [])
 
   const switchMode = (next: Mode) => {
