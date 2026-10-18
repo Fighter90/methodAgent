@@ -1,7 +1,7 @@
 """Слой моделей: OpenAI-совместимый клиент Cloud.ru / шлюза хакатона (ТЗ, 4.11).
 
 Правила:
-- повтор до 2 раз при ошибке, HTTP 429/5xx или невалидном JSON (паузы 1 и 3 с),
+- повтор до 2 раз при ошибке, HTTP 5xx или невалидном JSON (паузы 1 и 3 с), при 429 — пауза 15, 30 с;
   затем резервная модель той же роли; при ошибке авторизации — сразу резерв;
 - параллельность ограничена семафором, после 429 временно снижается;
 - каждый вызов учитывает токены и рубли; ключ и тексты запросов не логируются.
@@ -154,8 +154,8 @@ class LLMClient:
         last_error: Exception | None = None
         for model in self._models(role):
             messages: list[dict[str, str]] = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
-            # Ответ судьи дорогой (модель рассуждений): две попытки, затем резервная модель
-            attempts = 2 if model == self.settings.llm_model_judge else len(_RETRY_PAUSES) + 1
+            # Ответ судьи дорогой и долгий (модель рассуждений): одна попытка, затем резервная модель
+            attempts = 1 if model == self.settings.llm_model_judge else len(_RETRY_PAUSES) + 1
             for attempt in range(attempts):
                 started = time.monotonic()
                 try:
@@ -205,7 +205,8 @@ class LLMClient:
                     if code in (401, 403):
                         break
                     if code == 429:
-                        await asyncio.sleep(_RETRY_PAUSES[-1])
+                        # Шлюз перегружен: пауза нарастает (15, 30, 45 с), иначе повторы тоже получают 429
+                        await asyncio.sleep(15.0 * (attempt + 1))
                 if attempt < attempts - 1:
                     await asyncio.sleep(_RETRY_PAUSES[attempt])
         raise LLMUnavailable(f'{skill}: модель не ответила ({type(last_error).__name__})')

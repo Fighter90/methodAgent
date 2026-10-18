@@ -63,7 +63,7 @@ async def judge(doc: ProgramDoc, stats: CallStats | None = None) -> list[str]:
     system = (
         'Ты — эксперт-методист, проверяешь программу дополнительного образования по четырём правилам. '
         'Для каждого правила верни status pass или warn и 0–3 коротких конкретных замечания с номерами тем или кодами РО. '
-        'Замечание — только если нарушение явное. Рассуждай не дольше нескольких абзацев, ответ — сразу JSON без пояснений: {"verdicts": [{"rule": "V-21", "status": "pass", "messages": []}]}.'
+        'Замечание — только если нарушение явное. Не рассуждай вслух: ответ — сразу JSON до 300 токенов, без пояснений: {"verdicts": [{"rule": "V-21", "status": "pass", "messages": []}]}.'
     )
     user = json.dumps({'rules': RULES, 'program': _view(doc)}, ensure_ascii=False)
     try:
