@@ -544,3 +544,10 @@ select, select.field { max-width: 100%; text-overflow: ellipsis; }
 }
 @media (max-width: 1180px) { .topbar .nav-label { display: none; } }
 .av-api { background: linear-gradient(135deg, #3A7BD5, #00B4DB); }
+
+/* кабинет и выход в шапке */
+.user-chip { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border-radius: 999px; color: var(--ink); text-decoration: none; transition: background .2s; }
+.user-chip:hover { background: var(--line); }
+.user-chip .avatar { display: grid; place-items: center; }
+.user-chip-text { display: flex; flex-direction: column; line-height: 1.15; font-size: 13px; }
+@media (max-width: 760px) { .user-chip-text { display: none; } }

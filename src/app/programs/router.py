@@ -289,6 +289,8 @@ async def list_programs(
     until: str = Query('', pattern=r'^(\d{4}-\d{2}-\d{2})?$'),
     p: Principal = Depends(current_principal),
 ) -> list[dict[str, Any]]:
+    if p.role == 'admin':
+        raise ForbiddenRole('Администратор ведёт пользователей и настройки; программы ведут методист, эксперт и руководитель')
     statuses = {x.strip() for x in status.split(',') if x.strip()} or None
     items = await svc.list_programs(owner=p.user_id if p.role == 'api' else None, statuses=statuses, since=since, until=until)
     if p.role == 'expert':
@@ -299,6 +301,8 @@ async def list_programs(
 
 @router.get('/{program_id}', summary='Состояние программы: вопросы, каркас или комплект в JSON')
 async def get_program(program_id: str, p: Principal = Depends(current_principal)) -> dict[str, Any]:
+    if p.role == 'admin':
+        raise ForbiddenRole('Администратор ведёт пользователей и настройки; программы ведут методист, эксперт и руководитель')
     doc = await _load_for(program_id, p)
     data = doc.model_dump(mode='json')
     if p.role == 'expert':
@@ -308,7 +312,7 @@ async def get_program(program_id: str, p: Principal = Depends(current_principal)
     for a in data.get('approvals') or []:
         a['actor_name'] = users()[a['actor']].name if a.get('actor') in users() else a.get('actor')
     data['readiness'] = wf.readiness(doc)
-    if p.role in ('head', 'methodist', 'admin'):
+    if p.role in ('head', 'methodist'):
         data['quality'] = wf.quality(doc, await svc.events(program_id))
     data['totals'] = doc.totals().model_dump()
     # Комплект по схеме 4.8 (таблица 19); остальные поля — состояние для интерфейса
@@ -616,7 +620,7 @@ async def export_file(program_id: str, fmt: str, p: Principal = Depends(current_
 
 
 @router.get('/{program_id}/events', summary='Журнал событий программы')
-async def events(program_id: str, p: Principal = Depends(require('methodist', 'head', 'admin'))) -> list[dict[str, Any]]:
+async def events(program_id: str, p: Principal = Depends(require('methodist', 'head'))) -> list[dict[str, Any]]:
     return await svc.events(program_id)
 
 

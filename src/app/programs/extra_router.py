@@ -239,6 +239,6 @@ async def org_documents(file: UploadFile = File(...), kind: str = Form('other'),
 
 
 @router.get('/programs/{program_id}/experts', summary='Эксперты профиля с подсказкой агента по каждому модулю (FR-39)')
-async def suggest_experts(program_id: str, p: Principal = Depends(require('methodist', 'head', 'admin'))) -> dict[str, Any]:
+async def suggest_experts(program_id: str, p: Principal = Depends(require('methodist', 'head'))) -> dict[str, Any]:
     doc = await svc.load(program_id)
     return extras.suggest_experts(doc)

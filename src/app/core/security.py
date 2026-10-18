@@ -168,10 +168,13 @@ async def current_principal(
 
 
 def require(*roles: str):
-    """Зависимость FastAPI: действие доступно только перечисленным ролям, иначе 403. Администратор управляет всем."""
+    """Зависимость FastAPI: действие доступно только перечисленным ролям, иначе 403.
+
+    Роли не пересекаются: администратор ведёт пользователей, настройки агента и базу знаний,
+    а программы создаёт методист, вычитывает эксперт, утверждает руководитель."""
 
     async def _dep(p: Principal = Depends(current_principal)) -> Principal:
-        if p.role not in roles and p.role != 'admin':
+        if p.role not in roles:
             raise ForbiddenRole(f'Роль «{p.role}» не может выполнить это действие', details={'allowed': list(roles)})
         return p
 

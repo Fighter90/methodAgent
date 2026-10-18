@@ -65,7 +65,7 @@ export default function Programs() {
   return (
     <div className="grid-main">
       <div>
-        {(role === 'methodist' || role === 'admin') && (
+        {role === 'methodist' && (
           <section className="card card-pad" style={{ marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
             <div style={{ position: 'absolute', right: -80, top: -80, width: 260, height: 260, borderRadius: '50%', background: 'radial-gradient(circle, rgba(33,160,56,.18), transparent 65%)', pointerEvents: 'none' }} />
             <div className="row" style={{ marginBottom: 6 }}>
@@ -119,7 +119,7 @@ export default function Programs() {
           </div>
           {list === null && <div style={{ display: 'grid', gap: 10 }}>{[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 74 }} />)}</div>}
           {list && list.length === 0 && (
-            <div className="card empty"><FileText size={34} /><p>Программ пока нет. {role === 'methodist' || role === 'admin' ? 'Опишите первую в форме выше.' : 'Методист ещё не создал ни одной.'}</p></div>
+            <div className="card empty"><FileText size={34} /><p>Программ пока нет. {role === 'methodist' ? 'Опишите первую в форме выше.' : 'Методист ещё не создал ни одной.'}</p></div>
           )}
           <div className="stagger" style={{ display: 'grid', gap: 10 }}>
             {list?.map((p) => (
@@ -147,7 +147,7 @@ export default function Programs() {
           </div>
           <Link to="/help" className="btn btn-ghost btn-sm" style={{ marginTop: 6 }}><Plus size={14} /> Подробнее в справке</Link>
         </div>
-        {(role === 'methodist' || role === 'admin') && <ActualizeCard />}
+        {role === 'methodist' && <ActualizeCard />}
         <div className="card card-pad" style={{ background: 'linear-gradient(135deg, var(--accent-soft), var(--blue-soft))', border: 0 }}>
           <h3 className="h3">Гарантии</h3>
           <ul className="small" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7, color: 'var(--ink-2)' }}>

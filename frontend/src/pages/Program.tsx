@@ -130,7 +130,7 @@ export default function Program() {
             ? <Generation doc={doc} job={job} reload={load} />
             : sub === 'edit' ? <EditView doc={doc} setDoc={setDoc} init={editInit} back={() => setSub('report')} />
               : <ReportView doc={doc} onEdit={(target, instruction) => { setEditInit({ target, instruction }); setSub('edit') }} onNext={() => setStep(6)} />)}
-          {!building && step === 6 && (role === 'head' ? <ApproveView doc={doc} reload={load} /> : role === 'admin' ? <><TeamView doc={doc} setDoc={setDoc} reload={load} />{['on_approval', 'approved'].includes(doc.status) && <ApproveView doc={doc} reload={load} />}</> : <TeamView doc={doc} setDoc={setDoc} reload={load} />)}
+          {!building && step === 6 && (role === 'head' ? <ApproveView doc={doc} reload={load} /> : <TeamView doc={doc} setDoc={setDoc} reload={load} />)}
         </div>
       )}
     </div>

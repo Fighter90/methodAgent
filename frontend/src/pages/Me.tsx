@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Save, UserRound } from 'lucide-react'
-import { api, getSession, setSession, ROLE_LABEL, type User } from '../api'
+import { useNavigate } from 'react-router-dom'
+import { KeyRound, LogOut, Save, UserRound } from 'lucide-react'
+import { api, getSession, setSession, ROLE_LABEL, ROLE_CAN, type User } from '../api'
 import { Spinner, useToast } from '../components/ui'
 
 /* Личный кабинет: данные пользователя, роли и смена пароля */
 export default function Me() {
   const toast = useToast()
+  const nav = useNavigate()
   const [me, setMe] = useState<(User & { roles: string[] }) | null>(null)
   const [form, setForm] = useState({ name: '', email: '', title: '' })
   const [pw, setPw] = useState({ current: '', next: '', confirm: '' })
@@ -17,6 +19,13 @@ export default function Me() {
 
   if (!me) return <div className="card card-pad"><Spinner /></div>
   const demo = me.source === 'demo'
+  const rights = ROLE_CAN[me.role]
+
+  function logout() {
+    setSession(null)
+    window.dispatchEvent(new Event('ma:user'))
+    nav('/auth')
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -46,8 +55,15 @@ export default function Me() {
   return (
     <div className="grid-2">
       <section className="card card-pad">
-        <div className="row"><span className={`avatar av-${me.role}`}><UserRound size={15} /></span><h1 className="h2" style={{ margin: 0 }}>Личный кабинет</h1></div>
+        <div className="row"><span className={`avatar av-${me.role}`}><UserRound size={15} /></span><h1 className="h2" style={{ margin: 0 }}>Личный кабинет</h1><div className="grow" /><button type="button" className="btn btn-ghost btn-sm" onClick={logout}><LogOut size={15} /> Выйти из аккаунта</button></div>
         <p className="muted small">Логин <b>{me.login}</b> · текущая роль <b>{ROLE_LABEL[me.role]}</b> · все роли: {me.roles.map((r) => ROLE_LABEL[r]).join(', ')}</p>
+        {rights && (
+          <div className="callout small" style={{ marginBottom: 12 }}>
+            <b>Ваша роль: {ROLE_LABEL[me.role]}.</b> Вы можете:
+            <ul style={{ margin: '6px 0 6px 18px', padding: 0 }}>{rights.can.map((c) => <li key={c}>{c}</li>)}</ul>
+            <span className="muted">Чего роль не делает: {rights.cannot}. Подробнее в разделе «Справка».</span>
+          </div>
+        )}
         {demo && <div className="callout small">Это демо-учётка: имя и пароль меняет администратор в разделе «Администрирование».</div>}
         <form onSubmit={save}>
           <label className="label" htmlFor="me-name">Имя и фамилия</label>

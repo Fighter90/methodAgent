@@ -64,7 +64,7 @@ def test_register_gets_minimal_role_and_cabinet(client) -> None:
     _login(client, 'irina@example.ru', 'Newpass123')  # вход по почте
 
 
-def test_admin_manages_users_and_has_full_access(client) -> None:
+def test_admin_manages_users_but_not_programs(client) -> None:
     ha = _login(client, 'admin')
     users = client.get('/api/v1/admin/users', headers=ha).json()
     irina = next(u for u in users if u['login'] == 'irina')
@@ -81,9 +81,12 @@ def test_admin_manages_users_and_has_full_access(client) -> None:
     assert r.status_code == 201
     client.patch(f'/api/v1/admin/users/{r.json()["id"]}', json={'active': False}, headers=ha)
     assert client.post('/api/v1/auth/login', json={'login': 'petr', 'password': 'Petr12345'}).status_code == 401
-    # Администратор управляет всем: создаёт программы, хотя это действие методиста
+    # Роли не пересекаются: программу создаёт методист, у администратора — 403
     r = client.post('/api/v1/programs', json={'request': 'Нужна программа «Основы Git» для разработчиков на 16 часов. Темы: ветки, слияние.'}, headers=ha)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 403, r.text
+    assert client.get('/api/v1/programs', headers=ha).status_code == 403
+    assert client.get('/api/v1/reviews', headers=ha).status_code == 403
+    assert client.get('/api/v1/admin/users', headers=_login(client, 'ahmed')).status_code == 403
     journal = client.get('/api/v1/admin/journal', headers=ha).json()
     assert any(e['action'] == 'register' for e in journal)
 
