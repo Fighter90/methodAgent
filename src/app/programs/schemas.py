@@ -170,6 +170,8 @@ class Module(BaseModel):
     control: str = 'Тест'
     expert_id: str | None = None
     review_status: str = 'not_started'
+    accepted_items: list[str] = Field(default_factory=list)  # элементы, принятые экспертом по одному (FR-49)
+    manual_topics: bool = False  # часы тем заданы методистом вручную, солвер их не перераспределяет (FR-17)
     topics: list[Topic] = Field(default_factory=list)
 
 
@@ -177,6 +179,11 @@ class CalendarWeek(BaseModel):
     week: int
     hours: int
     days: int
+    lk: int = 0
+    pr: int = 0
+    lb: int = 0
+    srs: int = 0
+    ia: int = 0
     items: list[str] = Field(default_factory=list)
 
 
@@ -250,6 +257,31 @@ class Slide(BaseModel):
     notes: str = ''
 
 
+def fit_plan(plan: list[dict[str, Any]], duration: int) -> list[dict[str, Any]]:
+    """Хронометраж плана лекции равен её длительности (FR-28): минуты масштабируются, шаг 5 мин, остаток — наибольшим долям."""
+    items = [p for p in plan if isinstance(p, dict)]
+    if not items or duration <= 0:
+        return plan
+    total = sum(max(1, int(p.get('min') or 1)) for p in items)
+    if total == duration:
+        return plan
+    units, step = duration // 5, 5
+    if units < len(items):
+        units, step = duration, 1
+    raw = [max(1, int(p.get('min') or 1)) * units / total for p in items]
+    base = [max(1, int(r)) for r in raw]
+    while sum(base) > units and max(base) > 1:
+        base[base.index(max(base))] -= 1
+    order = sorted(range(len(raw)), key=lambda i: raw[i] - int(raw[i]), reverse=True)
+    i = 0
+    while sum(base) < units:
+        base[order[i % len(order)]] += 1
+        i += 1
+    out = [{**p, 'min': b * step} for p, b in zip(items, base, strict=True)]
+    out[-1]['min'] += duration - sum(x['min'] for x in out)
+    return out
+
+
 class Lecture(BaseModel):
     id: str
     topic_id: str
@@ -309,10 +341,12 @@ class Report(BaseModel):
     coverage: list[dict[str, Any]] = Field(default_factory=list)
     actions: list[str] = Field(default_factory=list)
     proposals: list[dict[str, Any]] = Field(default_factory=list)
+    assumptions: list[dict[str, Any]] = Field(default_factory=list)  # значения, принятые агентом (FR-13)
 
 
 class Decision(BaseModel):
     rule_id: str
+    node: str = ''  # решение принимается по узлу: у одного правила может быть несколько пунктов «!» (FR-22)
     proposal: str = ''
     decision: Literal['accept', 'keep']
     actor: str
@@ -326,7 +360,9 @@ class Comment(BaseModel):
     author: str
     text: str
     agent_proposal: str = ''
-    status: Literal['open', 'answered', 'applied'] = 'open'
+    new_text: str = ''
+    affected: list[str] = Field(default_factory=list)  # что пересоберётся по графу (FR-41)
+    status: Literal['open', 'answered', 'proposed', 'applied'] = 'open'  # proposed — ждёт подтверждения эксперта (FR-48)
     answer: str = ''
     at: str = ''
 
@@ -337,6 +373,7 @@ class Approval(BaseModel):
     decision: Literal['approve', 'return']
     comment: str = ''
     module_id: str | None = None
+    score: int | None = None  # оценка модуля экспертом 1–5 (качество комплекта, FR-50)
     at: str
 
 
@@ -367,6 +404,7 @@ class ProgramDoc(BaseModel):
     request: str
     references: list[ReferenceInfo] = Field(default_factory=list)
     norm_mode: Literal['gos', 'org'] = 'gos'
+    org_fragments: list[dict[str, Any]] = Field(default_factory=list)  # фрагменты документов организации для генерации (FR-08)
     params: Params = Field(default_factory=Params)
     assumptions: list[Assumption] = Field(default_factory=list)
     questions: list[Question] = Field(default_factory=list)
@@ -405,6 +443,10 @@ class ProgramDoc(BaseModel):
 
     def module_by_id(self, module_id: str) -> Module | None:
         return next((m for m in self.modules if m.id == module_id), None)
+
+    def fit_lecture_plans(self) -> None:
+        for lec in self.kit.lectures:
+            lec.plan = fit_plan(lec.plan, lec.duration_min)
 
     def totals(self) -> Hours:
         tot = Hours()

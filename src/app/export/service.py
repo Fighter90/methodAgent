@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import io
+import json
 import re
+from typing import Any
 from xml.sax.saxutils import escape
 
 from docx import Document
@@ -89,9 +91,9 @@ def _curriculum(d: Document, doc: ProgramDoc, with_topics: bool) -> None:
 
 
 def _calendar(d: Document, doc: ProgramDoc) -> None:
-    rows = [[w.week, w.days, w.hours, '; '.join(w.items[:6])] for w in doc.calendar.schedule]
+    rows = [[w.week, w.days, w.hours, w.lk, w.pr, w.lb, w.srs, w.ia, '; '.join(w.items[:6])] for w in doc.calendar.schedule]
     if rows:
-        _table(d, ['Неделя', 'Учебных дней', 'Часов', 'Содержание'], rows)
+        _table(d, ['Неделя', 'Учебных дней', 'Всего, ч', 'ЛК', 'ПР', 'ЛБ', 'СРС', 'ИА', 'Содержание'], rows)
 
 
 TITLES = {
@@ -409,6 +411,44 @@ def render_moodle_xml(doc: ProgramDoc) -> bytes:
     return '\n'.join(parts).encode('utf-8')
 
 
+def kit_json(doc: ProgramDoc) -> dict[str, Any]:
+    """Комплект в JSON по схеме подраздела 4.8: граф «компетенция → индикатор → РО → тема → материалы».
+
+    Служебные поля состояния (параметры распознавания, расход токенов, прогресс) в выгрузку не входят.
+    """
+    k = doc.kit
+    hours = lambda h: h.model_dump()  # noqa: E731
+    return {
+        'program': {
+            'id': doc.id, 'org_id': doc.org_id, 'type': doc.type.value if doc.type else None, 'template': doc.template,
+            'issued_document': doc.issued_document, 'title': doc.title, 'volume_h': doc.volume_h,
+            'audience': doc.params.audience, 'entry_level': doc.params.entry_level, 'form': doc.params.form,
+            'duration': {'weeks': doc.calendar.weeks or doc.params.duration_weeks, 'work_days': doc.calendar.work_days},
+            'calendar': doc.calendar.model_dump(mode='json'), 'status': doc.status.value, 'version': doc.version, 'goal': doc.goal,
+            'final_assessment': doc.final_assessment.model_dump(mode='json'),
+            'profstandard': doc.profstandard.model_dump(mode='json') if doc.profstandard else None,
+            'competencies': [c.model_dump(mode='json') for c in doc.competencies],
+            'modules': [
+                {'id': m.id, 'n': m.n, 'title': m.title, 'hours': hours(m.hours), 'control': m.control, 'expert_id': m.expert_id,
+                 'review_status': m.review_status,
+                 'topics': [{'id': t.id, 'n': t.n, 'title': t.title, 'hours': hours(t.hours), 'weight': t.weight,
+                             'prerequisites': t.prerequisites, 'lo_ids': t.lo_ids} for t in m.topics]}
+                for m in doc.modules
+            ],
+            'assessments': [a.model_dump(mode='json') for a in k.assessments],
+            'questions': [q.model_dump(mode='json') for q in k.questions],
+            'tasks': [t.model_dump(mode='json') for t in k.tasks],
+            'lectures': [lec.model_dump(mode='json') for lec in k.lectures],
+            'module_programs': [mp.model_dump(mode='json') for mp in k.module_programs],
+            'final_assessment_materials': k.final_assessment,
+            'sources': [s.model_dump(mode='json') for s in [*doc.norm_base, *doc.sources]],
+            'sections': k.sections,
+            'assumptions': [a.model_dump(mode='json') for a in doc.assumptions],
+            'approvals': [a.model_dump(mode='json') for a in doc.approvals],
+        }
+    }
+
+
 def render(doc: ProgramDoc, fmt: str) -> tuple[bytes, str, str]:
     name = _slug(doc)
     if fmt == 'docx':
@@ -424,5 +464,5 @@ def render(doc: ProgramDoc, fmt: str) -> tuple[bytes, str, str]:
     if fmt == 'moodle_xml':
         return render_moodle_xml(doc), 'application/xml', f'{name}_moodle.xml'
     if fmt == 'json':
-        return doc.model_dump_json(indent=2).encode('utf-8'), 'application/json', f'{name}.json'
+        return json.dumps(kit_json(doc), ensure_ascii=False, indent=2).encode('utf-8'), 'application/json', f'{name}.json'
     raise BadRequest(f'Неизвестный формат «{fmt}». Доступны: {", ".join(FORMATS)}')

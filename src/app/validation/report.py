@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.programs.schemas import ProgramDoc, Report, RuleResult
+from app.skills.clarify.run import FIELD_LABELS
 from app.validation.rules import (
     CHECK_TITLES,
     assessment_map,
@@ -78,6 +79,14 @@ def _proposal_for(rule: RuleResult, doc: ProgramDoc) -> list[dict]:
             if lo:
                 rest = lo.text.split(' ', 1)[1] if ' ' in lo.text else lo.text
                 out.append({'rule_id': 'V-22', 'node': lo.id, 'title': f'{lo.code} «{lo.text}» нельзя проверить заданием', 'proposal': f'Объясняет и применяет на примере: {rest}'})
+    elif rule.id == 'V-21':
+        topics = {t.id: t for t in doc.all_topics()}
+        for node in rule.nodes:
+            adv, _, basic = node.partition('>')
+            if adv in topics and basic in topics:
+                a, b = topics[adv], topics[basic]
+                out.append({'rule_id': 'V-21', 'node': node, 'title': f'Тема {a.n} «{a.title}» опирается на тему {b.n} «{b.title}», которая идёт позже',
+                            'proposal': f'Поменять темы местами: {a.n} «{b.title}», {b.n} «{a.title}» (часы позиций сохраняются)'})
     elif rule.id == 'V-10' and doc.calendar.conflict and not doc.calendar.chosen_option:
         for opt in doc.calendar.options:
             out.append({'rule_id': 'V-10', 'node': 'calendar', 'title': doc.calendar.conflict, 'proposal': opt.title, 'option_id': opt.id})
@@ -110,9 +119,9 @@ def build_report(doc: ProgramDoc, stage: str) -> Report:
         if r.status == 'warn':
             actions.extend(r.messages[:2])
     proposals = [p for r in rules if r.status in ('warn', 'fail') for p in _proposal_for(r, doc)]
-    decided = {(d.rule_id) for d in doc.decisions}
+    decided = {(d.rule_id, d.node) for d in doc.decisions}
     for p in proposals:
-        p['decided'] = p['rule_id'] in decided
+        p['decided'] = (p['rule_id'], p.get('node', '')) in decided or (p['rule_id'], '') in decided
     return Report(
         stage=stage,
         rules=rules,
@@ -121,4 +130,8 @@ def build_report(doc: ProgramDoc, stage: str) -> Report:
         coverage=coverage(doc, stage),
         actions=actions[:20],
         proposals=proposals,
+        assumptions=[
+            {'field': a.field, 'label': FIELD_LABELS.get(a.field, a.field), 'value': a.value, 'source': a.source, 'note': 'принято агентом'}
+            for a in doc.assumptions
+        ],
     )

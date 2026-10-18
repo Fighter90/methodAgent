@@ -20,7 +20,7 @@ from app.core.db import (
     now_iso,
     sessionmaker,
 )
-from app.core.errors import NotFound
+from app.core.errors import NotFound, RateLimited
 from app.programs.schemas import ProgramDoc
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,7 @@ async def load(program_id: str) -> ProgramDoc:
 
 async def save(doc: ProgramDoc, owner: str = 'u-madina', *, reason: str = '', snapshot: bool = False) -> None:
     doc.updated_at = now_iso()
+    doc.fit_lecture_plans()  # после любой правки часов хронометраж лекций равен их длительности
     async with sessionmaker()() as s:
         row = await s.get(ProgramRow, doc.id)
         if snapshot:
@@ -56,16 +57,81 @@ async def save(doc: ProgramDoc, owner: str = 'u-madina', *, reason: str = '', sn
         await s.commit()
 
 
-async def log_event(program_id: str, actor: str, action: str, text: str = '', node_id: str = '', version: int = 1) -> None:
+_SEP = '\x1f'  # было/стало хранятся в тексте события: схема таблицы не меняется на развёрнутых стендах
+
+
+async def log_event(
+    program_id: str, actor: str, action: str, text: str = '', node_id: str = '', version: int | None = None,
+    before: str = '', after: str = '',
+) -> None:
+    """Событие журнала (FR-58): кто, что, когда, версия комплекта, было и стало."""
     async with sessionmaker()() as s:
-        s.add(EventRow(program_id=program_id, actor=actor, action=action, text=text[:2000], node_id=node_id, version=version))
+        if version is None:
+            row = await s.get(ProgramRow, program_id)
+            version = row.version if row else 1
+        body = text[:2000] + (f'{_SEP}{before[:1000]}{_SEP}{after[:1000]}' if before or after else '')
+        s.add(EventRow(program_id=program_id, actor=actor, action=action, text=body, node_id=node_id, version=version))
         await s.commit()
+
+
+async def owner_of(program_id: str) -> str:
+    async with sessionmaker()() as s:
+        row = await s.get(ProgramRow, program_id)
+        if row is None:
+            raise NotFound('Программа не найдена')
+        return row.owner
+
+
+def _profile() -> dict[str, Any]:
+    from app.kb.registry import org_profile
+
+    return org_profile()
+
+
+def head_ids() -> list[str]:
+    from app.core.security import users
+
+    own = (_profile().get('head') or {}).get('id')
+    return [own] if own else [u.id for u in users().values() if 'head' in u.roles]
+
+
+def _email_of(user_id: str) -> str:
+    prof = _profile()
+    for person in [*(prof.get('experts') or []), prof.get('head') or {}, *(prof.get('methodists') or [])]:
+        if person.get('id') == user_id:
+            return person.get('email', '')
+    return ''
+
+
+def _send_mail(to: str, text: str) -> None:
+    """Почта по настройке профиля (FR-59): SMTP из профиля, пароль — из переменной SMTP_PASSWORD окружения."""
+    import os
+    import smtplib
+    from email.message import EmailMessage
+
+    smtp = _profile().get('smtp') or {}
+    if not smtp.get('host'):
+        return
+    msg = EmailMessage()
+    msg['Subject'], msg['From'], msg['To'] = 'МетодАгент: уведомление', smtp.get('from') or smtp.get('user', ''), to
+    msg.set_content(text)
+    try:
+        with smtplib.SMTP(smtp['host'], int(smtp.get('port', 587)), timeout=10) as srv:
+            srv.starttls()
+            if smtp.get('user'):
+                srv.login(smtp['user'], os.environ.get('SMTP_PASSWORD', ''))
+            srv.send_message(msg)
+    except (OSError, smtplib.SMTPException):
+        logger.warning('уведомление по почте не отправлено')
 
 
 async def notify(user_id: str, program_id: str, text: str) -> None:
+    """Уведомление в интерфейсе; по почте — если включено в профиле и у пользователя есть адрес."""
     async with sessionmaker()() as s:
         s.add(NotificationRow(user_id=user_id, program_id=program_id, text=text))
         await s.commit()
+    if _profile().get('notify_email') and (to := _email_of(user_id)):
+        await asyncio.to_thread(_send_mail, to, text)
 
 
 async def notifications(user_id: str) -> list[dict[str, Any]]:
@@ -74,10 +140,29 @@ async def notifications(user_id: str) -> list[dict[str, Any]]:
         return [{'id': r.id, 'program_id': r.program_id, 'text': r.text, 'read': bool(r.read), 'at': r.at.isoformat() if r.at else ''} for r in rows]
 
 
+async def mark_read(user_id: str, ids: list[int] | None = None) -> int:
+    async with sessionmaker()() as s:
+        q = select(NotificationRow).where(NotificationRow.user_id == user_id, NotificationRow.read == 0)
+        if ids:
+            q = q.where(NotificationRow.id.in_(ids))
+        rows = list((await s.execute(q)).scalars())
+        for r in rows:
+            r.read = 1
+        await s.commit()
+        return len(rows)
+
+
 async def events(program_id: str) -> list[dict[str, Any]]:
     async with sessionmaker()() as s:
         rows = (await s.execute(select(EventRow).where(EventRow.program_id == program_id).order_by(EventRow.id.desc()).limit(200))).scalars()
-        return [{'actor': r.actor, 'action': r.action, 'text': r.text, 'node_id': r.node_id, 'version': r.version, 'at': r.at.isoformat() if r.at else ''} for r in rows]
+        from app.core.security import users
+
+        names = {k: u.name for k, u in users().items()} | {'agent': 'Агент', 'auto-approve': 'Агент (auto-approve)'}
+        out = []
+        for r in rows:
+            text, before, after = ((r.text or '').split(_SEP) + ['', ''])[:3]
+            out.append({'actor': r.actor, 'actor_name': names.get(r.actor, r.actor), 'action': r.action, 'text': text, 'before': before, 'after': after, 'node_id': r.node_id, 'version': r.version, 'at': r.at.isoformat() if r.at else ''})
+        return out
 
 
 async def versions(program_id: str) -> list[dict[str, Any]]:
@@ -100,17 +185,23 @@ async def list_programs(owner: str | None = None, statuses: set[str] | None = No
         q = select(ProgramRow).order_by(ProgramRow.updated_at.desc()).limit(200)
         if statuses:
             q = q.where(ProgramRow.status.in_(statuses))
+        if owner:
+            q = q.where(ProgramRow.owner == owner)
         rows = (await s.execute(q)).scalars()
         out = []
         for r in rows:
             at = r.updated_at.isoformat() if r.updated_at else ''
-            if (since and at[:10] < since) or (until and at[:10] > until):
-                continue
             doc = r.doc or {}
+            # Период руководителя считается по дате утверждения (или отправки), а не последнего сохранения
+            decided = [a.get('at', '') for a in doc.get('approvals') or [] if a.get('stage') == 'program']
+            when = (decided[-1] if decided else at)[:10]
+            if (since and when < since) or (until and when > until):
+                continue
             out.append({
                 'id': r.id, 'title': r.title, 'status': r.status, 'version': r.version, 'updated_at': at, 'owner': r.owner,
                 'type': doc.get('type'), 'template': doc.get('template', ''), 'volume_h': doc.get('volume_h', 0),
                 'blocking': (doc.get('report') or {}).get('blocking_passed'), 'cost_rub': round((doc.get('usage') or {}).get('cost_rub', 0.0), 2),
+                'decided_at': decided[-1] if decided else '',
             })
         return out
 
@@ -144,6 +235,22 @@ async def get_job(job_id: str) -> dict[str, Any]:
         if row is None:
             raise NotFound('Задание не найдено')
         return {'job_id': row.id, 'program_id': row.program_id, 'kind': row.kind, 'status': row.status, 'progress': row.progress or {}, 'error': row.error}
+
+
+async def unfinished_jobs() -> list[dict[str, Any]]:
+    """Задания, прерванные перезапуском контейнера (NFR-08): их перезапускает lifespan."""
+    async with sessionmaker()() as s:
+        rows = (await s.execute(select(JobRow).where(JobRow.status.in_(('queued', 'running'))))).scalars()
+        return [{'job_id': r.id, 'program_id': r.program_id, 'kind': r.kind} for r in rows]
+
+
+def check_capacity() -> None:
+    """429 при превышении лимита параллельных заданий (ТЗ, таблица 20)."""
+    from app.core.config import get_settings
+
+    limit = get_settings().max_parallel_jobs
+    if len(_tasks) >= limit:
+        raise RateLimited(f'Сейчас выполняется {len(_tasks)} заданий — это предел стенда. Повторите через минуту.')
 
 
 def run_job(job_id: str, coro_factory: Callable[[Callable[[dict[str, Any]], Awaitable[None]]], Awaitable[None]]) -> None:

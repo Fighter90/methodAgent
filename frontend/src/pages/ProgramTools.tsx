@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, BookOpenText, CheckCircle2, Copy, FlaskConical, GitCompare, History, Pencil, RefreshCw, RotateCcw, Wand2 } from 'lucide-react'
-import { api } from '../api'
+import { api, getSession } from '../api'
 import { Spinner, useToast } from '../components/ui'
 
 type Doc = any
@@ -79,13 +79,13 @@ const TOOL_TABS = [
   { id: 'adapt', label: 'Адаптация', icon: Copy },
 ]
 
-export function ToolsPanel({ doc, onEdit, only }: { doc: Doc; onEdit?: (target: string, instruction: string) => void; only?: string[] }) {
+export function ToolsPanel({ doc, onEdit, only, title = 'Инструменты методиста' }: { doc: Doc; onEdit?: (target: string, instruction: string) => void; only?: string[]; title?: string }) {
   const tabs = TOOL_TABS.filter((t) => !only || only.includes(t.id))
   const [tab, setTab] = useState(tabs[0].id)
   return (
     <section className="card card-pad">
       <div className="row row-wrap" style={{ marginBottom: 6 }}>
-        <h2 className="h2 grow" style={{ margin: 0 }}>Инструменты методиста</h2>
+        <h2 className="h2 grow" style={{ margin: 0 }}>{title}</h2>
       </div>
       <div className="tabs">
         {tabs.map((t) => <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}><t.icon size={14} style={{ verticalAlign: -2 }} /> {t.label}</button>)}
@@ -147,7 +147,7 @@ function VersionsView({ doc }: { doc: Doc }) {
             <div className="grow"><b>v{v.version}</b> <span className="small">{v.reason || 'сохранение'}</span><div className="tiny muted">{(v.at || '').slice(0, 16).replace('T', ' ')}</div></div>
             <button className="btn btn-ghost btn-sm" title="Сравнить как «было»" onClick={() => setA(v.version)}>A</button>
             <button className="btn btn-ghost btn-sm" title="Сравнить как «стало»" onClick={() => setB(v.version)}>B</button>
-            {v.version !== doc.version && <button className="btn btn-ghost btn-sm" title="Откатить" onClick={() => restore(v.version)}><RotateCcw size={13} /></button>}
+            {v.version !== doc.version && getSession()?.user.role === 'methodist' && <button className="btn btn-ghost btn-sm" title="Откатить" onClick={() => restore(v.version)}><RotateCcw size={13} /></button>}
           </div>
         ))}
       </div>

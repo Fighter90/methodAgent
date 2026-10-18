@@ -12,7 +12,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.kb.registry import match_source, tf_codes, tools
+from app.kb.registry import match_source, tf_codes
 from app.programs.schemas import KINDS, ProgramDoc, ProgramType, RuleResult
 from app.validation.ngrams import overlap_share
 
@@ -362,7 +362,14 @@ def v17(doc: ProgramDoc, stage: str):
     if not ref.strip():
         return _ok()
     # Обязательные формулы шаблона и реквизиты НПА совпадают с любым образцом — сравнивается только содержание
-    texts = [v for k, v in doc.kit.sections.items() if k not in TEMPLATE_FORMULA_KEYS] + [mp.annotation for mp in doc.kit.module_programs]
+    k = doc.kit
+    texts = (
+        [v for key, v in k.sections.items() if key not in TEMPLATE_FORMULA_KEYS]
+        + [mp.annotation + ' ' + ' '.join(c.get('text', '') for c in mp.content) for mp in k.module_programs]
+        + [q.stem + ' ' + ' '.join(q.options) for q in k.questions]
+        + [t.statement + ' ' + t.expected_result for t in k.tasks]
+        + [' '.join(str(x.get('text', '')) for x in lec.plan) + ' ' + ' '.join(b for sl in lec.slides for b in sl.bullets) for lec in k.lectures]
+    )
     share = overlap_share(' '.join(texts), ref)
     if share >= 0.05:
         return 'fail', [f'Совпадение с референсом по 8-граммам {share:.0%} (порог 5 %)'], []
@@ -399,7 +406,7 @@ _PREREQ = [
 
 def v21(doc: ProgramDoc, stage: str):
     topics = [t.title.lower() for t in doc.all_topics()]
-    msgs = []
+    msgs, nodes = [], []
     for advanced, basics in _PREREQ:
         adv_idx = next((i for i, t in enumerate(topics) if any(a in t for a in advanced)), None)
         if adv_idx is None:
@@ -408,7 +415,8 @@ def v21(doc: ProgramDoc, stage: str):
             b_idx = next((i for i, t in enumerate(topics) if b in t), None)
             if b_idx is not None and b_idx > adv_idx:
                 msgs.append(f'Тема «{doc.all_topics()[adv_idx].title}» стоит раньше темы «{doc.all_topics()[b_idx].title}»')
-    return ('warn' if msgs else 'pass'), msgs, []
+                nodes.append(f'{doc.all_topics()[adv_idx].id}>{doc.all_topics()[b_idx].id}')
+    return ('warn' if msgs else 'pass'), msgs, nodes
 
 
 _VAGUE = ('понимает', 'знаком', 'имеет представление', 'осознаёт', 'осознает', 'изучает', 'знает о')
@@ -420,13 +428,17 @@ def v22(doc: ProgramDoc, stage: str):
 
 
 def v23(doc: ProgramDoc, stage: str):
-    outdated = tools()['outdated']
+    """Устаревшие конструкции и версии ниже поддерживаемых — сверка с реестром версий (FR-10, FR-61)."""
+    from app.agent.extras import scan_text
+
     text = ' '.join(
         [lec.title + ' ' + ' '.join(lec.code_examples) + ' ' + ' '.join(b for s in lec.slides for b in s.bullets) for lec in doc.kit.lectures]
-        + [mp.annotation for mp in doc.kit.module_programs]
-    ).lower()
-    msgs = [msg for key, msg in outdated.items() if key in text]
-    return ('warn' if msgs else 'pass'), msgs, []
+        + [mp.annotation + ' ' + ' '.join(c.get('text', '') for c in mp.content) for mp in doc.kit.module_programs]
+        + [t.title + ' ' + t.description for t in doc.all_topics()]
+    )
+    found = [f for f in scan_text(text) if f['kind'] in ('construct', 'version', 'update')]
+    msgs = [f['message'] + (f' → {f["replacement"]}' if f.get('replacement') else '') for f in found]
+    return ('warn' if msgs else 'pass'), msgs[:20], []
 
 
 def v24(doc: ProgramDoc, stage: str):

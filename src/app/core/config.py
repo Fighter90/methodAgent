@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     gen_workers: int = 6
     # Анонимный доступ (роль api) — только автопрогон POST /programs?mode=auto, с ограничением частоты на IP
     anon_runs_per_hour: int = 12
+    max_parallel_jobs: int = 4  # больше одновременных заданий ВМ 2 ядра / 4 ГБ не тянет (429)
 
     @property
     def max_file_size_bytes(self) -> int:

@@ -57,6 +57,10 @@ async def lifespan(_: FastAPI):
     logging.basicConfig(level=s.log_level, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
     s.data_dir.mkdir(parents=True, exist_ok=True)
     await init_db()
+    from app.programs.router import resume_jobs
+
+    if resumed := await resume_jobs():
+        logger.info('Продолжаю %d заданий, прерванных перезапуском', resumed)
     logger.info('МетодАгент запущен: LLM %s, навыков %d', 'включена' if s.llm_enabled else 'выключена (резервная генерация)', len(load_skills()))
     yield
 

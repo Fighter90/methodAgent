@@ -73,13 +73,24 @@ def _parse_docx(name: str, content: bytes, max_unpacked_mb: int) -> ParsedRefere
 def _parse_pdf(name: str, content: bytes) -> ParsedReference:
     import fitz
 
-    parts = []
+    parts: list[str] = []
+    issues: list[str] = []
+    n_table = 0
     with fitz.open(stream=content, filetype='pdf') as doc:
         for page in doc.pages(0, min(doc.page_count, 200)):
             parts.append(page.get_text())
+            # Таблицы часов в PDF пересчитываются так же, как в .docx (FR-05)
+            try:
+                tables = page.find_tables().tables
+            except Exception:  # noqa: BLE001 — страница без распознаваемой разметки таблиц
+                tables = []
+            for t in tables:
+                n_table += 1
+                rows = [[(c or '').replace('\n', ' ').strip() for c in r] for r in t.extract()]
+                issues.extend(check_hours_table(rows, n_table))
     text = '\n'.join(parts)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return ParsedReference(name=name, text=text, structure=_structure(lines))
+    return ParsedReference(name=name, text=text, structure=_structure(lines), hours_issues=list(dict.fromkeys(issues)))
 
 
 def _structure(lines: list[str]) -> list[str]:

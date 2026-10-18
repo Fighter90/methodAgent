@@ -1,36 +1,373 @@
 [
-  {"id": "lit-python-docs", "kind": "url", "bibl": "Документация Python 3", "url": "https://docs.python.org/3/", "tags": ["python"]},
-  {"id": "lit-pandas-docs", "kind": "url", "bibl": "pandas documentation", "url": "https://pandas.pydata.org/docs/", "tags": ["pandas", "анализ данн"]},
-  {"id": "lit-matplotlib-docs", "kind": "url", "bibl": "Matplotlib documentation", "url": "https://matplotlib.org/stable/", "tags": ["визуализац"]},
-  {"id": "lit-postgres-docs", "kind": "url", "bibl": "Документация PostgreSQL (русский перевод Postgres Professional)", "url": "https://postgrespro.ru/docs/postgresql", "tags": ["sql"]},
-  {"id": "lit-mckinney", "kind": "book", "bibl": "Маккинни У. Python и анализ данных. — М.: ДМК Пресс, 2023.", "tags": ["pandas", "анализ данн"]},
-  {"id": "lit-bruce", "kind": "book", "bibl": "Брюс П., Брюс Э., Гедек П. Практическая статистика для специалистов Data Science. — СПб.: БХВ-Петербург, 2021.", "tags": ["статистик", "анализ данн"]},
-  {"id": "lit-lutz", "kind": "book", "bibl": "Лутц М. Изучаем Python. — СПб.: Диалектика, 2019.", "tags": ["python", "программир"]},
-  {"id": "lit-sweigart", "kind": "book", "bibl": "Свейгарт Э. Автоматизация рутинных задач с помощью Python. — СПб.: Диалектика, 2021.", "tags": ["python", "школ"]},
-  {"id": "lit-devops-handbook", "kind": "book", "bibl": "Ким Дж., Дебуа П., Уиллис Дж., Хамбл Дж. Руководство по DevOps. — М.: Манн, Иванов и Фербер, 2018.", "tags": ["devops", "ci/cd"]},
-  {"id": "lit-nemeth", "kind": "book", "bibl": "Немет Э., Снайдер Г., Хейн Т. и др. Unix и Linux: руководство системного администратора. — СПб.: Диалектика, 2020.", "tags": ["linux", "devops", "администрир"]},
-  {"id": "lit-tanenbaum", "kind": "book", "bibl": "Таненбаум Э., Фимстер Н., Уэзеролл Д. Компьютерные сети. — СПб.: Питер, 2023.", "tags": ["сет", "кибербез", "devops"]},
-  {"id": "lit-docker-docs", "kind": "url", "bibl": "Docker Documentation", "url": "https://docs.docker.com/", "tags": ["docker", "devops"]},
-  {"id": "lit-k8s-docs", "kind": "url", "bibl": "Kubernetes Documentation", "url": "https://kubernetes.io/docs/", "tags": ["kubernetes", "devops"]},
-  {"id": "lit-fstec", "kind": "url", "bibl": "Банк данных угроз безопасности информации ФСТЭК России", "url": "https://bdu.fstec.ru/", "tags": ["кибербез", "безопасност"]},
-  {"id": "lit-gigachat", "kind": "url", "bibl": "Документация GigaChat API", "url": "https://developers.sber.ru/docs/ru/gigachat/overview", "tags": ["ии", "нейросет", "учител"]},
-  {"id": "lit-yandexgpt", "kind": "url", "bibl": "Документация YandexGPT (Yandex Cloud AI Studio)", "url": "https://yandex.cloud/ru/docs/foundation-models/", "tags": ["ии", "нейросет", "учител"]},
-  {"id": "lit-moodle-gift", "kind": "url", "bibl": "GIFT format — Moodle Docs", "url": "https://docs.moodle.org/en/GIFT_format", "tags": []},
-  {"id": "lit-prometheus-docs", "kind": "url", "bibl": "Prometheus Documentation", "url": "https://prometheus.io/docs/", "tags": ["мониторинг", "prometheus", "devops"]},
-  {"id": "lit-grafana-docs", "kind": "url", "bibl": "Grafana Documentation", "url": "https://grafana.com/docs/grafana/latest/", "tags": ["мониторинг", "grafana", "devops"]},
-  {"id": "lit-terraform-docs", "kind": "url", "bibl": "Terraform Documentation (HashiCorp)", "url": "https://developer.hashicorp.com/terraform/docs", "tags": ["terraform", "инфраструктур", "devops"]},
-  {"id": "lit-opentofu-docs", "kind": "url", "bibl": "OpenTofu Documentation", "url": "https://opentofu.org/docs/", "tags": ["opentofu", "инфраструктур"]},
-  {"id": "lit-ansible-docs", "kind": "url", "bibl": "Ansible Documentation", "url": "https://docs.ansible.com/", "tags": ["ansible", "инфраструктур", "devops"]},
-  {"id": "lit-gitlab-ci-docs", "kind": "url", "bibl": "GitLab CI/CD Documentation", "url": "https://docs.gitlab.com/ci/", "tags": ["ci/cd", "gitlab", "devops"]},
-  {"id": "lit-nginx-docs", "kind": "url", "bibl": "Документация nginx", "url": "https://nginx.org/ru/docs/", "tags": ["nginx", "веб-сервер", "devops"]},
-  {"id": "lit-progit", "kind": "url", "bibl": "Чакон С., Штрауб Б. Pro Git (русский перевод)", "url": "https://git-scm.com/book/ru/v2", "tags": ["git", "ci/cd", "devops"]},
-  {"id": "lit-man-pages", "kind": "url", "bibl": "The Linux man-pages project", "url": "https://man7.org/linux/man-pages/", "tags": ["linux"]},
-  {"id": "lit-sklearn-docs", "kind": "url", "bibl": "scikit-learn documentation", "url": "https://scikit-learn.org/stable/", "tags": ["машинн", "sklearn"]},
-  {"id": "lit-jupyter-docs", "kind": "url", "bibl": "Project Jupyter Documentation", "url": "https://docs.jupyter.org/", "tags": ["jupyter"]},
-  {"id": "lit-owasp-top10", "kind": "url", "bibl": "OWASP Top 10", "url": "https://owasp.org/Top10/", "tags": ["кибербез", "безопасност", "веб"]},
-  {"id": "lit-shotts", "kind": "book", "bibl": "Шоттс У. Командная строка Linux. Полное руководство. — СПб.: Питер, 2017.", "tags": ["linux", "devops", "администрир"]},
-  {"id": "lit-brikman", "kind": "book", "bibl": "Брикман Е. Terraform: инфраструктура на уровне кода. — СПб.: Питер, 2020.", "tags": ["terraform", "инфраструктур", "devops"]},
-  {"id": "lit-payne", "kind": "book", "bibl": "Пэйн Б. Python для детей и родителей. — М.: Эксмо, 2017.", "tags": ["python", "школ", "дет"]},
-  {"id": "lit-briggs", "kind": "book", "bibl": "Бриггс Дж. Python для детей. Самоучитель по программированию. — М.: Манн, Иванов и Фербер, 2017.", "tags": ["python", "школ", "дет"]},
-  {"id": "lit-dawson", "kind": "book", "bibl": "Доусон М. Программируем на Python. — СПб.: Питер, 2014.", "tags": ["python", "школ", "программир"]}
+ {
+  "id": "lit-python-docs",
+  "kind": "url",
+  "bibl": "Документация Python 3",
+  "url": "https://docs.python.org/3/",
+  "tags": [
+   "python"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-pandas-docs",
+  "kind": "url",
+  "bibl": "pandas documentation",
+  "url": "https://pandas.pydata.org/docs/",
+  "tags": [
+   "pandas",
+   "анализ данн"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-matplotlib-docs",
+  "kind": "url",
+  "bibl": "Matplotlib documentation",
+  "url": "https://matplotlib.org/stable/",
+  "tags": [
+   "визуализац"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-postgres-docs",
+  "kind": "url",
+  "bibl": "Документация PostgreSQL (русский перевод Postgres Professional)",
+  "url": "https://postgrespro.ru/docs/postgresql",
+  "tags": [
+   "sql"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-mckinney",
+  "kind": "book",
+  "bibl": "Маккинни У. Python и анализ данных. — М.: ДМК Пресс, 2023.",
+  "tags": [
+   "pandas",
+   "анализ данн"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-bruce",
+  "kind": "book",
+  "bibl": "Брюс П., Брюс Э., Гедек П. Практическая статистика для специалистов Data Science. — СПб.: БХВ-Петербург, 2021.",
+  "tags": [
+   "статистик",
+   "анализ данн"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-lutz",
+  "kind": "book",
+  "bibl": "Лутц М. Изучаем Python. — СПб.: Диалектика, 2019.",
+  "tags": [
+   "python",
+   "программир"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-sweigart",
+  "kind": "book",
+  "bibl": "Свейгарт Э. Автоматизация рутинных задач с помощью Python. — СПб.: Диалектика, 2021.",
+  "tags": [
+   "python",
+   "школ"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-devops-handbook",
+  "kind": "book",
+  "bibl": "Ким Дж., Дебуа П., Уиллис Дж., Хамбл Дж. Руководство по DevOps. — М.: Манн, Иванов и Фербер, 2018.",
+  "tags": [
+   "devops",
+   "ci/cd"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-nemeth",
+  "kind": "book",
+  "bibl": "Немет Э., Снайдер Г., Хейн Т. и др. Unix и Linux: руководство системного администратора. — СПб.: Диалектика, 2020.",
+  "tags": [
+   "linux",
+   "devops",
+   "администрир"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-tanenbaum",
+  "kind": "book",
+  "bibl": "Таненбаум Э., Фимстер Н., Уэзеролл Д. Компьютерные сети. — СПб.: Питер, 2023.",
+  "tags": [
+   "сет",
+   "кибербез",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-docker-docs",
+  "kind": "url",
+  "bibl": "Docker Documentation",
+  "url": "https://docs.docker.com/",
+  "tags": [
+   "docker",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-k8s-docs",
+  "kind": "url",
+  "bibl": "Kubernetes Documentation",
+  "url": "https://kubernetes.io/docs/",
+  "tags": [
+   "kubernetes",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-fstec",
+  "kind": "url",
+  "bibl": "Банк данных угроз безопасности информации ФСТЭК России",
+  "url": "https://bdu.fstec.ru/",
+  "tags": [
+   "кибербез",
+   "безопасност"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-gigachat",
+  "kind": "url",
+  "bibl": "Документация GigaChat API",
+  "url": "https://developers.sber.ru/docs/ru/gigachat/overview",
+  "tags": [
+   "ии",
+   "нейросет",
+   "учител"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-yandexgpt",
+  "kind": "url",
+  "bibl": "Документация YandexGPT (Yandex Cloud AI Studio)",
+  "url": "https://yandex.cloud/ru/docs/foundation-models/",
+  "tags": [
+   "ии",
+   "нейросет",
+   "учител"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-moodle-gift",
+  "kind": "url",
+  "bibl": "GIFT format — Moodle Docs",
+  "url": "https://docs.moodle.org/en/GIFT_format",
+  "tags": [],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-prometheus-docs",
+  "kind": "url",
+  "bibl": "Prometheus Documentation",
+  "url": "https://prometheus.io/docs/",
+  "tags": [
+   "мониторинг",
+   "prometheus",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-grafana-docs",
+  "kind": "url",
+  "bibl": "Grafana Documentation",
+  "url": "https://grafana.com/docs/grafana/latest/",
+  "tags": [
+   "мониторинг",
+   "grafana",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-terraform-docs",
+  "kind": "url",
+  "bibl": "Terraform Documentation (HashiCorp)",
+  "url": "https://developer.hashicorp.com/terraform/docs",
+  "tags": [
+   "terraform",
+   "инфраструктур",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-opentofu-docs",
+  "kind": "url",
+  "bibl": "OpenTofu Documentation",
+  "url": "https://opentofu.org/docs/",
+  "tags": [
+   "opentofu",
+   "инфраструктур"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-ansible-docs",
+  "kind": "url",
+  "bibl": "Ansible Documentation",
+  "url": "https://docs.ansible.com/",
+  "tags": [
+   "ansible",
+   "инфраструктур",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-gitlab-ci-docs",
+  "kind": "url",
+  "bibl": "GitLab CI/CD Documentation",
+  "url": "https://docs.gitlab.com/ci/",
+  "tags": [
+   "ci/cd",
+   "gitlab",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-nginx-docs",
+  "kind": "url",
+  "bibl": "Документация nginx",
+  "url": "https://nginx.org/ru/docs/",
+  "tags": [
+   "nginx",
+   "веб-сервер",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-progit",
+  "kind": "url",
+  "bibl": "Чакон С., Штрауб Б. Pro Git (русский перевод)",
+  "url": "https://git-scm.com/book/ru/v2",
+  "tags": [
+   "git",
+   "ci/cd",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-man-pages",
+  "kind": "url",
+  "bibl": "The Linux man-pages project",
+  "url": "https://man7.org/linux/man-pages/",
+  "tags": [
+   "linux"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-sklearn-docs",
+  "kind": "url",
+  "bibl": "scikit-learn documentation",
+  "url": "https://scikit-learn.org/stable/",
+  "tags": [
+   "машинн",
+   "sklearn"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-jupyter-docs",
+  "kind": "url",
+  "bibl": "Project Jupyter Documentation",
+  "url": "https://docs.jupyter.org/",
+  "tags": [
+   "jupyter"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-owasp-top10",
+  "kind": "url",
+  "bibl": "OWASP Top 10",
+  "url": "https://owasp.org/Top10/",
+  "tags": [
+   "кибербез",
+   "безопасност",
+   "веб"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-shotts",
+  "kind": "book",
+  "bibl": "Шоттс У. Командная строка Linux. Полное руководство. — СПб.: Питер, 2017.",
+  "tags": [
+   "linux",
+   "devops",
+   "администрир"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-brikman",
+  "kind": "book",
+  "bibl": "Брикман Е. Terraform: инфраструктура на уровне кода. — СПб.: Питер, 2020.",
+  "tags": [
+   "terraform",
+   "инфраструктур",
+   "devops"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-payne",
+  "kind": "book",
+  "bibl": "Пэйн Б. Python для детей и родителей. — М.: Эксмо, 2017.",
+  "tags": [
+   "python",
+   "школ",
+   "дет"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-briggs",
+  "kind": "book",
+  "bibl": "Бриггс Дж. Python для детей. Самоучитель по программированию. — М.: Манн, Иванов и Фербер, 2017.",
+  "tags": [
+   "python",
+   "школ",
+   "дет"
+  ],
+  "checked_at": "2026-10-17"
+ },
+ {
+  "id": "lit-dawson",
+  "kind": "book",
+  "bibl": "Доусон М. Программируем на Python. — СПб.: Питер, 2014.",
+  "tags": [
+   "python",
+   "школ",
+   "программир"
+  ],
+  "checked_at": "2026-10-17"
+ }
 ]

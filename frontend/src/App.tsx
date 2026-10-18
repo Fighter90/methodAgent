@@ -76,15 +76,20 @@ function Shell({ children }: { children: ReactNode }) {
           ))}
         </div>
         <div style={{ position: 'relative' }}>
-          <button className="icon-btn" onClick={() => setOpen((x) => !x)} aria-label="Уведомления">
-            <Bell size={17} />{notes.length > 0 && <span className="badge-dot" />}
+          <button className="icon-btn" aria-label="Уведомления" onClick={() => {
+            setOpen((x) => !x)
+            if (!open && notes.some((n) => !n.read)) {
+              api('/notifications/read', { method: 'POST', json: { ids: [] } }).then(() => setNotes(notes.map((n) => ({ ...n, read: true })))).catch(() => {})
+            }
+          }}>
+            <Bell size={17} />{notes.some((n) => !n.read) && <span className="badge-dot" />}
           </button>
           {open && (
             <div className="card" style={{ position: 'absolute', right: 0, top: 44, width: 340, padding: 10, boxShadow: 'var(--shadow-lg)', animation: 'scaleIn .2s var(--ease)', zIndex: 40 }}>
               <div className="h3" style={{ padding: '4px 6px' }}>Уведомления</div>
               {notes.length === 0 && <div className="small muted" style={{ padding: 6 }}>Пока ничего нового.</div>}
               {notes.slice(0, 8).map((n, i) => (
-                <Link key={i} to={`/app/p/${n.program_id}`} onClick={() => setOpen(false)} className="small" style={{ display: 'block', padding: '8px 6px', borderTop: i ? '1px solid var(--line)' : 0 }}>
+                <Link key={i} to={`/app/p/${n.program_id}`} onClick={() => setOpen(false)} className="small" style={{ display: 'block', padding: '8px 6px', borderTop: i ? '1px solid var(--line)' : 0, fontWeight: n.read ? 400 : 700 }}>
                   {n.text}<div className="tiny muted">{(n.at || '').slice(11, 16)}</div>
                 </Link>
               ))}

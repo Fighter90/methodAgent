@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
+import re
+
 from app.programs.schemas import (
     Assessment,
     Criterion,
     ProgramDoc,
     Question_,
     RuleResult,
+    Slide,
 )
 from app.validation.rules import assessment_map
 
@@ -56,6 +59,16 @@ def repair(doc: ProgramDoc, rules: list[RuleResult]) -> list[str]:
                 final.lo_ids.append(lo_id)
                 log.append(f'{lo_id}: добавлен в критерии итоговой аттестации')
         log += cover_outcomes(doc)
+    if 'V-09' in failed:
+        log += _fix_materials(doc)
+    if 'V-17' in failed:
+        log += _drop_reference_overlap(doc)
+    if failed & {'V-08', 'V-11'}:
+        # Разделы шаблона собираются кодом из графа: пересборка заполняет пропуски и возвращает пустые поля реквизитов
+        from app.agent.sections import build_sections
+
+        doc.kit.sections = build_sections(doc)
+        log.append('Разделы шаблона пересобраны: пустые разделы заполнены, реквизиты и ФИО оставлены полями')
     if 'V-16' in failed:
         for s in doc.sources:
             if not s.confirmed and 'не подтверждено' not in s.bibl:
@@ -127,3 +140,54 @@ def _spare_question(doc: ProgramDoc, test_id: str, module_id: str) -> Question_ 
     pool = [q for q in doc.kit.questions if q.assessment_id == test_id and q.lo_ids and all(per_lo.get(x, 0) > 1 for x in q.lo_ids)]
     pool.sort(key=lambda q: (q.module_id != module_id, -min(per_lo[x] for x in q.lo_ids)))
     return pool[0] if pool else None
+
+
+def _fix_materials(doc: ProgramDoc) -> list[str]:
+    """V-09: тема лекции совпадает с темой УТП; слайды есть у модулей из запроса (или хотя бы у одного)."""
+    log = []
+    titles = {t.id: t.title for t in doc.all_topics()}
+    for lec in doc.kit.lectures:
+        if lec.topic_id in titles and lec.title.strip().lower() != titles[lec.topic_id].strip().lower():
+            lec.title = titles[lec.topic_id]
+            log.append(f'Лекция {lec.id}: тема приведена к УТП')
+    wanted = [m for m in doc.modules if m.n in doc.params.materials.slides_modules]
+    if not any(lec.slides for lec in doc.kit.lectures) and not wanted and doc.modules:
+        wanted = [doc.modules[0]]
+    for m in wanted:
+        if any(lec.module_id == m.id and lec.slides for lec in doc.kit.lectures):
+            continue
+        for lec in [x for x in doc.kit.lectures if x.module_id == m.id]:
+            topic = next((t for t in m.topics if t.id == lec.topic_id), None)
+            points = [s.strip() for s in re.split(r'(?<=[.!?])\s+', topic.description if topic else '') if s.strip()][:4]
+            lec.slides = [
+                Slide(id=f'{lec.id}-s1', n=1, title=lec.title, bullets=points[:2] or [lec.title]),
+                *[Slide(id=f'{lec.id}-s{i + 2}', n=i + 2, title=str(step.get('text', ''))[:80], bullets=[str(step.get('text', ''))]) for i, step in enumerate(lec.plan[:3])],
+            ]
+        log.append(f'Модуль {m.n}: слайды собраны по плану лекций и темам УТП — нужна вычитка эксперта')
+    return log
+
+
+def _drop_reference_overlap(doc: ProgramDoc) -> list[str]:
+    """V-17: предложения, совпадающие с референсом по 8-граммам, убираются из аннотаций и текстов тем."""
+    from app.validation.ngrams import _tokens, ngrams
+
+    ref = ngrams(_tokens(' '.join(r.text_sample for r in doc.references)))
+    if not ref:
+        return []
+
+    def clean(text: str) -> tuple[str, int]:
+        parts = re.split(r'(?<=[.!?])\s+', text)
+        kept = [x for x in parts if not (ngrams(_tokens(x)) & ref)]
+        return ' '.join(kept), len(parts) - len(kept)
+
+    removed = 0
+    for mp in doc.kit.module_programs:
+        mp.annotation, n = clean(mp.annotation)
+        removed += n
+        for item in mp.content:
+            item['text'], n = clean(item.get('text', ''))
+            removed += n
+    for t in doc.all_topics():
+        t.description, n = clean(t.description)
+        removed += n
+    return [f'Убрано {removed} предложений, совпавших с референсом'] if removed else []

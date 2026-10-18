@@ -83,6 +83,13 @@ def parse_json(text: str) -> Any:
     return json.loads(cleaned)
 
 
+def _budget_s(skill_name: str, default: float) -> float:
+    from app.skills.base import load_skills
+
+    spec = load_skills().get(skill_name)
+    return spec.timeout_s * (spec.retries + 1) if spec else default * 3
+
+
 class LLMClient:
     """Клиент ролей generate / judge с резервной моделью."""
 
@@ -186,20 +193,33 @@ class LLMClient:
             raise LLMUnavailable(f'Дневной бюджет LLM {self.settings.llm_daily_budget_rub:.0f} ₽ исчерпан')
         sem = self._judge_sem if role == 'judge' else self._sem
         last_error: Exception | None = None
+        # Бюджет времени навыка из SKILL.md (timeout_s × попытки): ожидание очереди шлюза не считается.
+        # Исчерпан — навык уходит на резервную генерацию, и сроки FR-19/FR-31 держатся (подраздел 4.7)
+        budget = _budget_s(skill, self.settings.llm_timeout_s)
+        active = 0.0
         for model in self._models(role):
             messages: list[dict[str, str]] = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
             # Ответ судьи дорогой и долгий (модель рассуждений): одна попытка, затем резервная модель
             attempts = 1 if model == self.settings.llm_model_judge else len(_RETRY_PAUSES) + 1
             for attempt in range(attempts):
                 started = time.monotonic()
+                if active >= budget:
+                    raise LLMUnavailable(f'{skill}: бюджет времени {budget:.0f} с исчерпан')
                 try:
                     async with sem:
-                        resp = await self._get().chat.completions.create(
-                            model=model,
-                            messages=messages,
-                            temperature=temperature,
-                            max_tokens=max_tokens,
-                        )
+                        started = time.monotonic()
+                        try:
+                            resp = await asyncio.wait_for(
+                                self._get().chat.completions.create(
+                                    model=model,
+                                    messages=messages,
+                                    temperature=temperature,
+                                    max_tokens=max_tokens,
+                                ),
+                                timeout=max(5.0, min(self.settings.llm_timeout_s, budget - active)),
+                            )
+                        finally:
+                            active += time.monotonic() - started
                     content = resp.choices[0].message.content or ''
                     usage = getattr(resp, 'usage', None)
                     tin = int(getattr(usage, 'prompt_tokens', 0) or 0)

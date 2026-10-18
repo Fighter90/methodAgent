@@ -18,19 +18,33 @@ from app.programs.schemas import ProfStandard, ProgramType, Source, TrudFunction
 REGISTRY_DIR = ROOT_DIR / 'registry'
 
 
+REGISTRY_FILES = {'npa': 'npa.json', 'ps': 'profstandards.json', 'tools': 'tools.json', 'literature': 'literature.json', 'org': 'org_profile.json'}
+
+
+def override_dir() -> Path:
+    """Правки администратора (PUT /org/profile, /org/registry) лежат в data_dir: образ контейнера только для чтения."""
+    from app.core.config import get_settings
+
+    return get_settings().data_dir / 'registry'
+
+
 def _load(name: str) -> Any:
-    return json.loads((REGISTRY_DIR / name).read_text(encoding='utf-8'))
+    own = override_dir() / name
+    path = own if own.exists() else REGISTRY_DIR / name
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def save_override(kind: str, data: Any) -> None:
+    """Записывает раздел реестра или профиль организации и сбрасывает кэш."""
+    d = override_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / REGISTRY_FILES[kind]).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf-8')
+    registry.cache_clear()
 
 
 @lru_cache
 def registry() -> dict[str, Any]:
-    return {
-        'npa': _load('npa.json'),
-        'ps': _load('profstandards.json'),
-        'tools': _load('tools.json'),
-        'literature': _load('literature.json'),
-        'org': _load('org_profile.json'),
-    }
+    return {kind: _load(name) for kind, name in REGISTRY_FILES.items()}
 
 
 def norm_base_for(program_type: ProgramType) -> list[Source]:
@@ -94,7 +108,7 @@ def literature_for(text: str, limit: int = 6, school: bool = False) -> list[Sour
             scored.append((score, item))
     scored.sort(key=lambda x: -x[0])
     return [
-        Source(id=i['id'], kind=i['kind'], bibl=i['bibl'], url=i.get('url', ''), confirmed=True, checked_at='2026-10-17')
+        Source(id=i['id'], kind=i['kind'], bibl=i['bibl'], url=i.get('url', ''), confirmed=True, checked_at=i.get('checked_at', ''))
         for _, i in scored[:limit]
     ]
 

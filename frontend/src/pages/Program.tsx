@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight, Clock, Coins, Download, FileSpreadsheet, FileText,
-  GitBranch, History, MessageSquare, Presentation, RotateCcw, Send, Sparkles, Undo2, Users, X,
+  GitBranch, History, MessageSquare, Presentation, RotateCcw, Send, Sparkles, Star, Undo2, Users, X,
 } from 'lucide-react'
 import { api, download, getSession, STATUS_LABEL, waitJob } from '../api'
 import { Avatar, Spinner, useToast } from '../components/ui'
@@ -12,7 +12,14 @@ import { EditableText, TemplateSwitch, ToolsPanel } from './ProgramTools'
 type Doc = any
 const STEPS = ['Запрос', 'Вопросы', 'Каркас', 'Проверка', 'Комплект', 'Согласование']
 const KINDS = ['lk', 'pr', 'lb', 'srs'] as const
-const EXPERTS = [{ id: 'u-timur', name: 'Тимур А.' }, { id: 'u-olga', name: 'Ольга К.' }]
+const FIELD_ROW: Record<string, string> = { program_type: 'Тип', volume_h: 'Объём', audience: 'Аудитория', form: 'Форма', final_assessment_form: 'Аттестация' }
+const FIELD_LABEL: Record<string, string> = { program_type: 'Тип программы', volume_h: 'Объём, ч', audience: 'Аудитория и входной уровень', form: 'Форма обучения', final_assessment_form: 'Форма итоговой аттестации', calendar: 'Календарный график' }
+
+/** Значения, которые агент принял сам по ответу «На ваше усмотрение» или в режиме auto (FR-13). */
+function assumptionsOf(doc: Doc): { label: string; value: string; source: string }[] {
+  const src = doc.report?.assumptions?.length ? doc.report.assumptions : doc.assumptions || []
+  return src.map((a: any) => ({ label: a.label || FIELD_LABEL[a.field] || a.field, value: typeof a.value === 'object' ? JSON.stringify(a.value) : String(a.value), source: a.source }))
+}
 const TYPE_LABEL: Record<string, string> = { dpp_pk: 'ДПП повышения квалификации', dpp_pk_internship: 'ДПП ПК в форме стажировки', doop: 'Дополнительная общеразвивающая' }
 
 function maxStep(s: string) {
@@ -158,11 +165,14 @@ function paramRows(doc: Doc): [string, string][] {
   const p = doc.params || {}
   const m = p.materials || {}
   const slides = m.slides_lessons?.length ? `занятия ${m.slides_lessons.join(', ')}` : m.slides_topic_hint ? `модуль «${m.slides_topic_hint}»` : m.slides_modules?.length ? `модули ${m.slides_modules.join(', ')}` : '—'
-  return [
+  const assumed = new Set((doc.assumptions || []).map((a: any) => FIELD_ROW[a.field]))
+  const rows: [string, string][] = [
     ['Тип', TYPE_LABEL[doc.type] || '—'],
     ['Документ', doc.issued_document || '—'],
     ['Объём', p.volume_h ? `${p.volume_h} ак. ч` : '—'],
     ['Аудитория', p.audience || '—'],
+    ['Входной уровень', p.entry_level || '—'],
+    ['Обязательные темы', (p.required_topics || []).join(', ') || '—'],
     ['Форма', [p.form, p.distance ? 'ЭО и ДОТ' : ''].filter(Boolean).join(', ') || '—'],
     ['Срок', p.duration_weeks ? `${p.duration_weeks} нед.` : '—'],
     ['Режим', p.sessions_per_week ? `${p.sessions_per_week} раза в неделю по ${p.session_hours} ч` : p.max_hours_per_day ? `не больше ${p.max_hours_per_day} ч в день` : '—'],
@@ -172,6 +182,7 @@ function paramRows(doc: Doc): [string, string][] {
     ['Слайды', slides],
     ['Ограничения', (p.constraints || []).join('; ') || '—'],
   ]
+  return rows.map(([k, v]) => [k, assumed.has(k) && v !== '—' ? `${v} · принято агентом` : v])
 }
 
 function RequestView({ doc, onNext }: { doc: Doc; onNext: () => void }) {
@@ -191,12 +202,7 @@ function RequestView({ doc, onNext }: { doc: Doc; onNext: () => void }) {
         {doc.agent_notes?.map((n: string, i: number) => (
           <div key={i} className="agent-msg"><span className="avatar av-agent"><Sparkles size={14} /></span><div>{n}</div></div>
         ))}
-        {doc.assumptions?.length > 0 && (
-          <div className="agent-msg" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}>
-            <AlertTriangle size={18} color="var(--amber)" />
-            <div><b style={{ color: 'var(--amber)' }}>Допущения:</b> {doc.assumptions.map((a: any) => `${a.field} = ${typeof a.value === 'object' ? JSON.stringify(a.value) : a.value} (${a.source})`).join('; ')}</div>
-          </div>
-        )}
+        <Assumptions doc={doc} />
         <div style={{ marginTop: 16 }} className="small muted">Нормативная база: {doc.norm_mode === 'org' ? 'документы организации и реестр' : 'госстандарты из реестра'} · {doc.norm_base?.map((s: any) => s.bibl.split(' «')[0]).join(', ')}</div>
       </div>
       <aside className="card card-pad">
@@ -207,6 +213,17 @@ function RequestView({ doc, onNext }: { doc: Doc; onNext: () => void }) {
         <p className="tiny muted">Ссылки на акты и профстандарты — только из нормативной базы. Всё остальное получает пометку «не подтверждено».</p>
         <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={onNext}>Дальше <ArrowRight size={16} /></button>
       </aside>
+    </div>
+  )
+}
+
+function Assumptions({ doc }: { doc: Doc }) {
+  const list = assumptionsOf(doc)
+  if (!list.length) return null
+  return (
+    <div className="agent-msg" style={{ background: 'var(--amber-soft)', borderColor: 'var(--amber-line)' }}>
+      <AlertTriangle size={18} color="var(--amber)" />
+      <div><b style={{ color: 'var(--amber)' }}>Принято агентом:</b> {list.map((a) => `${a.label} — ${a.value} (${a.source})`).join('; ')}</div>
     </div>
   )
 }
@@ -272,7 +289,7 @@ function QuestionsView({ doc, onJob }: { doc: Doc; onJob: (j: string) => void })
 }
 
 /* ---------------- 3. Каркас ---------------- */
-function HoursTable({ doc, editable, onChange, onPatch }: { doc: Doc; editable: boolean; onChange?: (mid: string, k: string, v: number) => void; onPatch?: (patch: any) => Promise<void> }) {
+function HoursTable({ doc, editable, onChange, onPatch, onTopic }: { doc: Doc; editable: boolean; onChange?: (mid: string, k: string, v: number) => void; onPatch?: (patch: any) => Promise<void>; onTopic?: (mid: string, tid: string, k: string, v: number) => void }) {
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const tot = doc.totals || {}
   const fa = doc.final_assessment || {}
@@ -293,14 +310,16 @@ function HoursTable({ doc, editable, onChange, onPatch }: { doc: Doc; editable: 
                 {KINDS.map((k) => (
                   <td key={k} className="num">{editable ? <input className="hours-input" type="number" min={0} value={m.hours[k]} onChange={(e) => onChange?.(m.id, k, Number(e.target.value))} /> : m.hours[k]}</td>
                 ))}
-                <td className="small">{m.control}</td>
+                <td className="small">{m.control}{m.manual_topics && <div className="tiny muted">часы тем вручную</div>}</td>
               </tr>,
               ...(open[m.id] ? m.topics.map((t: any) => (
-                <tr key={t.id} className="sub"><td>{t.n}</td><td><EditableText value={t.title} disabled={!editable || !onPatch} onSave={(v) => onPatch!({ modules: [{ id: m.id, topics: [{ id: t.id, title: v }] }] })} /></td><td className="num">{t.hours.total}</td>{KINDS.map((k) => <td key={k} className="num">{t.hours[k]}</td>)}<td /></tr>
+                <tr key={t.id} className="sub"><td>{t.n}</td><td><EditableText value={t.title} disabled={!editable || !onPatch} onSave={(v) => onPatch!({ modules: [{ id: m.id, topics: [{ id: t.id, title: v }] }] })} /></td><td className="num">{t.hours.total}</td>{KINDS.map((k) => (
+                  <td key={k} className="num">{editable && onTopic ? <input className="hours-input" type="number" min={0} value={t.hours[k]} aria-label={`Тема ${t.n} ${k}`} onChange={(e) => onTopic(m.id, t.id, k, Number(e.target.value))} /> : t.hours[k]}</td>
+                ))}<td /></tr>
               )) : []),
             ]
           })}
-          <tr><td /><td>Итоговая аттестация</td><td className="num">{fa.hours}</td>{[0, 1, 2].map((i) => <td key={i} className="num">{doc.type === 'dpp_pk_internship' ? 0 : '—'}</td>)}<td className="num">—</td><td className="small">{fa.form}</td></tr>
+          <tr><td /><td>Итоговая аттестация</td><td className="num">{editable && onPatch ? <input className="hours-input" type="number" min={0} value={fa.hours} aria-label="Часы итоговой аттестации" onChange={(e) => onPatch({ final_hours: Number(e.target.value) })} /> : fa.hours}</td>{[0, 1, 2].map((i) => <td key={i} className="num">{doc.type === 'dpp_pk_internship' ? 0 : '—'}</td>)}<td className="num">—</td><td className="small">{fa.form}</td></tr>
           <tr className="total"><td /><td>Итого</td><td className="num">{(tot.total || 0) + (fa.hours || 0)}</td>{KINDS.map((k) => <td key={k} className="num">{tot[k]}</td>)}<td /></tr>
         </tbody>
       </table>
@@ -335,14 +354,23 @@ function SkeletonView({ doc, setDoc, onNext }: { doc: Doc; setDoc: (d: Doc) => v
     } catch (e: any) { toast(e.message, true) } finally { setSaving(false) }
   }
 
+  async function changeTopic(mid: string, tid: string, k: string, v: number) {
+    const local = structuredClone(doc)
+    const t = local.modules.find((x: any) => x.id === mid)?.topics.find((x: any) => x.id === tid)
+    if (t) t.hours[k] = v
+    setDoc(local)
+    await patch({ modules: [{ id: mid, topics: [{ id: tid, hours: { [k]: v } }] }] })
+  }
+
   const cal = doc.calendar || {}
   return (
     <div className="grid-main">
       <div className="col">
         <section className="card card-pad">
           <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Учебный план</h2>{saving && <span className="small muted row"><Spinner /> пересчитываю</span>}<span className={`chip ${ok ? 'chip-ok' : 'chip-err'}`}>{all} из {doc.volume_h} ч</span></div>
-          <p className="small muted">{editable ? 'Часы в полях и названия модулей и тем можно менять: итоги и проверки пересчитываются сразу. Стрелка раскрывает темы.' : 'Каркас утверждён: часы меняются только точечной правкой.'}</p>
-          <HoursTable doc={doc} editable={editable} onChange={change} onPatch={patch} />
+          <p className="small muted">{editable ? 'Часы модулей, тем и аттестации, названия модулей и тем можно менять: итоги и проверки пересчитываются сразу. Стрелка раскрывает темы; если поменять часы темы, модуль станет суммой своих тем.' : 'Каркас утверждён: часы меняются только точечной правкой.'}</p>
+          <HoursTable doc={doc} editable={editable} onChange={change} onPatch={patch} onTopic={changeTopic} />
+          <div style={{ marginTop: 10 }}><Assumptions doc={doc} /></div>
           {!ok && <div className="callout warn small" style={{ marginTop: 12 }}>Сначала исправьте часы: сумма с аттестацией должна быть {doc.volume_h} ч.</div>}
         </section>
         <section className="card card-pad">
@@ -355,8 +383,9 @@ function SkeletonView({ doc, setDoc, onNext }: { doc: Doc; setDoc: (d: Doc) => v
           {cal.conflict && <div className="callout warn small">{cal.conflict}</div>}
           <div className="row row-wrap" style={{ gap: 6, marginTop: 12 }}>
             {(cal.schedule || []).map((w: any) => (
-              <div key={w.week} title={w.items?.join('; ')} style={{ minWidth: 56, padding: '8px 6px', borderRadius: 10, background: 'var(--accent-soft)', textAlign: 'center' }}>
+              <div key={w.week} title={w.items?.join('; ')} style={{ minWidth: 64, padding: '8px 6px', borderRadius: 10, background: 'var(--accent-soft)', textAlign: 'center' }}>
                 <div className="tiny muted">нед. {w.week}</div><b>{w.hours} ч</b>
+                <div className="tiny muted">{[['ЛК', w.lk], ['ПР', w.pr], ['ЛБ', w.lb], ['СРС', w.srs], ['ИА', w.ia]].filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(' · ')}</div>
               </div>
             ))}
           </div>
@@ -422,6 +451,33 @@ function RuleList({ rules }: { rules: any[] }) {
   )
 }
 
+const RULE_ICON: Record<string, string> = { pass: '✓', warn: '!', fail: '✕', skip: '—' }
+
+/** Результат каждого из 27 правил: код или судья, статус, замечания и ответственный (FR-33). */
+function RuleDetails({ rules }: { rules: any[] }) {
+  return (
+    <details style={{ marginTop: 12 }}>
+      <summary className="small" style={{ cursor: 'pointer', fontWeight: 700 }}>Все правила · {rules.length}</summary>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="table">
+          <thead><tr><th>Правило</th><th>Проверка</th><th>Кто проверяет</th><th>Итог</th><th>Замечания</th></tr></thead>
+          <tbody>
+            {rules.map((r) => (
+              <tr key={r.id}>
+                <td><b>{r.id}</b> <span className="small">{r.title}</span></td>
+                <td className="small">{r.check ? `блокирующая ${r.check}` : 'предупреждение'}</td>
+                <td className="small">{r.kind === 'llm' ? 'судья' : 'код'}</td>
+                <td><span className={`check-icon ci-${r.status === 'skip' ? 'pass' : r.status}`} title={r.status}>{RULE_ICON[r.status]}</span></td>
+                <td className="small">{r.messages?.length ? r.messages.slice(0, 3).join(' · ') : r.status === 'skip' ? 'на этапе комплекта' : '—'}{r.messages?.length ? <div className="tiny muted">Исправляет: {r.owner || 'методист'}</div> : null}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  )
+}
+
 function Coverage({ rows }: { rows: any[] }) {
   if (!rows?.length) return null
   const cols = Array.from(new Set(rows.flatMap((r) => Object.keys(r.cells || {}))))
@@ -454,8 +510,9 @@ function CheckView({ doc, setDoc, reload, onJob }: { doc: Doc; setDoc: (d: Doc) 
   const fails = rep.rules.filter((r: any) => r.status === 'fail').length
   const pending = rep.proposals.filter((p: any) => !p.decided)
 
+  const key = (p: any) => `${p.rule_id}|${p.node || ''}|${p.option_id || ''}`
   async function decide(p: any, decision: 'accept' | 'keep') {
-    setBusy(p.rule_id + p.option_id)
+    setBusy(key(p))
     try {
       const r = await api(`/programs/${doc.id}/skeleton/decisions`, { method: 'POST', json: { rule_id: p.rule_id, decision, node: p.node || '', proposal: p.proposal || '', option_id: p.option_id || '' } })
       setDoc({ ...r.program, totals: doc.totals })
@@ -479,6 +536,7 @@ function CheckView({ doc, setDoc, reload, onJob }: { doc: Doc; setDoc: (d: Doc) 
           <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Проверка каркаса</h2><span className={`chip ${fails ? 'chip-err' : 'chip-ok'}`}>{rep.blocking_passed} из {rep.blocking_total} проверок</span></div>
           <p className="small muted">Агент проверил каркас до генерации содержания. Решение принимаете вы. ✓ всё в порядке · ! нужно ваше решение · ✕ ошибка, утвердить нельзя</p>
           <RuleList rules={rep.rules} />
+          <RuleDetails rules={rep.rules} />
         </section>
         <section className="card card-pad">
           <h2 className="h2">Что изучают и чем проверяют</h2>
@@ -496,7 +554,7 @@ function CheckView({ doc, setDoc, reload, onJob }: { doc: Doc; setDoc: (d: Doc) 
                 <div className="small" style={{ margin: '6px 0' }}>Агент предлагает: «{p.proposal}»</div>
                 {editable && (
                   <div className="row" style={{ gap: 6 }}>
-                    <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => decide(p, 'accept')}>{busy === p.rule_id + p.option_id ? <Spinner /> : 'Принять'}</button>
+                    <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => decide(p, 'accept')}>{busy === key(p) ? <Spinner /> : 'Принять'}</button>
                     {!p.option_id && <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => decide(p, 'keep')}>Оставить как есть</button>}
                   </div>
                 )}
@@ -556,11 +614,19 @@ function Generation({ doc, job, reload }: { doc: Doc; job: any; reload: () => vo
         <section className="card card-pad">
           <div className="param"><span className="k">Время</span><span className="v">{p.elapsed_s ? `${Math.round(p.elapsed_s)} с` : '—'} · лимит ТЗ 20 мин</span></div>
           <div className="param"><span className="k">Осталось</span><span className="v">{p.eta_s != null ? `≈ ${Math.max(1, Math.round(p.eta_s))} с` : 'оцениваю'}</span></div>
-          <div className="param"><span className="k">Потоков</span><span className="v">{p.workers || 6} модулей параллельно</span></div>
+          <div className="param"><span className="k">Потоков</span><span className="v">{p.workers || 6} модулей параллельно · {p.llm_slots || 2} запроса к модели одновременно (лимит шлюза)</span></div>
           <div className="param"><span className="k">Токены</span><span className="v">{p.usage?.tokens ?? 0}</span></div>
           <div className="param"><span className="k">Стоимость</span><span className="v">{p.usage?.cost_rub ?? 0} ₽ по тарифу Cloud.ru</span></div>
           <p className="tiny muted">GigaChat 3 Pro собирает содержание, код проверяет часы и 23 правила из 27.</p>
         </section>
+        {p.usage?.by_skill && Object.keys(p.usage.by_skill).length > 0 && (
+          <section className="card card-pad">
+            <h3 className="h3">По навыкам</h3>
+            {Object.entries(p.usage.by_skill).map(([k, v]: [string, any]) => (
+              <div key={k} className="param"><span className="k">{k}</span><span className="v">{v.calls} выз. · {Math.round((v.tokens_in || 0) + (v.tokens_out || 0))} ток. · {(v.cost_rub || 0).toFixed(2)} ₽</span></div>
+            ))}
+          </section>
+        )}
       </aside>
     </div>
   )
@@ -591,43 +657,84 @@ function ExportBlock({ doc }: { doc: Doc }) {
   )
 }
 
-function ModuleContent({ doc, module }: { doc: Doc; module: any }) {
+type Review = { accepted: Set<string>; busy: string; onAccept: (id: string) => void; onComment: (id: string) => void }
+
+const MEANS_LABEL: Record<string, string> = { test: 'тест', seminar: 'задание семинара', project: 'проект', final: 'итоговая аттестация', interview: 'собеседование' }
+
+/** РО элемента и средства оценивания, которыми эти РО проверяются (FR-45). */
+function useLoMeans(doc: Doc) {
+  return useMemo(() => {
+    const code: Record<string, string> = {}
+    doc.competencies?.forEach((c: any) => c.indicators.forEach((i: any) => i.outcomes.forEach((o: any) => { code[o.id] = o.code })))
+    const kindOf: Record<string, string> = {}
+    ;(doc.kit?.assessments || []).forEach((a: any) => { kindOf[a.id] = a.kind })
+    const means: Record<string, Set<string>> = {}
+    const add = (lo: string, kind: string) => { (means[lo] ||= new Set()).add(MEANS_LABEL[kind] || kind) }
+    ;(doc.kit?.questions || []).forEach((q: any) => q.lo_ids.forEach((lo: string) => add(lo, kindOf[q.assessment_id] || 'test')))
+    ;(doc.kit?.tasks || []).forEach((t: any) => t.lo_ids.forEach((lo: string) => add(lo, kindOf[t.assessment_id] || 'seminar')))
+    return (los: string[]) => {
+      if (!los?.length) return null
+      const ms = Array.from(new Set(los.flatMap((lo) => Array.from(means[lo] || []))))
+      return <span className="tiny muted">{los.map((lo) => code[lo] || lo).join(', ')}{ms.length ? ` · проверяются: ${ms.join(', ')}` : ' · средства оценивания не найдены'}</span>
+    }
+  }, [doc])
+}
+
+function ItemBar({ id, review }: { id: string; review?: Review }) {
+  if (!review) return null
+  const ok = review.accepted.has(id)
+  return (
+    <span className="row" style={{ gap: 6, display: 'inline-flex', marginLeft: 8 }}>
+      <button className={`btn btn-sm ${ok ? 'btn-soft' : 'btn-ghost'}`} disabled={ok || !!review.busy} onClick={() => review.onAccept(id)}>{review.busy === 'accept_item' + id ? <Spinner /> : ok ? <><Check size={13} /> Проверено</> : 'Отметить проверенным'}</button>
+      <button className="btn btn-ghost btn-sm" title="Замечание к этому элементу" onClick={() => review.onComment(id)}><MessageSquare size={13} /></button>
+    </span>
+  )
+}
+
+function ModuleContent({ doc, module, review }: { doc: Doc; module: any; review?: Review }) {
   const [tab, setTab] = useState('program')
   const kit = doc.kit || {}
+  const loInfo = useLoMeans(doc)
   const mp = kit.module_programs?.find((x: any) => x.module_id === module.id)
   const qs = kit.questions?.filter((q: any) => q.module_id === module.id) || []
   const ts = kit.tasks?.filter((t: any) => t.module_id === module.id) || []
   const lecs = kit.lectures?.filter((l: any) => l.module_id === module.id) || []
+  const topicLo = (tid: string) => module.topics.find((t: any) => t.id === tid)?.lo_ids || []
+  const cnt = (ids: string[]) => review ? ` · ${ids.filter((x) => review.accepted.has(x)).length}/${ids.length}` : ''
   return (
     <div>
       <div className="tabs">
-        {[['program', 'Программа модуля'], ['lectures', `Лекции · ${lecs.length}`], ['test', `Тест · ${qs.length}`], ['tasks', `Задания · ${ts.length}`]].map(([k, l]) => (
+        {[['program', `Программа модуля${review ? (review.accepted.has(`mp-${module.id}`) ? ' ✓' : '') : ''}`], ['lectures', `Лекции · ${lecs.length}${cnt(lecs.map((l: any) => l.id))}`], ['test', `Тест · ${qs.length}${cnt(qs.map((q: any) => q.id))}`], ['tasks', `Задания · ${ts.length}${cnt(ts.map((t: any) => t.id))}`]].map(([k, l]) => (
           <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
       <div key={tab} className="page-enter">
         {tab === 'program' && (
           <div>
+            {mp && review && <div style={{ marginBottom: 10 }}><b className="small">Рабочая программа модуля</b><ItemBar id={`mp-${module.id}`} review={review} /></div>}
             {mp?.annotation && <p style={{ color: 'var(--ink-2)' }}>{mp.annotation}</p>}
             {module.topics.map((t: any) => (
               <div key={t.id} style={{ marginBottom: 10 }}>
-                <b>Тема {t.n}. {t.title}</b> <span className="tiny muted">{t.hours.total} ч · ЛК {t.hours.lk} · ПР {t.hours.pr} · СРС {t.hours.srs}</span>
+                <b>Тема {t.n}. {t.title}</b> <span className="tiny muted">{t.hours.total} ч · ЛК {t.hours.lk} · ПР {t.hours.pr}{t.hours.lb ? ` · ЛБ ${t.hours.lb}` : ''} · СРС {t.hours.srs}</span>
                 <div className="small" style={{ color: 'var(--ink-2)' }}>{mp?.content?.find((c: any) => c.topic_id === t.id)?.text || t.description}</div>
+                <div>{loInfo(t.lo_ids)}</div>
               </div>
             ))}
           </div>
         )}
         {tab === 'lectures' && (lecs.length ? lecs.map((l: any) => (
           <details key={l.id} style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 14px', marginBottom: 10 }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{l.title} <span className="tiny muted">{l.duration_min} мин{l.slides?.length ? ` · ${l.slides.length} слайдов` : ''}</span></summary>
-            <ul className="small">{l.plan.map((s: any, i: number) => <li key={i}>{s.min} мин — {s.text}</li>)}</ul>
+            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{l.title} <span className="tiny muted">{l.duration_min} мин{l.slides?.length ? ` · ${l.slides.length} слайдов` : ''}</span>{review?.accepted.has(l.id) && <Check size={14} color="var(--accent)" style={{ marginLeft: 6 }} />}</summary>
+            <div style={{ margin: '6px 0' }}>{loInfo(topicLo(l.topic_id))}<ItemBar id={l.id} review={review} /></div>
+            <ul className="small">{l.plan.map((s: any, i: number) => <li key={i}>{s.min} мин — {s.text}{review && <button className="btn btn-ghost btn-sm" style={{ padding: '0 6px', marginLeft: 4 }} title="Замечание к пункту плана" onClick={() => review.onComment(`${l.id}#p${i + 1}`)}><MessageSquare size={12} /></button>}</li>)}</ul>
             {l.code_examples?.map((c: string, i: number) => <pre key={i} style={{ background: '#0D1114', color: '#D7F5DF', padding: 12, borderRadius: 10, overflow: 'auto', fontSize: 12 }}>{c}</pre>)}
             {l.slides?.length > 0 && (
               <div className="row row-wrap" style={{ gap: 10, marginTop: 8 }}>
                 {l.slides.map((s: any) => (
-                  <div key={s.id} style={{ width: 200, aspectRatio: '16/9', borderRadius: 10, border: '1px solid var(--line)', padding: 10, background: 'var(--card)', borderTop: '4px solid var(--accent)', overflow: 'hidden' }}>
+                  <div key={s.id} style={{ width: 200, aspectRatio: '16/9', borderRadius: 10, border: '1px solid var(--line)', padding: 10, background: 'var(--card)', borderTop: '4px solid var(--accent)', overflow: 'hidden', position: 'relative' }}>
                     <div style={{ fontWeight: 800, fontSize: 12 }}>{s.title}</div>
                     <ul style={{ margin: '4px 0 0', paddingLeft: 14, fontSize: 10, color: 'var(--ink-2)' }}>{s.bullets.slice(0, 4).map((b: string, i: number) => <li key={i}>{b}</li>)}</ul>
+                    {review && <button className="icon-btn" style={{ position: 'absolute', right: 4, bottom: 4, width: 24, height: 24 }} title="Замечание к слайду" onClick={() => review.onComment(s.id)}><MessageSquare size={12} /></button>}
                   </div>
                 ))}
               </div>
@@ -636,16 +743,20 @@ function ModuleContent({ doc, module }: { doc: Doc; module: any }) {
         )) : <p className="muted small">Лекций в этом модуле нет (например, стажировка без аудиторных занятий).</p>)}
         {tab === 'test' && (qs.length ? qs.map((q: any, i: number) => (
           <div key={q.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--line)' }}>
-            <b>{i + 1}. {q.stem}</b> <span className="tiny muted">РО {q.lo_ids.join(', ')}</span>
+            <b>{i + 1}. {q.stem}</b><ItemBar id={q.id} review={review} />
+            <div>{loInfo(q.lo_ids)}</div>
             <div className="row row-wrap" style={{ gap: 6, marginTop: 6 }}>{q.options.map((o: string, j: number) => <span key={j} className={`chip ${j === q.key ? 'chip-ok' : ''}`}>{j === q.key && <Check size={12} />}{o}</span>)}</div>
           </div>
         )) : <p className="muted small">Вопросов в модуле нет.</p>)}
         {tab === 'tasks' && (ts.length ? ts.map((t: any) => (
           <div key={t.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--line)' }}>
-            <b>{t.title}</b> <span className="tiny muted">РО {t.lo_ids.join(', ')}</span>
+            <b>{t.title}</b><ItemBar id={t.id} review={review} />
+            <div>{loInfo(t.lo_ids)}</div>
             <p className="small" style={{ margin: '6px 0', color: 'var(--ink-2)' }}>{t.statement}</p>
             {t.expected_result && <div className="small"><b>Ожидаемый результат:</b> {t.expected_result}</div>}
-            <div className="row row-wrap" style={{ gap: 6, marginTop: 6 }}>{t.criteria.map((c: any, i: number) => <span key={i} className="chip">{c.text} · {c.points} б.</span>)}</div>
+            <div className="row row-wrap" style={{ gap: 6, marginTop: 6 }}>{t.criteria.map((c: any, i: number) => (
+              <span key={i} className="chip">{c.text} · {c.points} б.{review && <button className="btn btn-ghost btn-sm" style={{ padding: '0 4px' }} title="Замечание к критерию" onClick={() => review.onComment(`${t.id}#c${i + 1}`)}><MessageSquare size={11} /></button>}</span>
+            ))}</div>
           </div>
         )) : <p className="muted small">Заданий в модуле нет.</p>)}
       </div>
@@ -655,6 +766,7 @@ function ModuleContent({ doc, module }: { doc: Doc; module: any }) {
 
 function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: (target?: string, instruction?: string) => void; onNext: () => void }) {
   const rep = doc.report || { rules: [] }
+  const blockingOk = rep.stage === 'kit' && rep.blocking_passed === rep.blocking_total
   const [mod, setMod] = useState(doc.modules[0]?.id)
   const unconfirmed = (doc.sources || []).filter((s: any) => !s.confirmed)
   const m = doc.modules.find((x: any) => x.id === mod)
@@ -665,6 +777,13 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: (target?: strin
           <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Отчёт автопроверки комплекта</h2>
             <span className={`chip ${rep.blocking_passed === rep.blocking_total ? 'chip-ok' : 'chip-err'}`}>{rep.blocking_passed} из {rep.blocking_total} блокирующих</span></div>
           <div style={{ marginTop: 14 }}><RuleList rules={rep.rules} /></div>
+          <RuleDetails rules={rep.rules} />
+          {rep.actions?.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <h3 className="h3">Что сделать методисту</h3>
+              <ol className="small" style={{ paddingLeft: 20, margin: 0, lineHeight: 1.6 }}>{rep.actions.map((a: string, i: number) => <li key={i}>{a}</li>)}</ol>
+            </div>
+          )}
           {unconfirmed.length > 0 && <div className="callout warn small">Для методиста: {unconfirmed.length} источн. не найдено в реестре и помечено «не подтверждено» в списке литературы. Проверьте вручную или замените.</div>}
           {(doc.kit?.drafts || []).length > 0 && <div className="callout warn small">Модель не ответила для модулей {doc.modules.filter((x: any) => doc.kit.drafts.includes(x.id)).map((x: any) => x.n).join(', ')}: их содержание собрано по шаблону из каркаса. Пересоберите модуль точечной правкой или передайте эксперту.</div>}
         </section>
@@ -695,7 +814,8 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: (target?: strin
       <section className="card card-pad row row-wrap">
         <div className="grow"><b>Нужно поменять тему, тест или задание?</b><div className="small muted">Агент пересоберёт только связанные части.</div></div>
         <button className="btn btn-ghost" onClick={() => onEdit()}><GitBranch size={16} /> Точечная правка</button>
-        <button className="btn btn-primary" onClick={onNext}>Перейти к согласованию <ArrowRight size={16} /></button>
+        <button className="btn btn-primary" disabled={!blockingOk} title={blockingOk ? '' : 'Сначала пройдите все 10 блокирующих проверок'} onClick={onNext}>Перейти к согласованию <ArrowRight size={16} /></button>
+        {!blockingOk && <div className="small" style={{ width: '100%', color: 'var(--red)' }}>Комплект нельзя отправить на вычитку: пройдено {rep.blocking_passed} из {rep.blocking_total} блокирующих проверок. Исправьте ✕ точечной правкой.</div>}
       </section>
     </div>
   )
@@ -705,70 +825,109 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: (target?: strin
 function EditView({ doc, setDoc, back, init }: { doc: Doc; setDoc: (d: Doc) => void; back: () => void; init?: { target?: string; instruction?: string } }) {
   const toast = useToast()
   const targets = useMemo(() => [
-    ...doc.modules.flatMap((m: any) => m.topics.map((t: any) => ({ id: t.id, label: `Тема ${t.n}. ${t.title}`, kind: 'topic', title: t.title, desc: t.description, hours: t.hours }))),
+    { id: '', label: 'Агент найдёт элемент по описанию', kind: 'text' },
+    ...doc.modules.flatMap((m: any) => m.topics.flatMap((t: any) => [
+      { id: t.id, label: `Тема ${t.n}. ${t.title}`, kind: 'topic' },
+      { id: `hours:${t.id}`, label: `Часы темы ${t.n}`, kind: 'hours', hours: t.hours },
+    ])),
+    ...(doc.kit?.lectures || []).map((l: any) => ({ id: l.id, label: `Лекция: ${l.title}`, kind: 'lecture' })),
+    ...(doc.kit?.lectures || []).flatMap((l: any) => (l.slides || []).map((sl: any) => ({ id: sl.id, label: `Слайд: ${sl.title} (${l.title})`, kind: 'slide' }))),
     ...(doc.kit?.tasks || []).map((t: any) => ({ id: t.id, label: `Задание: ${t.title}`, kind: 'task' })),
-    ...(doc.kit?.questions || []).slice(0, 60).map((q: any) => ({ id: q.id, label: `Вопрос: ${q.stem.slice(0, 70)}`, kind: 'question' })),
+    ...(doc.kit?.questions || []).slice(0, 80).map((q: any) => ({ id: q.id, label: `Вопрос: ${q.stem.slice(0, 70)}`, kind: 'question' })),
   ], [doc])
-  const [target, setTarget] = useState(init?.target && targets.some((x: any) => x.id === init.target) ? init.target : targets[0]?.id)
+  const [target, setTarget] = useState<string>(init?.target && targets.some((x: any) => x.id === init.target) ? init.target : targets[1]?.id || '')
   const [title, setTitle] = useState('')
   const [instr, setInstr] = useState(init?.instruction || '')
+  const [hours, setHours] = useState<Record<string, number>>({})
   const [plan, setPlan] = useState<any>(null)
+  const [preview, setPreview] = useState<any>(null)
   const [result, setResult] = useState<any>(null)
+  const [rejected, setRejected] = useState<{ message: string; details: any } | null>(null)
   const [busy, setBusy] = useState('')
-  const t = targets.find((x: any) => x.id === target)
+  const t: any = targets.find((x: any) => x.id === target)
 
-  useEffect(() => { setPlan(null); setResult(null); setTitle('') ; if (!target) return
-    api(`/programs/${doc.id}/edits`, { method: 'POST', json: { target, dry_run: true } }).then((r) => setPlan(r.plan)).catch(() => {})
-  }, [target, doc.id])
+  useEffect(() => {
+    setPlan(null); setPreview(null); setResult(null); setRejected(null); setTitle('')
+    setHours(t?.kind === 'hours' ? { lk: t.hours.lk, pr: t.hours.pr, lb: t.hours.lb, srs: t.hours.srs } : {})
+    if (!target) return
+    api(`/programs/${doc.id}/edits`, { method: 'POST', json: { target, dry_run: true } }).then((r) => { setPlan(r.plan); setPreview(r.preview) }).catch(() => {})
+  }, [target, doc.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const hoursChanged = t?.kind === 'hours' && KINDS.some((k) => hours[k] !== t.hours[k])
   async function apply() {
-    setBusy('apply')
+    setBusy('apply'); setRejected(null)
     try {
-      const r = await api(`/programs/${doc.id}/edits`, { method: 'POST', json: { target, instruction: instr, new_title: title } })
+      const r = await api(`/programs/${doc.id}/edits`, { method: 'POST', json: { target, instruction: instr, new_title: title, hours: t?.kind === 'hours' ? hours : null } })
       setResult(r)
       setDoc({ ...r.program, totals: doc.totals, readiness: doc.readiness })
       toast(`Правка применена: пересобрано ${r.changed?.length || 0} элементов`)
-    } catch (e: any) { toast(e.message, true) } finally { setBusy('') }
+    } catch (e: any) {
+      if (e.status === 409) setRejected({ message: e.message, details: e.details })
+      else toast(e.message, true)
+    } finally { setBusy('') }
   }
 
+  const before = preview?.before || (t?.kind === 'hours' ? `ЛК ${t.hours.lk} · ПР ${t.hours.pr} · ЛБ ${t.hours.lb} · СРС ${t.hours.srs}` : '')
   return (
     <div className="grid-main">
       <section className="card card-pad">
         <button className="btn btn-ghost btn-sm" onClick={back}><ArrowLeft size={14} /> К отчёту автопроверки</button>
         <h2 className="h2" style={{ marginTop: 14 }}>Точечная правка</h2>
         <label className="label">Что изменить</label>
-        <select className="field" value={target} onChange={(e) => setTarget(e.target.value)}>{targets.map((x: any) => <option key={x.id} value={x.id}>{x.label}</option>)}</select>
-        {t?.kind === 'topic' && (
+        <select className="field" value={target} onChange={(e) => setTarget(e.target.value)}>{targets.map((x: any) => <option key={x.id || 'text'} value={x.id}>{x.label}</option>)}</select>
+        {t && t.kind !== 'text' && (
           <div className="grid-2" style={{ marginTop: 14 }}>
             <div className="card" style={{ padding: 14, background: 'var(--bg-2)' }}>
-              <div className="tiny muted">Было</div><b>{t.title}</b><div className="small muted">{t.desc}</div>
-              <div className="tiny muted" style={{ marginTop: 6 }}>{t.hours.total} ч: ЛК {t.hours.lk}, ПР {t.hours.pr}</div>
+              <div className="tiny muted">Было</div><div className="small" style={{ fontWeight: 600 }}>{before || '—'}</div>
             </div>
             <div className="card" style={{ padding: 14, borderColor: 'var(--accent)' }}>
               <div className="tiny muted">Станет</div>
-              <input className="field" placeholder="Новое название темы" value={title} onChange={(e) => setTitle(e.target.value)} />
-              <div className="tiny muted" style={{ marginTop: 6 }}>Часы модуля не меняются.</div>
+              {t.kind === 'hours' ? (
+                <>
+                  <div className="row row-wrap" style={{ gap: 6 }}>
+                    {KINDS.map((k) => (
+                      <label key={k} className="tiny" style={{ display: 'grid', gap: 2 }}>{({ lk: 'ЛК', pr: 'ПР', lb: 'ЛБ', srs: 'СРС' } as any)[k]}
+                        <input className="hours-input" type="number" min={0} value={hours[k] ?? 0} onChange={(e) => setHours({ ...hours, [k]: Number(e.target.value) })} />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="tiny muted" style={{ marginTop: 6 }}>Итог модуля сохранится: разницу заберёт самая большая соседняя тема.</div>
+                </>
+              ) : ['topic', 'lecture'].includes(t.kind) ? (
+                <>
+                  <input className="field" placeholder={t.kind === 'topic' ? 'Новое название темы' : 'Новое название лекции'} value={title} onChange={(e) => setTitle(e.target.value)} />
+                  <div className="tiny muted" style={{ marginTop: 6 }}>{title.trim() || preview?.after || 'Часы модуля не меняются.'}</div>
+                </>
+              ) : <div className="small">{preview?.after || 'Агент перепишет элемент по инструкции.'}</div>}
             </div>
           </div>
         )}
         <label className="label" style={{ marginTop: 14 }}>Инструкция агенту</label>
-        <textarea className="field" style={{ minHeight: 90 }} value={instr} onChange={(e) => setInstr(e.target.value)} placeholder="Например: заменить на даты и временные ряды на данных о платежах" />
+        <textarea className="field" style={{ minHeight: 90 }} value={instr} onChange={(e) => setInstr(e.target.value)} placeholder={target ? 'Например: заменить на даты и временные ряды на данных о платежах' : 'Опишите правку: агент найдёт тему, вопрос, задание или слайд по тексту'} />
         <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn btn-primary" disabled={!!busy || (!instr.trim() && !title.trim())} onClick={apply}>{busy ? <Spinner /> : <><GitBranch size={16} /> Применить правку</>}</button>
+          <button className="btn btn-primary" disabled={!!busy || (!instr.trim() && !title.trim() && !hoursChanged)} onClick={apply}>{busy ? <Spinner /> : <><GitBranch size={16} /> Применить правку</>}</button>
           <button className="btn btn-ghost" onClick={back}>Отмена</button>
         </div>
+        {rejected && (
+          <div className="callout warn small" style={{ marginTop: 14 }}>
+            <b>Правка отменена, комплект не изменился.</b> {rejected.message}
+            {rejected.details?.nodes?.length > 0 && <div style={{ marginTop: 6 }}>Правка задела бы: {rejected.details.nodes.join(', ')}</div>}
+            {rejected.details?.proposal && <div style={{ marginTop: 6 }}>Агент предлагает: {rejected.details.proposal}</div>}
+          </div>
+        )}
         {result && (
           <div className="callout small" style={{ marginTop: 14 }}>
-            Правка применена: пересобрано {result.changed?.length || 0} элементов, проверка {result.check_ok ? 'пройдена' : 'нашла замечания'} заново, остальной комплект не изменился.
+            Правка применена{result.target && result.target !== target ? ` к элементу ${result.target}` : ''}: пересобрано {result.changed?.length || 0} элементов, проверка {result.check_ok ? 'пройдена' : 'нашла замечания'} заново, остальной комплект не изменился. Создана версия {result.program?.version}.
+            {result.preview?.before && <div className="tiny muted" style={{ marginTop: 4 }}>Было: {result.preview.before} · Стало: {result.preview.after}</div>}
           </div>
         )}
       </section>
       <aside className="card card-pad">
         <h3 className="h3">Что затронет правка</h3>
         <p className="small muted">По графу связей: только потомки выбранного узла.</p>
-        {!plan ? <div className="skeleton" style={{ height: 120 }} /> : (
+        {!target ? <p className="small muted">Агент определит элемент по описанию и покажет результат после правки.</p> : !plan ? <div className="skeleton" style={{ height: 120 }} /> : (
           <>
-            <div className="small" style={{ fontWeight: 800, color: 'var(--accent-deep)' }}>Пересоберу · {plan.nodes?.length || 0}</div>
+            <div className="small" style={{ fontWeight: 800, color: 'var(--accent-deep)' }}>Пересоберу · {plan.rebuild?.length || 0}</div>
             <ul className="small" style={{ paddingLeft: 18 }}>{plan.rebuild?.map((x: string) => <li key={x}>{x}</li>)}</ul>
             <div className="small" style={{ fontWeight: 800 }}>Не меняется</div>
             <ul className="small muted" style={{ paddingLeft: 18 }}>{plan.keep?.map((x: string) => <li key={x}>{x}</li>)}</ul>
@@ -780,15 +939,46 @@ function EditView({ doc, setDoc, back, init }: { doc: Doc; setDoc: (d: Doc) => v
 }
 
 /* ---------------- 6. Согласование (методист) ---------------- */
+const COMMENT_LABEL: Record<string, [string, string]> = {
+  open: ['ждёт ответа', 'chip-warn'], proposed: ['ждёт подтверждения эксперта', 'chip-blue'], answered: ['отвечено', 'chip-ok'], applied: ['правка внесена', 'chip-ok'],
+}
+
+function useExperts(doc: Doc) {
+  const [data, setData] = useState<{ experts: any[]; suggestions: any[] }>({ experts: [], suggestions: [] })
+  useEffect(() => { api(`/programs/${doc.id}/experts`).then(setData).catch(() => {}) }, [doc.id, doc.version])
+  return data
+}
+
+function Journal({ events }: { events: any[] }) {
+  return (
+    <section className="card card-pad">
+      <h3 className="h3"><History size={16} style={{ verticalAlign: -3 }} /> Журнал</h3>
+      <div style={{ maxHeight: 360, overflow: 'auto' }}>
+        {events.length === 0 && <p className="small muted">Событий пока нет.</p>}
+        {events.slice(0, 40).map((e, i) => (
+          <div key={i} className="small" style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
+            <span className="tiny muted">{(e.at || '').slice(5, 16).replace('T', ' ')}{e.version ? ` · v${e.version}` : ''} · {e.actor_name || e.actor}</span>
+            <div>{e.text || e.action}</div>
+            {(e.before || e.after) && <div className="tiny muted">было: {e.before || '—'} → стало: {e.after || '—'}</div>}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void; reload: () => void }) {
   const toast = useToast()
   const [events, setEvents] = useState<any[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState('')
+  const { experts, suggestions } = useExperts(doc)
   const rd = doc.readiness || {}
   const tot = (doc.totals?.total || 0) + (doc.final_assessment?.hours || 0)
   const accepted = doc.modules.filter((m: any) => m.review_status === 'accepted').length
-  const canSubmit = rd.blocking === 10 && accepted === doc.modules.length && !['on_approval', 'approved'].includes(doc.status)
+  const blockingOk = rd.blocking === 10
+  const locked = ['on_approval', 'approved'].includes(doc.status)
+  const canSubmit = blockingOk && accepted === doc.modules.length && !locked
   useEffect(() => { api(`/programs/${doc.id}/events`).then(setEvents).catch(() => {}) }, [doc.id, doc.version])
 
   async function assign(mid: string, expert: string, quiet = false) {
@@ -800,15 +990,20 @@ function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void;
   }
   async function assignAll() {
     let n = 0
-    for (const [i, m] of doc.modules.entries()) if (!m.expert_id) { await assign(m.id, EXPERTS[i % 2].id, true); n++ }
+    for (const m of doc.modules) {
+      const sug = suggestions.find((x) => x.module_id === m.id)
+      if (!m.expert_id && sug) { await assign(m.id, sug.expert_id, true); n++ }
+    }
     toast(`Назначено модулей: ${n}. Эксперты получили уведомления`)
     reload()
   }
-  async function answer(c: any, apply: boolean) {
-    setBusy(c.id)
+  async function answer(c: any, mode: 'answer' | 'agent' | 'apply') {
+    setBusy(c.id + mode)
     try {
-      await api(`/programs/${doc.id}/comments/answer`, { method: 'POST', json: { comment_id: c.id, answer: answers[c.id] || '', apply_proposal: apply } })
-      toast(apply ? 'Агент внёс правку и заново прошёл проверку' : 'Ответ отправлен эксперту'); reload()
+      const r = await api(`/programs/${doc.id}/comments/answer`, { method: 'POST', json: { comment_id: c.id, answer: answers[c.id] || '', apply_proposal: mode === 'apply', ask_agent: mode === 'agent' } })
+      const st = r.comment?.status
+      toast(mode === 'agent' ? 'Агент подготовил предложение' : mode === 'apply' ? (st === 'proposed' ? 'Правка ждёт подтверждения эксперта' : 'Агент внёс правку и заново прошёл проверку') : 'Ответ отправлен эксперту')
+      reload()
     } catch (e: any) { toast(e.message, true) } finally { setBusy('') }
   }
   async function submit() {
@@ -816,8 +1011,17 @@ function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void;
     try { await api(`/programs/${doc.id}/submit`, { method: 'POST' }); toast('Программа отправлена руководителю'); reload() } catch (e: any) { toast(e.message, true) } finally { setBusy('') }
   }
 
-  const name = (id: string) => EXPERTS.find((e) => e.id === id)?.name || '—'
-  const open = (doc.comments || []).filter((c: any) => c.status === 'open')
+  const name = (id: string) => experts.find((e) => e.id === id)?.name || id || '—'
+  const comments = doc.comments || []
+  const active = comments.filter((c: any) => ['open', 'proposed'].includes(c.status))
+  const action = (m: any) => {
+    if (!blockingOk) return 'исправить ✕ в комплекте'
+    if (!m.expert_id) return 'назначить эксперта'
+    if (comments.some((c: any) => c.module_id === m.id && c.status === 'open')) return 'ответить на вопрос'
+    if (m.review_status === 'returned') return 'доработать по замечаниям'
+    if (m.review_status === 'accepted') return 'готово'
+    return `ждёт эксперта (${name(m.expert_id)})`
+  }
   return (
     <div className="grid-main">
       <div className="col">
@@ -825,43 +1029,64 @@ function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void;
           <h2 className="h2">Согласование комплекта</h2>
           <p className="small muted">Каждый эксперт видит только свои модули и вычитывает содержание. Когда все модули приняты, программа уходит руководителю.</p>
           <div className="row row-wrap" style={{ gap: 8, marginBottom: 14 }}>
-            <span className={`chip ${rd.blocking === 10 ? 'chip-ok' : 'chip-err'}`}>✓ Блокирующие проверки {rd.blocking} из 10</span>
-            <span className={`chip ${tot === doc.volume_h ? 'chip-ok' : 'chip-err'}`}>✓ Часы {tot} из {doc.volume_h}</span>
+            <span className={`chip ${blockingOk ? 'chip-ok' : 'chip-err'}`}>Блокирующие проверки {rd.blocking} из 10</span>
+            <span className={`chip ${tot === doc.volume_h ? 'chip-ok' : 'chip-err'}`}>Часы {tot} из {doc.volume_h}</span>
             <span className="chip chip-blue">Модули {accepted} из {doc.modules.length} приняты</span>
             <div className="grow" />
-            {doc.modules.some((m: any) => !m.expert_id) && <button className="btn btn-soft btn-sm" onClick={assignAll}><Users size={14} /> Назначить всех</button>}
+            {blockingOk && !locked && doc.modules.some((m: any) => !m.expert_id) && <button className="btn btn-soft btn-sm" onClick={assignAll}><Users size={14} /> Назначить по подсказке агента</button>}
           </div>
+          {!blockingOk && <div className="callout warn small">Пока не пройдены все 10 блокирующих проверок, комплект нельзя отправить на вычитку (FR-35). Вернитесь к отчёту и исправьте ✕.</div>}
           <div style={{ overflowX: 'auto' }}>
             <table className="table">
-              <thead><tr><th>№</th><th>Модуль</th><th className="num">Часы</th><th>Эксперт</th><th>Статус</th></tr></thead>
+              <thead><tr><th>№</th><th>Модуль</th><th className="num">Часы</th><th>Эксперт</th><th>Вычитка</th><th>Замечания</th><th>Действие</th></tr></thead>
               <tbody>
-                {doc.modules.map((m: any) => (
-                  <tr key={m.id}>
-                    <td><b>{m.n}</b></td><td>{m.title}</td><td className="num">{m.hours.total}</td>
-                    <td>
-                      <select className="field" style={{ padding: '6px 10px', width: 150 }} value={m.expert_id || ''} onChange={(e) => assign(m.id, e.target.value)} disabled={['on_approval', 'approved'].includes(doc.status)}>
-                        <option value="" disabled>Назначить</option>
-                        {EXPERTS.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                      </select>
-                    </td>
-                    <td><span className={`chip ${REVIEW_LABEL[m.review_status]?.[1] || ''}`}>{REVIEW_LABEL[m.review_status]?.[0]}</span></td>
-                  </tr>
-                ))}
-                <tr className="total"><td /><td>Итого с аттестацией</td><td className="num">{tot}</td><td colSpan={2} className="small">Аттестация — {doc.final_assessment?.form?.toLowerCase()}</td></tr>
+                {doc.modules.map((m: any) => {
+                  const sug = suggestions.find((x) => x.module_id === m.id)
+                  const mc = comments.filter((c: any) => c.module_id === m.id)
+                  const items = rd.items?.[m.id]
+                  return (
+                    <tr key={m.id}>
+                      <td><b>{m.n}</b></td><td>{m.title}</td><td className="num">{m.hours.total}</td>
+                      <td>
+                        <select className="field" style={{ padding: '6px 10px', width: 160 }} value={m.expert_id || ''} onChange={(e) => assign(m.id, e.target.value)} disabled={locked || !blockingOk}>
+                          <option value="" disabled>Назначить</option>
+                          {experts.map((e) => <option key={e.id} value={e.id}>{e.name}{sug?.expert_id === e.id ? ' ★' : ''}</option>)}
+                        </select>
+                        {sug && <div className="tiny muted" title={sug.reason}>★ агент: {name(sug.expert_id)}, {sug.reason}</div>}
+                      </td>
+                      <td><span className={`chip ${REVIEW_LABEL[m.review_status]?.[1] || ''}`}>{REVIEW_LABEL[m.review_status]?.[0]}</span>{items && <div className="tiny muted">{items[1]} из {items[0]} элементов</div>}</td>
+                      <td className="small">{mc.length ? `${mc.filter((c: any) => ['open', 'proposed'].includes(c.status)).length} открыто из ${mc.length}` : '—'}</td>
+                      <td className="small">{action(m)}</td>
+                    </tr>
+                  )
+                })}
+                <tr className="total"><td /><td>Итого с аттестацией</td><td className="num">{tot}</td><td colSpan={4} className="small">Аттестация — {doc.final_assessment?.form?.toLowerCase()}</td></tr>
               </tbody>
             </table>
           </div>
         </section>
-        {open.map((c: any) => (
+        {active.map((c: any) => (
           <section key={c.id} className="card card-pad" style={{ borderColor: 'var(--blue)' }}>
-            <div className="row"><Avatar name={name(c.author)} role="expert" /><b className="grow">Вопрос эксперта · {name(c.author)}</b><span className="tiny muted">{(c.at || '').slice(11, 16)}</span></div>
+            <div className="row"><Avatar name={name(c.author)} role="expert" /><b className="grow">Замечание эксперта · {name(c.author)}{c.node_id ? ` · к элементу ${c.node_id}` : ''}</b>
+              <span className={`chip ${COMMENT_LABEL[c.status]?.[1]}`}>{COMMENT_LABEL[c.status]?.[0]}</span></div>
             <p>«{c.text}»</p>
-            {c.agent_proposal && <div className="agent-msg small"><span className="avatar av-agent"><Sparkles size={14} /></span><div>Агент предлагает: {c.agent_proposal}</div></div>}
-            <textarea className="field" style={{ minHeight: 60, marginTop: 10 }} placeholder="Ответ эксперту" value={answers[c.id] || ''} onChange={(e) => setAnswers({ ...answers, [c.id]: e.target.value })} />
-            <div className="row" style={{ marginTop: 10 }}>
-              {c.agent_proposal && c.node_id && <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => answer(c, true)}><Sparkles size={14} /> Передать агенту</button>}
-              <button className="btn btn-ghost btn-sm" disabled={!!busy || !answers[c.id]} onClick={() => answer(c, false)}><MessageSquare size={14} /> Ответить</button>
-            </div>
+            {c.agent_proposal && (
+              <div className="agent-msg small"><span className="avatar av-agent"><Sparkles size={14} /></span><div>
+                Агент предлагает: {c.agent_proposal}
+                {c.affected?.length > 0 && <div className="tiny muted" style={{ marginTop: 4 }}>Затронет: {c.affected.join(', ')}</div>}
+              </div></div>
+            )}
+            {c.status === 'open' && (
+              <>
+                <textarea className="field" style={{ minHeight: 60, marginTop: 10 }} placeholder="Ответ эксперту" value={answers[c.id] || ''} onChange={(e) => setAnswers({ ...answers, [c.id]: e.target.value })} />
+                <div className="row row-wrap" style={{ marginTop: 10 }}>
+                  {!c.agent_proposal && <button className="btn btn-soft btn-sm" disabled={!!busy} onClick={() => answer(c, 'agent')}>{busy === c.id + 'agent' ? <Spinner /> : <><Sparkles size={14} /> Передать агенту</>}</button>}
+                  {c.agent_proposal && c.node_id && <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => answer(c, 'apply')}><Sparkles size={14} /> Применить предложение</button>}
+                  <button className="btn btn-ghost btn-sm" disabled={!!busy || !answers[c.id]} onClick={() => answer(c, 'answer')}><MessageSquare size={14} /> Ответить самой</button>
+                </div>
+              </>
+            )}
+            {c.status === 'proposed' && <p className="small muted">Правку внесёт агент, когда эксперт подтвердит её в своём модуле: правка по замечанию эксперта применяется только с его согласия.</p>}
           </section>
         ))}
       </div>
@@ -869,24 +1094,16 @@ function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void;
         <section className="card card-pad">
           <h3 className="h3">Маршрут программы</h3>
           <div className="timeline small">
-            <div className="tl-item done"><b>Мадина собрала комплект</b><div className="tiny muted">Блокирующие проверки {rd.blocking} из 10</div></div>
-            <div className={`tl-item ${accepted === doc.modules.length ? 'done' : 'now'}`}><b>Эксперты вычитывают модули</b><div className="tiny muted">Принято {accepted} из {doc.modules.length}</div></div>
+            <div className={`tl-item ${blockingOk ? 'done' : 'now'}`}><b>Методист собрала комплект</b><div className="tiny muted">Блокирующие проверки {rd.blocking} из 10</div></div>
+            <div className={`tl-item ${accepted === doc.modules.length ? 'done' : blockingOk ? 'now' : ''}`}><b>Эксперты вычитывают модули</b><div className="tiny muted">Принято {accepted} из {doc.modules.length}</div></div>
             <div className={`tl-item ${doc.status === 'approved' ? 'done' : doc.status === 'on_approval' ? 'now' : ''}`}><b>Руководитель утверждает</b><div className="tiny muted">Видит готовность, решения людей, срок и затраты</div></div>
-            <div className="tl-item"><b>Проект приказа</b><div className="tiny muted">Номер, дату, ФИО и подписи заполняют люди</div></div>
+            <div className={`tl-item ${doc.status === 'approved' ? 'done' : ''}`}><b>Проект приказа</b><div className="tiny muted">Номер, дату, ФИО и подписи заполняют люди</div></div>
           </div>
           <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={!canSubmit || !!busy} onClick={submit}>{busy === 'submit' ? <Spinner /> : <><Send size={16} /> Отправить на утверждение</>}</button>
-          {!canSubmit && !['on_approval', 'approved'].includes(doc.status) && <p className="tiny muted">Станет доступна, когда все {doc.modules.length} модулей приняты и пройдены 10 из 10 проверок.</p>}
+          {!canSubmit && !locked && <p className="tiny muted">Станет доступна, когда все {doc.modules.length} модулей приняты и пройдены 10 из 10 проверок.</p>}
+          {rd.open?.length > 0 && <div className="small" style={{ marginTop: 10 }}><b>Не закрыто:</b><ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{rd.open.map((o: any, i: number) => <li key={i}>{o.title} — <span className="muted">{o.owner}</span></li>)}</ul></div>}
         </section>
-        <section className="card card-pad">
-          <h3 className="h3"><History size={16} style={{ verticalAlign: -3 }} /> Журнал</h3>
-          <div style={{ maxHeight: 320, overflow: 'auto' }}>
-            {events.slice(0, 30).map((e, i) => (
-              <div key={i} className="small" style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
-                <span className="tiny muted">{(e.at || '').slice(11, 16)}</span> {e.text || e.action}
-              </div>
-            ))}
-          </div>
-        </section>
+        <Journal events={events} />
       </aside>
     </div>
   )
@@ -908,7 +1125,11 @@ function ApproveView({ doc, reload }: { doc: Doc; reload: () => void }) {
       toast(decision === 'approve' ? 'Программа утверждена. Проект приказа передан методисту' : 'Программа возвращена методисту'); reload()
     } catch (e: any) { toast(e.message, true) } finally { setBusy('') }
   }
-  const people = (doc.approvals || []).slice(-8)
+  const people = (doc.approvals || []).slice(-10)
+  const q = doc.quality || {}
+  const [events, setEvents] = useState<any[]>([])
+  useEffect(() => { api(`/programs/${doc.id}/events`).then(setEvents).catch(() => {}) }, [doc.id, doc.version])
+  const modTitle = (id: string) => { const m = doc.modules.find((x: any) => x.id === id); return m ? `Модуль ${m.n} «${m.title}»` : `Модуль ${id}` }
   return (
     <div className="col">
     <div className="grid-main">
@@ -931,11 +1152,16 @@ function ApproveView({ doc, reload }: { doc: Doc; reload: () => void }) {
           {people.map((a: any, i: number) => (
             <div key={i} className="row small" style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
               {a.decision === 'approve' ? <CheckCircle2 size={16} color="var(--accent)" /> : <RotateCcw size={16} color="var(--amber)" />}
-              <span className="grow">{a.stage === 'module' ? `Модуль ${a.module_id}` : a.stage === 'skeleton' ? 'Каркас' : 'Программа'} — {a.decision === 'approve' ? 'принят' : 'возвращён'}{a.comment ? `: ${a.comment}` : ''}</span>
-              <span className="tiny muted">{a.actor}</span>
+              <span className="grow">{a.stage === 'module' ? modTitle(a.module_id) : a.stage === 'skeleton' ? 'Каркас' : 'Программа'} — {a.decision === 'approve' ? 'принят' : 'возвращён'}{a.comment ? `: ${a.comment}` : ''}{a.score ? ` · оценка ${a.score} из 5` : ''}</span>
+              <span className="tiny muted">{a.actor_name || a.actor} · {(a.at || '').slice(5, 16).replace('T', ' ')}</span>
             </div>
           ))}
-          {rd.open?.length > 0 && <div className="callout warn small">Открыто: {rd.open.map((o: any) => o.title).join('; ')}</div>}
+          {rd.open?.length > 0 && (
+            <div className="callout warn small">
+              <b>Не закрыто ({rd.open.length}):</b>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{rd.open.map((o: any, i: number) => <li key={i}>{o.title} — <b>{o.owner}</b></li>)}</ul>
+            </div>
+          )}
         </section>
         <section className="card card-pad">
           <h3 className="h3">Качество комплекта</h3>
@@ -944,6 +1170,10 @@ function ApproveView({ doc, reload }: { doc: Doc; reload: () => void }) {
             <div className="param"><span className="k">Блокирующие проверки</span><span className="v">{rep.blocking_passed} из {rep.blocking_total}</span></div>
             <div className="param"><span className="k">РО с ≥ 2 средствами</span><span className="v">{covered} из {rep.coverage?.length || 0}</span></div>
             <div className="param"><span className="k">Источники без подтверждения</span><span className="v">{(doc.sources || []).filter((s: any) => !s.confirmed).length}</span></div>
+            <div className="param"><span className="k">Элементов правили люди</span><span className="v">{q.human_edit_share ?? 0}%</span></div>
+            <div className="param"><span className="k">Модулей принято без правок</span><span className="v">{q.accepted_without_edits ?? 0} из {rd.modules_total}</span></div>
+            <div className="param"><span className="k">Оценка экспертов</span><span className="v">{q.expert_score != null ? `${q.expert_score} из 5` : 'нет оценок'}</span></div>
+            <div className="param"><span className="k">Примеры кода выполняются</span><span className="v">{q.code_ok_share != null ? `${q.code_ok_share}% из ${q.code_examples}` : 'кода нет'}</span></div>
           </div>
         </section>
       </div>
@@ -954,7 +1184,11 @@ function ApproveView({ doc, reload }: { doc: Doc; reload: () => void }) {
           <div className="param"><span className="k">Комплект</span><span className="v">{Math.round(doc.timing_s?.kit || 0)} с</span></div>
           <div className="param"><span className="k">Модель</span><span className="v">{(doc.usage?.cost_rub || 0).toFixed(2)} ₽ · {doc.usage?.calls} вызовов</span></div>
           <div className="param"><span className="k">Токены</span><span className="v">{(doc.usage?.tokens_in || 0) + (doc.usage?.tokens_out || 0)}</span></div>
+          <div className="param"><span className="k">Срок от запроса</span><span className="v">{q.work_days ?? '—'} раб. дн.</span></div>
+          <div className="param"><span className="k">Решений людей</span><span className="v">{q.human_decisions ?? 0} · ≈ {Math.round((q.team_minutes_estimate || 0) / 6) / 10} ч команды</span></div>
+          <p className="tiny muted" style={{ marginBottom: 0 }}>Время команды — оценка: 6 минут на одно решение человека из журнала.</p>
         </section>
+        <Journal events={events} />
         <section className="card card-pad">
           <h3 className="h3">Заполняется при подписании</h3>
           <div className="small muted">№ и дата приказа: ____<br />ФИО преподавателей: ____<br />Подписи: ____</div>
@@ -974,7 +1208,7 @@ function ApproveView({ doc, reload }: { doc: Doc; reload: () => void }) {
         <section className="card card-pad"><h3 className="h3">Документы</h3><ExportBlock doc={doc} /></section>
       </aside>
     </div>
-    <ToolsPanel doc={doc} only={['text', 'versions', 'actual']} />
+    <ToolsPanel doc={doc} only={['text', 'versions', 'actual']} title="Программа, версии и актуальность" />
     </div>
   )
 }
@@ -985,63 +1219,116 @@ function ExpertView({ doc, reload }: { doc: Doc; reload: () => void }) {
   const [mid, setMid] = useState(doc.modules[0]?.id)
   const [text, setText] = useState('')
   const [node, setNode] = useState('')
+  const [score, setScore] = useState(0)
   const [busy, setBusy] = useState('')
   useEffect(() => { if (!doc.modules.find((m: any) => m.id === mid)) setMid(doc.modules[0]?.id) }, [doc.modules, mid])
+  useEffect(() => { setScore(0); setNode('') }, [mid])
   const m = doc.modules.find((x: any) => x.id === mid)
   if (!doc.modules.length) return <div className="card empty"><Users size={34} /><p>В этой программе вам пока не назначено ни одного модуля.</p></div>
 
-  async function decision(d: 'accept' | 'return') {
-    setBusy(d)
+  const [total, done] = doc.readiness?.items?.[mid] || [0, 0]
+  const allChecked = total > 0 && done >= total
+  const accepted = new Set<string>(m?.accepted_items || [])
+  const finished = m?.review_status === 'accepted'
+
+  async function decision(d: 'accept' | 'return' | 'accept_item', nodeId = '') {
+    setBusy(d + nodeId)
     try {
-      await api(`/programs/${doc.id}/reviews/decision`, { method: 'POST', json: { module_id: mid, decision: d, comment: text } })
-      toast(d === 'accept' ? 'Модуль принят' : 'Модуль возвращён методисту'); setText(''); reload()
+      await api(`/programs/${doc.id}/reviews/decision`, { method: 'POST', json: { module_id: mid, decision: d, comment: d === 'accept_item' ? '' : text, node_id: nodeId, score: d === 'accept' && score ? score : null } })
+      toast(d === 'accept' ? 'Модуль принят' : d === 'return' ? 'Модуль возвращён методисту' : 'Элемент отмечен проверенным')
+      if (d !== 'accept_item') setText('')
+      reload()
     } catch (e: any) { toast(e.message, true) } finally { setBusy('') }
   }
   async function ask(agent: boolean) {
     setBusy('ask')
     try {
       await api(`/programs/${doc.id}/comments`, { method: 'POST', json: { module_id: mid, text, node_id: node, ask_agent: agent } })
-      toast(agent ? 'Вопрос передан, агент подготовил предложение для методиста' : 'Вопрос отправлен методисту'); setText(''); reload()
+      toast(agent ? 'Агент подготовил правку — подтвердите её ниже' : 'Вопрос отправлен методисту'); setText(''); reload()
     } catch (e: any) { toast(e.message, true) } finally { setBusy('') }
   }
-  const nodes = [...(doc.kit?.tasks || []), ...(doc.kit?.questions || [])].filter((x: any) => x.module_id === mid)
+  async function confirm(c: any) {
+    setBusy(c.id)
+    try {
+      await api(`/programs/${doc.id}/comments/answer`, { method: 'POST', json: { comment_id: c.id, apply_proposal: true } })
+      toast('Правка внесена, проверка пройдена заново'); reload()
+    } catch (e: any) { toast(e.message, true) } finally { setBusy('') }
+  }
+
+  const kit = doc.kit || {}
+  const lecs = (kit.lectures || []).filter((x: any) => x.module_id === mid)
+  const nodes: { id: string; label: string }[] = [
+    ...lecs.flatMap((l: any) => [
+      { id: l.id, label: `Лекция «${l.title}»` },
+      ...(l.plan || []).map((s: any, i: number) => ({ id: `${l.id}#p${i + 1}`, label: `  пункт плана ${i + 1}: ${String(s.text).slice(0, 50)}` })),
+      ...(l.slides || []).map((s: any) => ({ id: s.id, label: `  слайд «${s.title}»` })),
+    ]),
+    ...(kit.questions || []).filter((x: any) => x.module_id === mid).map((q: any, i: number) => ({ id: q.id, label: `Вопрос ${i + 1}: ${q.stem.slice(0, 50)}` })),
+    ...(kit.tasks || []).filter((x: any) => x.module_id === mid).flatMap((t: any) => [
+      { id: t.id, label: `Задание «${t.title}»` },
+      ...(t.criteria || []).map((c: any, i: number) => ({ id: `${t.id}#c${i + 1}`, label: `  критерий ${i + 1}: ${c.text.slice(0, 50)}` })),
+    ]),
+  ]
+  const mine = (doc.comments || []).filter((c: any) => c.module_id === mid)
   return (
-    <div className="grid-main">
-      <section className="card card-pad">
-        <div className="row row-wrap">
-          <h2 className="h2 grow" style={{ margin: 0 }}>Вычитка: модуль {m?.n}. {m?.title}</h2>
-          {doc.modules.length > 1 && <select className="field" style={{ width: 'auto' }} value={mid} onChange={(e) => setMid(e.target.value)}>{doc.modules.map((x: any) => <option key={x.id} value={x.id}>Модуль {x.n}</option>)}</select>}
-          <span className={`chip ${REVIEW_LABEL[m?.review_status]?.[1] || ''}`}>{REVIEW_LABEL[m?.review_status]?.[0]}</span>
-        </div>
-        <p className="small muted">Вы видите только назначенные вам модули. Код в лекциях уже выполнен в песочнице, вопросы привязаны к результатам обучения.</p>
-        {m && <ModuleContent doc={doc} module={m} />}
-      </section>
-      <aside className="col col-16">
+    <div className="col">
+      <div className="grid-main">
         <section className="card card-pad">
-          <h3 className="h3">Ваше решение</h3>
-          <label className="label">К какому элементу (необязательно)</label>
-          <select className="field" value={node} onChange={(e) => setNode(e.target.value)}>
-            <option value="">Модуль целиком</option>
-            {nodes.map((x: any) => <option key={x.id} value={x.id}>{x.title || x.stem?.slice(0, 60)}</option>)}
-          </select>
-          <textarea className="field" style={{ minHeight: 90, marginTop: 10 }} placeholder="Замечание или вопрос" value={text} onChange={(e) => setText(e.target.value)} />
-          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
-            <button className="btn btn-primary" style={{ justifyContent: 'center' }} disabled={!!busy} onClick={() => decision('accept')}>{busy === 'accept' ? <Spinner /> : <><Check size={16} /> Принять модуль</>}</button>
-            <button className="btn btn-soft" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim()} onClick={() => ask(true)}><Sparkles size={16} /> Попросить агента о правке</button>
-            <button className="btn btn-ghost" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim()} onClick={() => ask(false)}><MessageSquare size={16} /> Задать вопрос методисту</button>
-            <button className="btn btn-danger" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim()} onClick={() => decision('return')}><X size={16} /> Вернуть с комментарием</button>
+          <div className="row row-wrap">
+            <h2 className="h2 grow" style={{ margin: 0 }}>Вычитка: модуль {m?.n}. {m?.title}</h2>
+            {doc.modules.length > 1 && <select className="field" style={{ width: 'auto' }} value={mid} onChange={(e) => setMid(e.target.value)}>{doc.modules.map((x: any) => <option key={x.id} value={x.id}>Модуль {x.n}</option>)}</select>}
+            <span className={`chip ${REVIEW_LABEL[m?.review_status]?.[1] || ''}`}>{REVIEW_LABEL[m?.review_status]?.[0]}</span>
+            <span className={`chip ${allChecked ? 'chip-ok' : ''}`}>{done} из {total} проверено</span>
           </div>
+          <div className="progress" style={{ margin: '10px 0' }}><i style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></div>
+          <p className="small muted">Вы видите только назначенные вам модули; часы, разделы шаблона и профстандарт — только для чтения. Отметьте каждый элемент как проверенный: модуль принимается, когда проверены все. Код в лекциях выполнен в песочнице, у каждого элемента указаны РО и чем они проверяются.</p>
+          {m && <ModuleContent doc={doc} module={m} review={finished ? undefined : { accepted, busy, onAccept: (id) => decision('accept_item', id), onComment: (id) => setNode(id) }} />}
         </section>
-        <section className="card card-pad">
-          <h3 className="h3">Мои вопросы</h3>
-          {(doc.comments || []).filter((c: any) => c.module_id === mid).map((c: any) => (
-            <div key={c.id} className="small" style={{ padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
-              «{c.text}» <span className={`chip ${c.status === 'open' ? 'chip-warn' : 'chip-ok'}`}>{c.status === 'open' ? 'ждёт ответа' : c.status === 'applied' ? 'правка внесена' : 'отвечено'}</span>
-              {c.answer && <div className="muted">Ответ: {c.answer}</div>}
+        <aside className="col col-16">
+          <section className="card card-pad">
+            <h3 className="h3">Ваше решение</h3>
+            <label className="label">К какому фрагменту</label>
+            <select className="field" value={node} onChange={(e) => setNode(e.target.value)}>
+              <option value="">Модуль целиком</option>
+              {nodes.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+            <textarea className="field" style={{ minHeight: 90, marginTop: 10 }} placeholder="Замечание или вопрос" value={text} onChange={(e) => setText(e.target.value)} />
+            <div className="row" style={{ gap: 4, marginTop: 10 }} role="radiogroup" aria-label="Оценка модуля">
+              <span className="small muted grow">Оценка модуля</span>
+              {[1, 2, 3, 4, 5].map((v) => (
+                <button key={v} className="icon-btn" style={{ width: 30, height: 30 }} aria-label={`${v} из 5`} aria-checked={score === v} role="radio" onClick={() => setScore(score === v ? 0 : v)}>
+                  <Star size={16} fill={v <= score ? 'var(--amber)' : 'none'} color="var(--amber)" />
+                </button>
+              ))}
             </div>
-          ))}
-        </section>
-      </aside>
+            <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+              <button className="btn btn-primary" style={{ justifyContent: 'center' }} disabled={!!busy || !allChecked || finished} title={allChecked ? '' : 'Сначала отметьте все элементы модуля'} onClick={() => decision('accept')}>{busy === 'accept' ? <Spinner /> : <><Check size={16} /> Принять модуль</>}</button>
+              {!allChecked && !finished && <div className="tiny muted">Принять модуль можно, когда проверены все {total} элементов.</div>}
+              <button className="btn btn-soft" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim()} onClick={() => ask(true)}><Sparkles size={16} /> Попросить агента о правке</button>
+              <button className="btn btn-ghost" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim()} onClick={() => ask(false)}><MessageSquare size={16} /> Задать вопрос методисту</button>
+              <button className="btn btn-danger" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim() || finished} onClick={() => decision('return')}><X size={16} /> Вернуть с комментарием</button>
+            </div>
+          </section>
+          <section className="card card-pad">
+            <h3 className="h3">Мои замечания</h3>
+            {mine.length === 0 && <p className="small muted">Замечаний пока нет.</p>}
+            {mine.map((c: any) => (
+              <div key={c.id} className="small" style={{ padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
+                «{c.text}»{c.node_id && <span className="tiny muted"> · {c.node_id}</span>} <span className={`chip ${COMMENT_LABEL[c.status]?.[1]}`}>{COMMENT_LABEL[c.status]?.[0]}</span>
+                {c.answer && <div className="muted">Ответ: {c.answer}</div>}
+                {c.status === 'proposed' && (
+                  <div className="agent-msg small" style={{ marginTop: 6 }}><span className="avatar av-agent"><Sparkles size={14} /></span><div>
+                    {c.agent_proposal}
+                    {c.affected?.length > 0 && <div className="tiny muted">Затронет: {c.affected.join(', ')}. Часы и РО не меняются.</div>}
+                    {c.node_id && <button className="btn btn-primary btn-sm" style={{ marginTop: 6 }} disabled={!!busy} onClick={() => confirm(c)}>{busy === c.id ? <Spinner /> : <><Check size={14} /> Подтвердить правку</>}</button>}
+                  </div></div>
+                )}
+              </div>
+            ))}
+          </section>
+        </aside>
+      </div>
+      <ToolsPanel doc={doc} only={['sandbox']} title="Примеры кода в песочнице" />
     </div>
   )
 }

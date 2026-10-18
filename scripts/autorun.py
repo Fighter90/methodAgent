@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 def _checks(case: dict, r: dict) -> list[tuple[str, bool]]:
     sk = r['skeleton']
     tot = sk['totals']
-    kit = r['kit']['kit']
+    kit = r['kit']['program']  # комплект по схеме 4.8
     mods = sk['modules']
     out: list[tuple[str, bool]] = []
     vol = {1: 16, 2: 36, 3: 72, 4: 72, 5: 256}[case['id']]

@@ -76,11 +76,12 @@ class Principal:
     user_id: str
     role: str
     name: str
+    anonymous: bool = False
 
 
 def _anonymous_api() -> Principal:
     # Автопрогон организаторов вызывает единый эндпоинт без токена: роль api
-    return Principal('u-api', 'api', 'API-клиент')
+    return Principal('u-api', 'api', 'API-клиент', anonymous=True)
 
 
 _anon_runs: dict[str, deque[float]] = defaultdict(deque)
@@ -92,7 +93,7 @@ def _client_ip(request: Request) -> str:
 
 
 def _anonymous(request: Request) -> Principal:
-    """Без токена: чтение и автопрогон POST /programs?mode=auto с лимитом частоты; остальное — только после входа.
+    """Без токена: автопрогон POST /programs?mode=auto с лимитом частоты и чтение его же результатов; остальное — 401.
 
     Публичный адрес открыт всем, а дневной бюджет шлюза общий — поэтому запись и интерфейсные методы требуют токен.
     """

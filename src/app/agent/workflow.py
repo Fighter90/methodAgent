@@ -21,7 +21,7 @@ from app.agent.sections import build_sections
 from app.core.config import get_settings
 from app.core.db import now_iso
 from app.core.errors import Conflict, NotFound
-from app.kb.registry import for_school, literature_for, match_source
+from app.kb.registry import find_ps, for_school, literature_for, match_source, registry
 from app.llm.client import LIMIT_MSG, CallStats, get_llm
 from app.programs.schemas import (
     Approval,
@@ -105,15 +105,24 @@ async def intake_step(doc: ProgramDoc, references: list[ReferenceInfo], ref_text
         doc.agent_notes.append('Из приложенной программы беру структуру разделов, текст не переношу.')
     elif params.reference_used:
         doc.agent_notes.append('Запрос ссылается на образец, но файл не приложен — структура взята из шаблона АЦР.')
-    if params.reference_used and doc.params.program_type == ProgramType.DPP_PK_INTERNSHIP and not references:
-        doc.agent_notes.append(
-            'В образце стажировки АЦР «Бизнес и системный анализ» (248 ч) итоговая строка учебного плана не сходится '
-            'с остальными строками (ПР 66, ЛБ 6, СРС 174 ч при модуле 0/0/0/246 ч) — ошибка не перенесена: все часы модулей учтены как СРС.'
-        )
     _classify(doc)
+    if params.reference_used and not references:
+        _note_known_sample(doc)
     doc.questions = clarify.run(doc.params)
     _stats_to_usage(doc, stats)
     doc.timing_s['intake'] = round(time.monotonic() - started, 2)
+
+
+def _note_known_sample(doc: ProgramDoc) -> None:
+    """Образец из реестра организации, на который ссылается запрос: известные ошибки часов не переносим."""
+    kind = doc.type.value if doc.type else ''
+    for s in registry().get('org', {}).get('samples', []):
+        if s.get('type') == kind and s.get('issues'):
+            doc.agent_notes.append(
+                f'В образце АЦР «{s["name"]}» ({s["volume_h"]} ч) итоговые строки учебного плана не сходятся: '
+                + '; '.join(s['issues']) + f'. Ошибки не перенесены: {s.get("fix", "часы пересчитаны")}.'
+            )
+            return
 
 
 def _classify(doc: ProgramDoc) -> None:
@@ -229,9 +238,9 @@ def apply_solver(doc: ProgramDoc, modules: list[Module]) -> None:
     doc.agent_notes += [n for n in result.notes if n not in doc.agent_notes]
 
 
-def _schedule_items(doc: ProgramDoc) -> list[tuple[str, int]]:
-    items = [(f'Тема {t.n}. {t.title}', t.hours.total) for t in doc.all_topics()]
-    items.append((f'Итоговая аттестация: {doc.final_assessment.form}', doc.final_assessment.hours))
+def _schedule_items(doc: ProgramDoc) -> list[tuple]:
+    items = [(f'Тема {t.n}. {t.title}', t.hours.total, {k: getattr(t.hours, k) for k in KINDS}) for t in doc.all_topics()]
+    items.append((f'Итоговая аттестация: {doc.final_assessment.form}', doc.final_assessment.hours, {'ia': doc.final_assessment.hours}))
     return items
 
 
@@ -285,7 +294,16 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
 
         await apply_org_docs(doc)
     structure = [s for r in doc.references for s in r.structure]
-    draft = await skeleton.run(doc.params, doc.type, doc.profstandard, structure, stats, comment)
+    current = _skeleton_brief(doc) if comment and doc.modules else None
+    draft = await skeleton.run(doc.params, doc.type, doc.profstandard, structure, stats, comment, current, doc.org_fragments)
+    if current and draft.source != 'llm':
+        # Модель недоступна: каркас, который методист уже проверял, не заменяем типовым
+        doc.agent_notes.append(f'Комментарий «{comment[:200]}» не обработан: модель недоступна, каркас оставлен без изменений — правьте вручную.')
+        _limit_note(doc)
+        doc.report = build_report(doc, 'skeleton')
+        doc.status = Status.SKELETON
+        _stats_to_usage(doc, stats)
+        return
     if draft.source != 'llm':
         doc.agent_notes.append('Каркас собран по типовой структуре направления (модель недоступна) — проверьте темы.')
     _limit_note(doc)
@@ -306,6 +324,14 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
     doc.timing_s['skeleton'] = round(time.monotonic() - started + doc.timing_s.get('intake', 0), 2)
 
 
+def _skeleton_brief(doc: ProgramDoc) -> dict[str, Any]:
+    return {
+        'goal': doc.goal,
+        'competencies': [{'code': c.code, 'title': c.title, 'outcomes': [lo.text for i in c.indicators for lo in i.outcomes]} for c in doc.competencies],
+        'modules': [{'n': m.n, 'title': m.title, 'hours': m.hours.total, 'topics': [t.title for t in m.topics]} for m in doc.modules],
+    }
+
+
 def _expectation_note(doc: ProgramDoc) -> None:
     exp = doc.params.customer_expectation
     if exp and not any('ожидани' in n.lower() for n in doc.agent_notes):
@@ -316,8 +342,18 @@ def _expectation_note(doc: ProgramDoc) -> None:
 
 
 def recompute(doc: ProgramDoc) -> None:
-    """Пересчёт после правки часов методистом: темы перераспределяются солвером внутри модуля."""
+    """Пересчёт после правки часов методистом: темы перераспределяются солвером внутри модуля.
+
+    Если методист задал часы тем вручную (manual_topics): модуль равен сумме тем, солвер их не трогает (FR-17).
+    """
     for m in doc.modules:
+        if m.manual_topics:
+            for k in KINDS:
+                setattr(m.hours, k, sum(getattr(t.hours, k) for t in m.topics))
+            for t in m.topics:
+                t.hours.total = t.hours.kinds_sum()
+            m.hours.total = m.hours.kinds_sum()
+            continue
         m.hours.total = m.hours.kinds_sum()
         if m.topics:
             from app.solver.hours import _split_topics
@@ -341,10 +377,16 @@ def patch_skeleton(doc: ProgramDoc, patch: dict[str, Any]) -> None:
         for k in KINDS:
             if k in mp.get('hours', {}):
                 setattr(m.hours, k, max(0, int(mp['hours'][k])))
+                m.manual_topics = False  # новые часы модуля — темы снова распределяет солвер
         for tp in mp.get('topics', []):
             t = next((x for x in m.topics if x.id == tp.get('id')), None)
             if t and 'title' in tp:
                 t.title = str(tp['title'])[:200]
+            if t and tp.get('hours'):
+                for k in KINDS:
+                    if k in tp['hours']:
+                        setattr(t.hours, k, max(0, int(tp['hours'][k])))
+                m.manual_topics = True
     for cp in patch.get('competencies', []):
         c = next((x for x in doc.competencies if x.id == cp.get('id')), None)
         if c and 'title' in cp:
@@ -374,8 +416,22 @@ def decide(doc: ProgramDoc, rule_id: str, decision: str, actor: str, node: str =
                 lo.text = proposal
         if rule_id == 'V-10' and option_id:
             choose_calendar_option(doc, option_id)
-    doc.decisions.append(Decision(rule_id=rule_id, proposal=proposal, decision=decision, actor=actor, at=now_iso()))
+        if rule_id == 'V-21' and '>' in node:
+            _swap_topics(doc, *node.split('>', 1))
+    doc.decisions.append(Decision(rule_id=rule_id, node=node, proposal=proposal, decision=decision, actor=actor, at=now_iso()))
     doc.report = build_report(doc, 'skeleton')
+
+
+def _swap_topics(doc: ProgramDoc, a_id: str, b_id: str) -> None:
+    """V-21: темы меняются содержанием, позиции и часы остаются — суммы модулей не сдвигаются."""
+    topics = {t.id: t for t in doc.all_topics()}
+    a, b = topics.get(a_id), topics.get(b_id)
+    if not a or not b:
+        return
+    for f in ('title', 'description', 'lo_ids', 'prerequisites'):
+        va, vb = getattr(a, f), getattr(b, f)
+        setattr(a, f, vb)
+        setattr(b, f, va)
 
 
 def approve_skeleton(doc: ProgramDoc, actor: str, *, auto: bool = False) -> None:
@@ -384,12 +440,13 @@ def approve_skeleton(doc: ProgramDoc, actor: str, *, auto: bool = False) -> None
     report = doc.report or build_report(doc, 'skeleton')
     errors = [r for r in report.rules if r.status == 'fail']
     if auto:
-        seen: set[str] = set()
+        seen: set[tuple[str, str]] = set()
         for p in report.proposals:
             # Из нескольких вариантов одного пункта берём первый; календарь, выбранный заранее, не трогаем
-            if p['rule_id'] in seen or (p['rule_id'] == 'V-10' and doc.calendar.chosen_option):
+            key = (p['rule_id'], p.get('node', ''))
+            if key in seen or (p['rule_id'] == 'V-10' and doc.calendar.chosen_option):
                 continue
-            seen.add(p['rule_id'])
+            seen.add(key)
             if not p.get('decided'):
                 decide(doc, p['rule_id'], 'accept', 'auto-approve', p.get('node', ''), p.get('proposal', ''), p.get('option_id', ''))
         report = doc.report or report
@@ -451,7 +508,7 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
         done = sum(1 for x in module_state.values() if x['status'] == 'готово')
         eta = round(elapsed / done * (len(module_state) - done), 0) if done else None
         await progress({
-            'modules': list(module_state.values()), 'feed': feed[-12:], 'workers': workers,
+            'modules': list(module_state.values()), 'feed': feed[-12:], 'workers': workers, 'llm_slots': get_settings().llm_concurrency,
             'usage': {'tokens': stats.tokens_in + stats.tokens_out, 'cost_rub': round(stats.cost_rub, 2), 'by_skill': stats.by_skill},
             'elapsed_s': round(elapsed, 1), 'eta_s': eta, 'done': done, 'total': len(module_state),
         })
@@ -515,6 +572,7 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
     doc.kit = kit
     await _fix_examples(doc, stats, _report)
     _sources(doc, extra_sources)
+    await check_source_urls(doc)
     doc.kit.sections = build_sections(doc)
     await _report('validate · 27 правил')
     doc.report = build_report(doc, 'kit')
@@ -600,7 +658,8 @@ def _sources(doc: ProgramDoc, extra: list[str]) -> None:
     text = ' '.join([doc.title, doc.params.direction, ' '.join(m.title for m in doc.modules)])
     sources = list(doc.norm_base)
     if doc.profstandard:
-        sources.append(Source(id=f'ps-{doc.profstandard.code}', kind='ps', bibl=f'Профессиональный стандарт {doc.profstandard.code} «{doc.profstandard.title}» ({doc.profstandard.order})', confirmed=True, checked_at='2026-10-17'))
+        sources.append(Source(id=f'ps-{doc.profstandard.code}', kind='ps', bibl=f'Профессиональный стандарт {doc.profstandard.code} «{doc.profstandard.title}» ({doc.profstandard.order})', confirmed=True,
+                              checked_at=(find_ps(doc.profstandard.code) or {}).get('checked_at', '')))
     school = doc.type == ProgramType.DOOP
     sources += literature_for(text, school=school)
     known = {s.bibl for s in sources}
@@ -619,6 +678,34 @@ def _sources(doc: ProgramDoc, extra: list[str]) -> None:
         if len(sources) < 14:
             sources.append(Source(id=f'llm-{i}', kind='book', bibl=f'{bibl} [не подтверждено]', confirmed=False))
     doc.sources = sources
+
+
+async def check_source_urls(doc: ProgramDoc) -> None:
+    """Источник не из реестра, но со ссылкой: ссылка открывается — источник подтверждён по ссылке (FR-29)."""
+    import re
+
+    if get_settings().llm_providers == 'fixtures':
+        return  # режим без сети
+    todo = [(s, m.group(0).rstrip('.,;)')) for s in doc.sources if not s.confirmed and (m := re.search(r'https?://\S+', s.bibl))]
+    if not todo:
+        return
+    import httpx
+
+    async def _ok(url: str) -> bool:
+        try:
+            async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as c:
+                r = await c.head(url)
+                if r.status_code in (403, 405):
+                    r = await c.get(url)
+                return r.status_code < 400
+        except Exception:  # noqa: BLE001 — нет сети или сайта: источник остаётся неподтверждённым
+            return False
+
+    results = await asyncio.gather(*(_ok(u) for _, u in todo[:8]))
+    for (src, url), ok in zip(todo, results, strict=False):
+        if ok:
+            src.confirmed, src.kind, src.url, src.checked_at = True, 'url', url, now_iso()[:10]
+            src.bibl = src.bibl.replace(' [не подтверждено]', '') + f' (ссылка проверена {src.checked_at})'
 
 
 # --------------------------------------------------------------------------- точечная правка
@@ -666,18 +753,99 @@ def descendants(doc: ProgramDoc, target: str) -> dict[str, list[str]]:
     if target.startswith('test-'):
         qs = [x.id for x in doc.kit.questions if x.assessment_id == target]
         return {'rebuild': [f'{len(qs)} вопросов теста'], 'nodes': qs, 'keep': ['Часы, темы и РО', 'Задания, лекции и слайды']}
+    lec = _lecture_of(doc, target)
+    if lec is not None:
+        what = f'Слайды и план лекции «{lec.title}»' if lec.slides else f'План лекции «{lec.title}»'
+        return {'rebuild': [what], 'nodes': [lec.id], 'keep': ['Часы, темы и РО', 'Тесты и задания', 'Остальные лекции']}
+    if target.startswith('hours:'):
+        topic = next((t for t in doc.all_topics() if t.id == target[6:]), None)
+        if topic is None:
+            raise NotFound('Тема не найдена')
+        module = next(m for m in doc.modules if topic in m.topics)
+        peer = _hours_peer(module, topic)
+        nodes = [topic.id + ':hours', *([peer.id + ':hours'] if peer else []),
+                 *[lec.id for lec in doc.kit.lectures if lec.topic_id in {topic.id, peer.id if peer else ''}]]
+        return {
+            'rebuild': [f'Часы темы {topic.n}', *([f'Часы темы {peer.n} (компенсация, итог модуля {module.hours.total} ч не меняется)'] if peer else []),
+                        'Хронометраж лекций этих тем'],
+            'nodes': nodes,
+            'keep': [f'Итог модуля {module.n} и всей программы', 'Компетенции и РО', 'Тесты и задания', 'Остальные модули'],
+        }
     raise NotFound(f'Элемент {target} не найден в комплекте')
 
 
-async def edit(doc: ProgramDoc, target: str, instruction: str, new_title: str = '', dry_run: bool = False) -> dict[str, Any]:
-    """Точечная правка: пересобираются только потомки узла, затем полная проверка (FR-36…FR-38, V-20)."""
+def _lecture_of(doc: ProgramDoc, target: str):
+    """Лекция по её id или по id одного из её слайдов."""
+    return next((lec for lec in doc.kit.lectures if lec.id == target or any(sl.id == target for sl in lec.slides)), None)
+
+
+def _hours_peer(module: Module, topic: Topic) -> Topic | None:
+    """Тема, за счёт которой сохраняется итог модуля при правке часов: самая большая из остальных."""
+    others = [t for t in module.topics if t.id != topic.id]
+    return max(others, key=lambda t: t.hours.total) if others else None
+
+
+def resolve_target(doc: ProgramDoc, target: str, instruction: str) -> str:
+    """FR-36: правка, описанная только текстом, — агент сам находит элемент по словам запроса."""
+    if target and target != 'auto':
+        return target
+    import re
+
+    words = {w for w in re.findall(r'\w{4,}', instruction.lower())}
+    if not words:
+        raise Conflict('Опишите, что изменить, или выберите элемент', code='EDIT_TARGET_REQUIRED')
+
+    def score(text: str) -> int:
+        low = text.lower()
+        return sum(1 for w in words if w[:6] in low)
+
+    candidates = [(score(t.title), t.id) for t in doc.all_topics()]
+    candidates += [(score(q.stem), q.id) for q in doc.kit.questions]
+    candidates += [(score(t.title + ' ' + t.statement), t.id) for t in doc.kit.tasks]
+    candidates += [(score(lec.title + ' ' + ' '.join(sl.title for sl in lec.slides)), lec.id) for lec in doc.kit.lectures if 'слайд' in instruction.lower() or 'лекци' in instruction.lower()]
+    best = max(candidates, default=(0, ''))
+    if best[0] == 0:
+        raise Conflict('Не нашёл элемент по описанию — выберите тему, вопрос, задание или лекцию', code='EDIT_TARGET_REQUIRED')
+    return best[1]
+
+
+def _edit_guard(doc: ProgramDoc) -> list[str]:
+    """Таблица 11: после правки суммы часов сходятся и у каждого РО остаётся не меньше двух средств проверки."""
+    from app.validation.rules import v13
+
+    problems = []
+    for m in doc.modules:
+        if sum(t.hours.total for t in m.topics) != m.hours.total or m.hours.kinds_sum() != m.hours.total:
+            problems.append(f'часы модуля {m.n} не сходятся')
+        for t in m.topics:
+            if t.hours.kinds_sum() != t.hours.total:
+                problems.append(f'часы темы {t.n} не сходятся')
+    if sum(m.hours.total for m in doc.modules) + doc.final_assessment.hours != doc.volume_h:
+        problems.append(f'сумма часов не равна {doc.volume_h}')
+    status, msgs, _ = v13(doc, 'kit')
+    if status == 'fail':
+        problems += msgs[:3]
+    return problems
+
+
+async def edit(
+    doc: ProgramDoc, target: str, instruction: str, new_title: str = '', dry_run: bool = False, hours: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Точечная правка: пересобираются только потомки узла, затем полная проверка (FR-36…FR-38, V-20).
+
+    Если правка задела что-то вне потомков, разошлись часы или у РО осталось меньше двух средств проверки,
+    она отменяется целиком (таблица 11, V-20), а методист получает пояснение.
+    """
     if doc.status in (Status.ON_APPROVAL, Status.APPROVED):
         raise Conflict('Программа на утверждении: правка недоступна', code='LOCKED')
     if not doc.kit.questions and not doc.kit.tasks:
         raise Conflict('Комплект ещё не собран', code='KIT_NOT_READY')
+    target = resolve_target(doc, target, instruction)
     plan = descendants(doc, target)
+    preview = _preview(doc, target, new_title, hours)
     if dry_run:
-        return {'plan': plan, 'applied': False}
+        return {'plan': plan, 'applied': False, 'target': target, 'preview': preview}
+    snapshot = doc.model_copy(deep=True)
     before = kit_hashes(doc)
     allowed = set(plan['nodes'])
     stats = CallStats()
@@ -734,6 +902,21 @@ async def edit(doc: ProgramDoc, target: str, instruction: str, new_title: str = 
                     nq.lo_ids = nq.lo_ids or question.lo_ids
                     nq.difficulty = min(5, question.difficulty + (1 if 'слож' in instruction.lower() else 0))
                     doc.kit.questions[doc.kit.questions.index(question)] = nq
+        elif target.startswith('hours:'):
+            _apply_hours(doc, target[6:], hours or {})
+        elif (lec := _lecture_of(doc, target)) is not None:
+            module = doc.module_by_id(lec.module_id) or doc.modules[0]
+            tmp = module.model_copy(deep=True)
+            tmp.topics = [t for t in tmp.topics if t.id == lec.topic_id]
+            res = await content.run(doc, tmp, n_questions=0, test_id=f'test-{module.id}', slide_topics={lec.topic_id} if lec.slides else set(),
+                                    stats=stats, instruction_extra=f'Правка методиста к лекции «{lec.title}»: {instruction}')
+            new_lec = next((x for x in res.lectures if x.topic_id == lec.topic_id), None)
+            if new_lec is not None:
+                new_lec.id, new_lec.module_id, new_lec.duration_min = lec.id, lec.module_id, lec.duration_min
+                new_lec.slides = new_lec.slides or lec.slides
+                doc.kit.lectures[doc.kit.lectures.index(lec)] = new_lec
+            if new_title:
+                doc.kit.lectures[next(i for i, x in enumerate(doc.kit.lectures) if x.id == lec.id)].title = new_title.strip()
         else:
             t = next((x for x in doc.kit.tasks if x.id == target), None)
             if t is not None:
@@ -744,20 +927,85 @@ async def edit(doc: ProgramDoc, target: str, instruction: str, new_title: str = 
     after = kit_hashes(doc)
     changed = {k for k in after if before.get(k) != after[k]}
     leaked = sorted(k for k in changed if k not in allowed and not k.endswith(':hours'))
-    hours_changed = sorted(k for k in changed if k.endswith(':hours'))
-    ok = not leaked and not hours_changed
-    doc.progress['last_edit_check'] = {
-        'ok': ok, 'target': target, 'changed': sorted(changed),
-        'message': 'Правка изменила элементы вне потомков узла: ' + ', '.join(leaked + hours_changed) if not ok else 'Изменились только потомки узла',
-        'nodes': leaked + hours_changed,
-    }
+    hours_changed = sorted(k for k in changed if k.endswith(':hours') and k not in allowed)
+    problems = _edit_guard(doc)
+    if leaked or hours_changed or problems:
+        # V-20 и таблица 11: правка отменяется целиком, комплект остаётся прежним
+        reason = []
+        if leaked or hours_changed:
+            reason.append('правка задела элементы вне потомков узла: ' + ', '.join((leaked + hours_changed)[:6]))
+        reason += problems
+        for name in type(doc).model_fields:
+            setattr(doc, name, getattr(snapshot, name))
+        doc.progress['last_edit_check'] = {'ok': True, 'target': target, 'changed': [], 'rejected': True,
+                                           'message': 'Правка отменена: ' + '; '.join(reason), 'nodes': []}
+        raise Conflict('Правка отменена: ' + '; '.join(reason), code='EDIT_REJECTED', details={
+            'proposal': 'Сохраните связи: уточните формулировку, не меняя РО, или перенесите часы внутри одного модуля',
+            'nodes': leaked + hours_changed,
+        })
+    doc.progress['last_edit_check'] = {'ok': True, 'target': target, 'changed': sorted(changed), 'message': 'Изменились только потомки узла', 'nodes': []}
     doc.kit.sections = build_sections(doc)
     doc.report = build_report(doc, 'kit')
     for m in doc.modules:
-        if m.review_status == 'accepted' and any(n in allowed for n in [x.id for x in m.topics] + [q.id for q in doc.kit.questions if q.module_id == m.id]):
-            m.review_status = 'in_review'  # FR-43: изменение принятого модуля возвращает его эксперту
+        touched = set(module_items(doc, m.id)) | {x.id for x in m.topics}
+        if changed & touched or allowed & touched:
+            m.accepted_items = [x for x in m.accepted_items if x not in changed and x not in allowed]
+            if m.review_status == 'accepted':
+                m.review_status = 'in_review'  # FR-43: изменение принятого модуля возвращает его эксперту
     _stats_to_usage(doc, stats)
-    return {'plan': plan, 'applied': True, 'changed': sorted(changed), 'check_ok': ok}
+    return {'plan': plan, 'applied': True, 'target': target, 'preview': preview, 'changed': sorted(changed), 'check_ok': True}
+
+
+def _preview(doc: ProgramDoc, target: str, new_title: str, hours: dict[str, int] | None) -> dict[str, str]:
+    """«Было / Станет» для экрана правки: название, часы, формулировка вопроса или задания."""
+    topic = next((t for t in doc.all_topics() if t.id == target), None)
+    if topic is not None:
+        return {'before': topic.title, 'after': new_title.strip() or topic.title}
+    if target.startswith('hours:'):
+        t = next((x for x in doc.all_topics() if x.id == target[6:]), None)
+        if t is not None:
+            fmt = lambda h: f'ЛК {h.get("lk", 0)} · ПР {h.get("pr", 0)} · ЛБ {h.get("lb", 0)} · СРС {h.get("srs", 0)}'  # noqa: E731
+            cur = t.hours.model_dump()
+            return {'before': f'Тема {t.n}: {fmt(cur)}', 'after': f'Тема {t.n}: {fmt({**cur, **(hours or {})})}'}
+    q = next((x for x in doc.kit.questions if x.id == target), None)
+    if q is not None:
+        return {'before': q.stem, 'after': 'Вопрос будет переформулирован по указанию, ключ и РО сохранятся'}
+    task = next((x for x in doc.kit.tasks if x.id == target), None)
+    if task is not None:
+        return {'before': task.statement[:300], 'after': 'Условие и критерии будут уточнены по указанию, РО сохранятся'}
+    lec = _lecture_of(doc, target)
+    if lec is not None:
+        return {'before': lec.title, 'after': new_title.strip() or lec.title}
+    return {'before': '', 'after': ''}
+
+
+def _apply_hours(doc: ProgramDoc, topic_id: str, hours: dict[str, int]) -> None:
+    """Правка часов темы после сборки: итог модуля сохраняется за счёт самой большой соседней темы."""
+    topic = next((t for t in doc.all_topics() if t.id == topic_id), None)
+    if topic is None:
+        raise NotFound('Тема не найдена')
+    module = next(m for m in doc.modules if topic in m.topics)
+    peer = _hours_peer(module, topic)
+    for kind in KINDS:
+        if kind not in hours:
+            continue
+        new = int(hours[kind])
+        delta = new - getattr(topic.hours, kind)
+        if delta and (peer is None or getattr(peer.hours, kind) - delta < 0):
+            raise Conflict(f'Не хватает часов {kind.upper()} у соседних тем модуля {module.n}, чтобы сохранить итог модуля', code='HOURS_MISMATCH')
+        if new < 0:
+            raise Conflict('Часы не могут быть отрицательными', code='HOURS_MISMATCH')
+        setattr(topic.hours, kind, new)
+        if delta and peer is not None:
+            setattr(peer.hours, kind, getattr(peer.hours, kind) - delta)
+    for t in (topic, peer):
+        if t is None:
+            continue
+        t.hours.total = t.hours.kinds_sum()
+        for lec in doc.kit.lectures:
+            if lec.topic_id == t.id:
+                lec.duration_min = t.hours.lk * 45
+    plan_doc_calendar(doc)
 
 
 # --------------------------------------------------------------------------- согласование
@@ -769,16 +1017,58 @@ def assign_expert(doc: ProgramDoc, module_id: str, expert_id: str) -> None:
     m = doc.module_by_id(module_id)
     if m is None:
         raise NotFound('Модуль не найден')
+    if doc.status in (Status.ON_APPROVAL, Status.APPROVED):
+        raise Conflict('Программа на утверждении: назначения не меняются', code='LOCKED')
+    # FR-35: на вычитку — только комплект, прошедший 10 из 10 блокирующих проверок
+    if not blocking_ok(doc):
+        raise Conflict('Сначала должны пройти все 10 блокирующих проверок', code='BLOCKING_FAILED')
     m.expert_id = expert_id
     if m.review_status == 'not_started':
         m.review_status = 'in_review'
-    if doc.status == Status.KIT_READY:
-        if not blocking_ok(doc):
-            raise Conflict('Сначала должны пройти все 10 блокирующих проверок', code='BLOCKING_FAILED')
+    if doc.status in (Status.KIT_READY, Status.RETURNED):
         doc.status = Status.ON_REVIEW
 
 
-def review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: str, comment: str = '') -> None:
+def module_items(doc: ProgramDoc, module_id: str) -> list[str]:
+    """Элементы модуля для вычитки: рабочая программа, лекции, вопросы, задания (ReviewTask.items_total)."""
+    k = doc.kit
+    return (
+        [f'mp-{module_id}'] * any(mp.module_id == module_id for mp in k.module_programs)
+        + [lec.id for lec in k.lectures if lec.module_id == module_id]
+        + [q.id for q in k.questions if q.module_id == module_id]
+        + [t.id for t in k.tasks if t.module_id == module_id]
+    )
+
+
+def review_items(doc: ProgramDoc, module_id: str) -> tuple[int, int]:
+    items = module_items(doc, module_id)
+    m = doc.module_by_id(module_id)
+    done = len(set(items) & set(m.accepted_items)) if m else 0
+    return len(items), done
+
+
+def restore_into(doc: ProgramDoc, cur: ProgramDoc) -> None:
+    """Откат возвращает содержание версии, но не статус и не решения людей (FR-38).
+
+    Иначе снимок «утверждена» вернул бы утверждение без руководителя.
+    """
+    doc.version = cur.version
+    doc.comments, doc.approvals = cur.comments, cur.approvals
+    has_kit = bool(doc.kit.questions or doc.kit.tasks)
+    for m in doc.modules:
+        cm = cur.module_by_id(m.id)
+        m.expert_id = cm.expert_id if cm else None
+        if cm and cm.expert_id:
+            # содержание поменялось: принятый модуль снова на вычитке (FR-43)
+            m.review_status = 'in_review' if cm.review_status == 'accepted' else cm.review_status
+        else:
+            m.review_status = 'not_started'
+        m.accepted_items = []
+    if doc.status in (Status.ON_REVIEW, Status.ON_APPROVAL, Status.APPROVED, Status.RETURNED) or cur.status in (Status.ON_APPROVAL, Status.APPROVED):
+        doc.status = (Status.ON_REVIEW if any(m.expert_id for m in doc.modules) else Status.KIT_READY) if has_kit else Status.SKELETON
+
+
+def review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: str, comment: str = '', node_id: str = '', score: int | None = None) -> None:
     m = doc.module_by_id(module_id)
     if m is None:
         raise NotFound('Модуль не найден')
@@ -786,7 +1076,20 @@ def review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: st
         from app.core.errors import ForbiddenRole
 
         raise ForbiddenRole('Эксперт видит и принимает только назначенные ему модули')
+    if decision == 'accept_item':
+        if not node_id or node_id not in module_items(doc, module_id):
+            raise NotFound('Элемент не найден в модуле')
+        if node_id not in m.accepted_items:
+            m.accepted_items.append(node_id)
+        if m.review_status in ('not_started', 'question'):
+            m.review_status = 'in_review'
+        return  # модуль целиком принимает эксперт отдельным решением — с оценкой 1–5 (FR-49, FR-50)
     if decision == 'accept':
+        total, done = review_items(doc, module_id)
+        if done < total:
+            # Таблица 11: «Принять модуль» доступна, когда проверены все элементы
+            raise Conflict(f'{done} из {total} элементов проверено — примите каждый элемент модуля', code='ITEMS_NOT_CHECKED',
+                           details={'done': done, 'total': total})
         m.review_status = 'accepted'
     elif decision == 'return':
         if not comment.strip():
@@ -794,11 +1097,13 @@ def review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: st
         m.review_status = 'returned'
     elif decision == 'question':
         m.review_status = 'question'
-    doc.approvals.append(Approval(stage='module', actor=actor_id, decision='approve' if decision == 'accept' else 'return', comment=comment, module_id=module_id, at=now_iso()))
+    doc.approvals.append(Approval(stage='module', actor=actor_id, decision='approve' if decision == 'accept' else 'return', comment=comment,
+                                  module_id=module_id, score=score if decision == 'accept' else None, at=now_iso()))
 
 
-def add_comment(doc: ProgramDoc, module_id: str, author: str, text: str, node_id: str = '', proposal: str = '') -> Comment:
-    c = Comment(id=f'cm{len(doc.comments) + 1}', module_id=module_id, node_id=node_id, author=author, text=text, agent_proposal=proposal, at=now_iso())
+def add_comment(doc: ProgramDoc, module_id: str, author: str, text: str, node_id: str = '', proposal: str = '', affected: list[str] | None = None) -> Comment:
+    c = Comment(id=f'cm{len(doc.comments) + 1}', module_id=module_id, node_id=node_id, author=author, text=text, agent_proposal=proposal,
+                affected=affected or [], at=now_iso())
     doc.comments.append(c)
     m = doc.module_by_id(module_id)
     if m and m.review_status in ('in_review', 'not_started'):
@@ -815,8 +1120,17 @@ def submit(doc: ProgramDoc, actor: str) -> None:
     doc.status = Status.ON_APPROVAL
 
 
+def _name(user_id: str | None) -> str:
+    from app.core.security import users
+
+    if not user_id:
+        return 'методист'
+    u = users().get(user_id)
+    return u.name if u else user_id
+
+
 def readiness(doc: ProgramDoc) -> dict[str, Any]:
-    """Индекс готовности (FR-51): 10 блокирующих проверок + приёмка всех модулей."""
+    """Индекс готовности (FR-51): 10 блокирующих проверок + приёмка всех модулей; незакрытые пункты с владельцами."""
     rep = doc.report
     blocking = rep.blocking_passed if rep and rep.stage == 'kit' else 0
     accepted = sum(1 for m in doc.modules if m.review_status == 'accepted')
@@ -824,9 +1138,61 @@ def readiness(doc: ProgramDoc) -> dict[str, Any]:
     index = round(100 * (blocking + accepted) / parts_total) if parts_total else 0
     open_items = []
     if rep:
-        open_items += [{'title': r.title, 'owner': 'методист'} for r in rep.rules if r.status == 'fail']
-    open_items += [{'title': f'Модуль {m.n} не принят', 'owner': m.expert_id or 'методист'} for m in doc.modules if m.review_status != 'accepted']
-    return {'index': index, 'blocking': blocking, 'modules_accepted': accepted, 'modules_total': len(doc.modules), 'open': open_items}
+        open_items += [{'title': f'{r.id} {r.title}', 'owner': r.owner or 'методист'} for r in rep.rules if r.status == 'fail']
+    open_items += [
+        {'title': f'Модуль {m.n} «{m.title}» не принят ({_REVIEW_RU.get(m.review_status, m.review_status)})',
+         'owner': f'эксперт {_name(m.expert_id)}' if m.expert_id else 'методист: назначить эксперта'}
+        for m in doc.modules if m.review_status != 'accepted'
+    ]
+    return {'index': index, 'blocking': blocking, 'modules_accepted': accepted, 'modules_total': len(doc.modules), 'open': open_items,
+            'items': {m.id: list(review_items(doc, m.id)) for m in doc.modules}}
+
+
+_REVIEW_RU = {'not_started': 'не начата', 'in_review': 'в работе', 'question': 'вопрос', 'accepted': 'принят', 'returned': 'возвращён'}
+
+
+def quality(doc: ProgramDoc, events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Качество комплекта и срок для руководителя (FR-50, таблица 10, экран 10)."""
+    from datetime import date, datetime
+
+    k = doc.kit
+    elements = len(k.questions) + len(k.tasks) + len(k.lectures)
+    human = [e for e in events if e['actor'] not in ('agent', 'auto-approve')]
+    edited = {e['node_id'] for e in human if e['action'] == 'edit' and e['node_id']}
+    edited |= {c.node_id for c in doc.comments if c.status == 'applied' and c.node_id}
+    accepted = [m for m in doc.modules if m.review_status == 'accepted']
+    touched_modules = {c.module_id for c in doc.comments} | {
+        m.id for m in doc.modules if edited & ({t.id for t in m.topics} | set(module_items(doc, m.id)))}
+    scores = [a.score for a in doc.approvals if a.stage == 'module' and a.score]
+    examples = sum(len(lec.code_examples) for lec in k.lectures)
+    v24 = next((r for r in doc.report.rules if r.id == 'V-24'), None) if doc.report else None
+    failed_code = len(v24.messages) if v24 and v24.status != 'pass' else 0
+
+    def _d(s: str) -> date | None:
+        try:
+            return datetime.fromisoformat(s.replace('Z', '+00:00')).date()
+        except ValueError:
+            return None
+
+    start = _d(doc.created_at) or date.today()
+    decided = [a.at for a in doc.approvals if a.stage == 'program' and a.decision == 'approve']
+    end = _d(decided[-1]) if decided else date.today()
+    days = sum(1 for i in range((end - start).days + 1) if (start.toordinal() + i) % 7 not in (6, 0))  # пн–пт
+    decisions = sum(1 for e in human if e['action'] in ('decision', 'skeleton_approved', 'skeleton_patch', 'edit', 'assign', 'comment', 'comment_answer',
+                                                         'review_accept', 'review_accept_item', 'review_return', 'submitted', 'approved', 'returned'))
+    return {
+        'human_edit_share': round(100 * len(edited) / elements) if elements else 0,
+        'accepted_without_edits': sum(1 for m in accepted if m.id not in touched_modules),
+        'modules_accepted': len(accepted),
+        'expert_score': round(sum(scores) / len(scores), 1) if scores else None,
+        'code_examples': examples,
+        'code_ok_share': round(100 * (examples - failed_code) / examples) if examples else None,
+        'work_days': max(days, 1),
+        'team_minutes_estimate': decisions * 6,  # оценка: 6 минут на одно решение человека по журналу
+        'human_decisions': decisions,
+        'generation_rub': round(doc.usage.cost_rub, 2),
+        'generation_s': round(sum(v for key, v in doc.timing_s.items() if key in ('skeleton', 'kit')), 1),
+    }
 
 
 def head_decision(doc: ProgramDoc, actor: str, decision: str, comment: str = '') -> None:

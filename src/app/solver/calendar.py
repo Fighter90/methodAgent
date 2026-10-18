@@ -121,21 +121,39 @@ def apply_option(cal: CalendarOut, option_id: str, volume: int, items: Sequence[
     return cal
 
 
-def build_schedule(cal: CalendarOut, items: Sequence[tuple[str, int]]) -> list[dict]:
-    """Раскладывает элементы (тема, часы) по неделям с учётом недельной нагрузки."""
+_KINDS = ('lk', 'pr', 'lb', 'srs', 'ia')
+
+
+def _week(n: int) -> dict:
+    return {'week': n, 'hours': 0, 'days': 0, 'items': [], **dict.fromkeys(_KINDS, 0)}
+
+
+def build_schedule(cal: CalendarOut, items: Sequence[tuple]) -> list[dict]:
+    """Раскладывает элементы (тема, часы[, часы по видам]) по неделям с учётом недельной нагрузки.
+
+    Часы по видам работы (ЛК, ПР, ЛБ, СРС, ИА) идут в неделю в порядке занятий темы: сначала лекции, затем практика.
+    """
     capacity = cal.hours_per_week or 1
     weeks: list[dict] = []
-    current: dict = {'week': 1, 'hours': 0, 'days': 0, 'items': []}
-    for title, hours in items:
+    current: dict = _week(1)
+    for item in items:
+        title, hours = item[0], item[1]
+        kinds = dict(item[2]) if len(item) > 2 else {'srs': hours}
         left = hours
         while left > 0:
             free = capacity - current['hours']
             if free <= 0:
                 weeks.append(current)
-                current = {'week': current['week'] + 1, 'hours': 0, 'days': 0, 'items': []}
+                current = _week(current['week'] + 1)
                 free = capacity
             take = min(free, left)
             current['hours'] += take
+            rest = take
+            for k in _KINDS:
+                part = min(rest, kinds.get(k, 0))
+                current[k] += part
+                kinds[k] = kinds.get(k, 0) - part
+                rest -= part
             if title not in current['items']:
                 current['items'].append(title)
             left -= take

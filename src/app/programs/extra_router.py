@@ -69,7 +69,7 @@ async def actualize_file(file: UploadFile = File(...), p: Principal = Depends(re
 
 
 @router.get('/programs/{program_id}/versions/{a}/diff/{b}', summary='Сравнение двух версий комплекта (FR-38)')
-async def diff(program_id: str, a: int, b: int, p: Principal = Depends(require('methodist', 'head', 'expert'))) -> dict[str, Any]:
+async def diff(program_id: str, a: int, b: int, p: Principal = Depends(require('methodist', 'head'))) -> dict[str, Any]:
     da = await svc.version_doc(program_id, a)
     db = await svc.version_doc(program_id, b)
     return extras.diff(da, db)
@@ -80,18 +80,29 @@ async def sandbox(program_id: str, p: Principal = Depends(require('methodist', '
     import asyncio
 
     doc = await svc.load(program_id)
+    if p.role == 'expert':
+        # Эксперт видит запуск примеров только своих модулей (FR-44, FR-46)
+        mine = {m.id for m in doc.modules if m.expert_id == p.user_id}
+        doc = doc.model_copy(deep=True)
+        doc.kit.lectures = [lec for lec in doc.kit.lectures if lec.module_id in mine]
     return await asyncio.to_thread(extras.sandbox_report, doc)
 
 
 @router.get('/programs/{program_id}/sections', summary='Текст программы по разделам шаблона АЦР в порядке выгрузки')
 async def sections(program_id: str, p: Principal = Depends(current_principal)) -> list[dict[str, Any]]:
-    doc = await svc.load(program_id)
+    from app.programs.router import _load_for
+
+    doc = await _load_for(program_id, p)
     texts = doc.kit.sections or (build_sections(doc) if doc.modules else {})
     return [{'key': k, 'title': t, 'level': lvl, 'text': '' if k in GROUP_KEYS else texts.get(k, '')} for k, t, lvl in sections_for(doc)]
 
 
 @router.get('/me/tasks', summary='Число задач по каждой роли пользователя для переключателя ролей (FR-63)')
 async def my_tasks(p: Principal = Depends(current_principal)) -> dict[str, Any]:
+    if p.anonymous:
+        from app.core.errors import Unauthorized
+
+        raise Unauthorized('Нужен вход')
     docs = [await svc.load(x['id']) for x in await svc.list_programs()]
     demo = {'methodist': 'u-madina', 'expert': 'u-timur', 'head': 'u-ahmed'}
     out = {}
@@ -130,3 +141,89 @@ class SearchIn(BaseModel):
 @router.post('/kb/search', summary='Поиск по базе знаний: эмбеддинги шлюза или пересечение слов')
 async def kb_search(body: SearchIn, p: Principal = Depends(require('admin', 'methodist', 'head', 'expert'))) -> list[dict[str, Any]]:
     return await orgdocs.search(body.query, body.k)
+
+
+# --- Профиль организации и реестр (администратор, таблица 19) ---
+_PROFILE_KEYS = {'name', 'header', 'requisites', 'address', 'city', 'order_prefix', 'norm_mode', 'defaults', 'experts', 'head',
+                 'methodists', 'notify_email', 'smtp', 'templates', 'note', 'checked_at', 'samples'}
+_DEFAULT_KEYS = {'program_type', 'volume_h', 'audience', 'form', 'final_assessment_form', 'questions_per_test'}
+_REGISTRY_REQUIRED = {'ps': {'code', 'title'}, 'npa': {'id', 'bibl'}, 'tools': {'current', 'outdated'}, 'literature': {'bibl'}}
+
+
+@router.get('/org/profile', summary='Профиль организации: шаблоны, значения по умолчанию, эксперты, уведомления')
+async def org_profile_get(p: Principal = Depends(require('admin', 'methodist', 'head'))) -> dict[str, Any]:
+    from app.kb.registry import org_profile
+
+    prof = dict(org_profile())
+    if p.role != 'admin':
+        prof.pop('smtp', None)
+    return prof
+
+
+@router.put('/org/profile', summary='Изменить профиль организации (администратор)')
+async def org_profile_put(body: dict[str, Any], p: Principal = Depends(require('admin'))) -> dict[str, Any]:
+    from datetime import date
+
+    from app.kb.registry import org_profile, save_override
+
+    unknown = set(body) - _PROFILE_KEYS
+    if unknown:
+        raise BadRequest(f'Неизвестные поля профиля: {", ".join(sorted(unknown))}', details={'allowed': sorted(_PROFILE_KEYS)})
+    if 'defaults' in body and (bad := set(body['defaults'] or {}) - _DEFAULT_KEYS):
+        raise BadRequest(f'Неизвестные значения по умолчанию: {", ".join(sorted(bad))}', details={'allowed': sorted(_DEFAULT_KEYS)})
+    if 'smtp' in body and 'password' in (body['smtp'] or {}):
+        raise BadRequest('Пароль SMTP в профиле не хранится: задайте переменную окружения SMTP_PASSWORD')
+    merged = {**org_profile(), **body, 'checked_at': date.today().isoformat()}
+    save_override('org', merged)
+    await svc.log_event('org', p.user_id, 'org_profile', ', '.join(sorted(body)), version=0)
+    return merged
+
+
+class RegistryIn(BaseModel):
+    kind: str = Field(description='ps, npa, tools или literature')
+    items: list[dict[str, Any]] | dict[str, Any] = Field(description='список записей; для tools — объект реестра версий')
+
+
+@router.get('/org/registry', summary='Реестр ПС, НПА, версий инструментов и литературы с датой проверки')
+async def org_registry_get(kind: str = 'ps', p: Principal = Depends(require('admin', 'methodist', 'head'))) -> Any:
+    from app.kb.registry import registry
+
+    if kind not in _REGISTRY_REQUIRED:
+        raise BadRequest('kind: ps, npa, tools или literature')
+    return registry()[kind]
+
+
+@router.put('/org/registry', summary='Заменить раздел реестра ПС, НПА, версий или литературы (администратор)')
+async def org_registry_put(body: RegistryIn, p: Principal = Depends(require('admin'))) -> dict[str, Any]:
+    from datetime import date
+
+    from app.kb.registry import save_override
+
+    need = _REGISTRY_REQUIRED.get(body.kind)
+    if need is None:
+        raise BadRequest('kind: ps, npa, tools или literature')
+    if body.kind == 'tools':
+        if not isinstance(body.items, dict) or not {'current', 'outdated'} <= set(body.items):
+            raise BadRequest('Реестр версий — объект с полями current и outdated')
+        body.items['checked_at'] = date.today().isoformat()
+    elif not isinstance(body.items, list) or not body.items:
+        raise BadRequest('Нужен непустой список записей')
+    else:
+        for i, item in enumerate(body.items, 1):
+            if missing := need - set(item):
+                raise BadRequest(f'Запись {i}: нет полей {", ".join(sorted(missing))}')
+            item.setdefault('checked_at', date.today().isoformat())
+    save_override(body.kind, body.items)
+    await svc.log_event('org', p.user_id, 'org_registry', f'{body.kind}: {len(body.items)} записей', version=0)
+    return {'kind': body.kind, 'items': len(body.items)}
+
+
+@router.post('/org/documents', summary='Документ организации в базу знаний (администратор); то же, что POST /kb/documents')
+async def org_documents(file: UploadFile = File(...), kind: str = Form('other'), p: Principal = Depends(require('admin'))) -> dict[str, Any]:
+    return await kb_upload(file, kind, p)
+
+
+@router.get('/programs/{program_id}/experts', summary='Эксперты профиля с подсказкой агента по каждому модулю (FR-39)')
+async def suggest_experts(program_id: str, p: Principal = Depends(require('methodist', 'head', 'admin'))) -> dict[str, Any]:
+    doc = await svc.load(program_id)
+    return extras.suggest_experts(doc)

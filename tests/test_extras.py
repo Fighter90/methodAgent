@@ -63,7 +63,7 @@ def test_change_template_before_approval(client) -> None:
     h = _h(client, 'u-madina')
     r = client.post('/api/v1/programs', json={'request': REQ, 'answers': {}}, headers=h)
     pid = r.json()['program_id']
-    st = client.get(f'/api/v1/programs/{pid}').json()['status']
+    st = client.get(f'/api/v1/programs/{pid}', headers=h).json()['status']
     if st == 'questions':
         import time
 

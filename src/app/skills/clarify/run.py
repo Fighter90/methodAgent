@@ -6,7 +6,7 @@ from typing import Any
 
 from app.programs.schemas import Assumption, Params, ProgramType, Question
 
-# Значения по умолчанию из профиля АЦР для ответа «На ваше усмотрение»
+# Значения по умолчанию на случай, если в профиле организации поле не задано
 DEFAULTS: dict[str, Any] = {
     'program_type': ProgramType.DPP_PK,
     'volume_h': 72,
@@ -33,6 +33,26 @@ _QUESTIONS: dict[str, tuple[str, list[str]]] = {
 }
 
 DEFAULT_ANSWER = 'На ваше усмотрение'
+
+FIELD_LABELS = {
+    'program_type': 'Тип программы', 'volume_h': 'Объём, ч', 'audience': 'Аудитория и входной уровень',
+    'form': 'Форма обучения', 'final_assessment_form': 'Форма итоговой аттестации',
+}
+
+
+def default_for(field: str) -> Any:
+    """Значение «на усмотрение агента» берётся из профиля организации (PUT /org/profile), иначе встроенное."""
+    from app.kb.registry import org_profile
+
+    value = (org_profile().get('defaults') or {}).get(field)
+    if value in (None, ''):
+        return DEFAULTS[field]
+    if field == 'program_type':
+        try:
+            return ProgramType(value)
+        except ValueError:
+            return DEFAULTS[field]
+    return value
 
 
 def missing_fields(p: Params) -> list[str]:
@@ -64,8 +84,8 @@ def apply_answers(p: Params, questions: list[Question], answers: dict[str, str])
         ans = (answers.get(q.id) or answers.get(q.field) or DEFAULT_ANSWER).strip()
         q.answer = ans
         if ans == DEFAULT_ANSWER:
-            value = DEFAULTS[q.field]
-            assumptions.append(Assumption(field=q.field, value=str(getattr(value, 'value', value)), source='профиль АЦР (на усмотрение агента)'))
+            value = default_for(q.field)
+            assumptions.append(Assumption(field=q.field, value=str(getattr(value, 'value', value)), source='профиль организации (на усмотрение агента)'))
             _set(p, q.field, value)
         else:
             _set(p, q.field, ans)
@@ -90,7 +110,7 @@ def _set(p: Params, field: str, value: Any) -> None:
             p.program_type = ProgramType.DPP_PK
     elif field == 'volume_h':
         digits = ''.join(ch for ch in low if ch.isdigit())
-        p.volume_h = int(digits) if digits else int(DEFAULTS['volume_h'])
+        p.volume_h = int(digits) if digits else int(default_for('volume_h'))
     elif field == 'audience':
         text = str(value)
         if not p.audience:

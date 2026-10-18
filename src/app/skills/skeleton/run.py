@@ -42,6 +42,7 @@ class IndicatorLLM(BaseModel):
 class CompetencyLLM(BaseModel):
     code: str = ''
     title: str
+    tf: str = ''  # код трудовой функции из переданного ПС; проверяется по реестру
     indicators: list[IndicatorLLM] = Field(default_factory=list)
 
 
@@ -93,6 +94,8 @@ async def run(
     reference_structure: list[str],
     stats: CallStats | None = None,
     comment: str = '',
+    current: dict | None = None,
+    org_documents: list[dict] | None = None,
 ) -> SkeletonDraft:
     llm = get_llm()
     must = must_cover(params)
@@ -115,6 +118,9 @@ async def run(
             'profstandard': {'code': ps.code, 'title': ps.title, 'tf': [t.model_dump() for t in ps.tf]} if ps else None,
             'reference_structure': reference_structure[:30],
             'methodist_comment': comment,
+            # Возврат с комментарием (FR-24): модель видит текущий каркас и меняет только указанные части
+            'current_skeleton': current,
+            'org_documents': (org_documents or [])[:4],
         }
         try:
             data: SkeletonLLM = await llm.complete_json(
@@ -140,11 +146,28 @@ def _code(prefix: str, i: int) -> str:
     return f'{prefix}-{i}'
 
 
+def _stems(text: str) -> set[str]:
+    return {w[:5] for w in re.findall(r'[а-яёa-z]{4,}', text.lower())}
+
+
+def match_tf(text: str, ps: ProfStandard | None, i: int, proposed: str = '') -> list[str]:
+    """ТФ компетенции по смыслу (FR-14): код от модели, если он есть в ПС, иначе наибольшее пересечение основ слов."""
+    if not ps or not ps.tf:
+        return []
+    codes = {t.code for t in ps.tf}
+    if proposed.strip() in codes:
+        return [proposed.strip()]
+    words = _stems(text)
+    scored = sorted(((len(words & _stems(t.title)), -k, t.code) for k, t in enumerate(ps.tf)), reverse=True)
+    if scored[0][0] > 0:
+        return [scored[0][2]]
+    return [ps.tf[(i - 1) % len(ps.tf)].code]
+
+
 def _from_llm(data: SkeletonLLM, params: Params, ptype: ProgramType, ps: ProfStandard | None) -> SkeletonDraft:
     comps: list[Competency] = []
     code_map: dict[str, str] = {}
     prefix = 'К' if ptype == ProgramType.DOOP else 'ПК'
-    tf_codes = [t.code for t in ps.tf] if ps else []
     for ci, c in enumerate(data.competencies[:8], start=1):
         inds: list[Indicator] = []
         lo_n = 0
@@ -166,7 +189,7 @@ def _from_llm(data: SkeletonLLM, params: Params, ptype: ProgramType, ps: ProfSta
                 code=_code(prefix, ci),
                 title=c.title.strip(),
                 ps_code=ps.code if ps and ptype != ProgramType.DOOP else None,
-                tf_codes=[tf_codes[(ci - 1) % len(tf_codes)]] if tf_codes and ptype != ProgramType.DOOP else [],
+                tf_codes=match_tf(c.title + ' ' + ' '.join(i.text for i in c.indicators), ps, ci, c.tf) if ptype != ProgramType.DOOP else [],
                 indicators=inds,
             )
         )
@@ -201,7 +224,6 @@ def from_library(params: Params, ptype: ProgramType, ps: ProfStandard | None) ->
     if domain is None:
         domain = generic_domain(params.title or params.direction, params.required_topics, project)
     prefix = 'К' if ptype == ProgramType.DOOP else 'ПК'
-    tf_codes = [t.code for t in ps.tf] if ps else []
     comps: list[Competency] = []
     for ci, (title, inds) in enumerate(domain['competencies'], start=1):
         indicators = []
@@ -216,7 +238,7 @@ def from_library(params: Params, ptype: ProgramType, ps: ProfStandard | None) ->
             Competency(
                 id=f'c{ci}', code=_code(prefix, ci), title=title,
                 ps_code=ps.code if ps and ptype != ProgramType.DOOP else None,
-                tf_codes=[tf_codes[(ci - 1) % len(tf_codes)]] if tf_codes and ptype != ProgramType.DOOP else [],
+                tf_codes=match_tf(title + ' ' + ' '.join(str(x) for x in inds), ps, ci) if ptype != ProgramType.DOOP else [],
                 indicators=indicators,
             )
         )

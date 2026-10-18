@@ -322,6 +322,7 @@ async def apply_org_docs(doc: ProgramDoc) -> list[dict[str, Any]]:
             continue
         known.add(h['doc_id'])
         doc.norm_base.append(Source(id=h['doc_id'], kind='doc', bibl=f'{h["name"]} (документ организации)', confirmed=True, checked_at=now_iso()[:10]))
+    doc.org_fragments = [{'name': h['name'], 'text': h['text']} for h in hits]
     names = ', '.join(dict.fromkeys(f'«{h["name"]}»' for h in hits))
     doc.agent_notes.append(f'Использую документы организации: {names}. Ссылки добавлены в нормативную базу.')
     tpl = orgdocs.templates()
@@ -330,3 +331,28 @@ async def apply_org_docs(doc: ProgramDoc) -> list[dict[str, Any]]:
 
         doc.references.append(ReferenceInfo(name=tpl[0]['name'], structure=tpl[0].get('structure', [])))
     return hits
+
+
+# --------------------------------------------------------------------------- FR-39
+def suggest_experts(doc: ProgramDoc) -> dict[str, Any]:
+    """Подсказка экспертов из профиля: совпадение навыков с темами модуля, при равенстве — меньшая нагрузка."""
+    from app.core.security import users
+    from app.kb.registry import org_profile
+
+    prof = org_profile().get('experts') or []
+    known = {e['id']: e for e in prof}
+    experts = [
+        {'id': u.id, 'name': u.name, 'title': u.title, 'skills': known.get(u.id, {}).get('skills', [])}
+        for u in users().values() if 'expert' in u.roles
+    ]
+    load = {e['id']: 0 for e in experts}
+    out = []
+    for m in doc.modules:
+        text = (m.title + ' ' + ' '.join(t.title + ' ' + t.description for t in m.topics)).lower()
+        scored = sorted(experts, key=lambda e: (-sum(1 for s in e['skills'] if s in text), load[e['id']]))
+        best = scored[0] if scored else None
+        if best:
+            load[best['id']] += 1
+            hits = [s for s in best['skills'] if s in text]
+            out.append({'module_id': m.id, 'expert_id': best['id'], 'reason': f'совпадение по темам: {", ".join(hits[:3])}' if hits else 'по нагрузке'})
+    return {'experts': experts, 'suggestions': out}
