@@ -216,3 +216,50 @@ def test_blocked_services_scrubbed() -> None:
     })
     out = scrub_blocked(data)
     assert 'ChatGPT' not in out.annotation and [q.stem for q in out.questions] == ['Что такое промпт?']
+
+
+def test_daily_limit_fails_fast(tmp_path, monkeypatch) -> None:
+    """429 «суточный лимит» не повторяется и не идёт в резерв; перегрузка шлюза — повторяется."""
+    import asyncio
+
+    from app.llm import client as c
+
+    class Limit(Exception):
+        status_code = 429
+        body = {'code': 'llm_daily_limit_exceeded', 'message': 'daily spending limit is reached'}
+
+    class Busy(Exception):
+        status_code = 429
+
+    assert c.is_daily_limit(Limit()) and not c.is_daily_limit(Busy())
+    llm = c.LLMClient()
+    monkeypatch.setattr(llm.settings, 'data_dir', tmp_path)
+    monkeypatch.setattr(type(llm), 'enabled', property(lambda self: True))
+    calls = []
+
+    class Fake:
+        class chat:
+            class completions:
+                @staticmethod
+                async def create(**kw):
+                    calls.append(kw['model'])
+                    raise Limit()
+
+    llm._client = Fake()
+    with pytest.raises(c.LLMUnavailable, match='лимит'):
+        asyncio.run(llm.complete_json(skill='t', system='s', user='u'))
+    assert len(calls) == 1 and llm.limit_reached()
+    with pytest.raises(c.LLMUnavailable):
+        asyncio.run(llm.complete_json(skill='t', system='s', user='u'))
+    assert len(calls) == 1  # второй вызов даже не идёт в шлюз
+    reloaded = c.LLMClient()
+    monkeypatch.setattr(reloaded.settings, 'data_dir', tmp_path)
+    reloaded._load_spend()
+    assert reloaded.limit_reached()  # переживает перезапуск контейнера
+
+
+def test_budget_day_is_moscow(monkeypatch) -> None:
+    from app.llm import client as c
+
+    monkeypatch.setattr(c.time, 'time', lambda: 1760738400.0)  # 2025-10-17 22:00 UTC = 18.10 01:00 МСК
+    assert c._today() == '2025-10-18'

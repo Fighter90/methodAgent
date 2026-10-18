@@ -22,7 +22,7 @@ from app.core.config import get_settings
 from app.core.db import now_iso
 from app.core.errors import Conflict, NotFound
 from app.kb.registry import for_school, literature_for, match_source
-from app.llm.client import CallStats, get_llm
+from app.llm.client import LIMIT_MSG, CallStats, get_llm
 from app.programs.schemas import (
     Approval,
     Assessment,
@@ -288,6 +288,7 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
     draft = await skeleton.run(doc.params, doc.type, doc.profstandard, structure, stats, comment)
     if draft.source != 'llm':
         doc.agent_notes.append('Каркас собран по типовой структуре направления (модель недоступна) — проверьте темы.')
+    _limit_note(doc)
     doc.title = _cap((doc.params.title or draft.title).strip())
     doc.goal = draft.goal
     doc.competencies = draft.competencies
@@ -525,7 +526,8 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
             await _report('repair · ' + '; '.join(log[:3]))
         doc.kit.sections = build_sections(doc)
         doc.report = build_report(doc, 'kit')
-    if get_settings().llm_judge_enabled and get_llm().enabled:
+    _limit_note(doc)
+    if get_settings().llm_judge_enabled and get_llm().enabled and not get_llm().limit_reached():
         await _report('judge · смысловые правила V-21, V-22, V-26, V-27')
         for line in await judge(doc, stats):
             await _report('judge · ' + line[:120])
@@ -842,6 +844,13 @@ def head_decision(doc: ProgramDoc, actor: str, decision: str, comment: str = '')
 
 
 __all__ = ['Topic']
+
+
+def _limit_note(doc: ProgramDoc) -> None:
+    """Методист видит, что текст шаблонный из-за суточного лимита шлюза, а не из-за ошибки агента."""
+    note = LIMIT_MSG + ': доработайте помеченные модули или пересоберите комплект завтра.'
+    if get_llm().limit_reached() and note not in doc.agent_notes:
+        doc.agent_notes.append(note)
 
 
 def _cap(text: str) -> str:

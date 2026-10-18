@@ -4,6 +4,7 @@
 - повтор до 2 раз при ошибке, HTTP 5xx или невалидном JSON (паузы 1 и 3 с), при 429 — пауза 15, 30 с;
   затем резервная модель той же роли; при ошибке авторизации — сразу резерв;
 - параллельность ограничена семафором, после 429 временно снижается;
+- суточный лимит шлюза (429 «daily spending limit») — без повторов: до 00:00 МСК генерация по шаблонам;
 - каждый вызов учитывает токены и рубли; ключ и тексты запросов не логируются.
 """
 
@@ -24,6 +25,21 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 _RETRY_PAUSES = (1.0, 3.0)
+_MSK = 3 * 3600
+LIMIT_MSG = 'Дневной лимит шлюза LLM исчерпан, до 00:00 МСК модули собираются по шаблону'
+
+
+def _today() -> str:
+    """Сутки шлюза и бюджета считаются по Москве (UTC+3), а не по UTC контейнера."""
+    return time.strftime('%Y-%m-%d', time.gmtime(time.time() + _MSK))
+
+
+def is_daily_limit(exc: Exception) -> bool:
+    """429 шлюза бывает двух видов: перегрузка (имеет смысл повторить) и исчерпанный суточный лимит."""
+    if getattr(exc, 'status_code', None) != 429:
+        return False
+    text = f'{exc} {getattr(exc, "body", "")}'
+    return bool(re.search(r'daily|spending limit|llm_daily_limit', text, flags=re.IGNORECASE))
 
 
 class LLMUnavailable(Exception):
@@ -78,6 +94,7 @@ class LLMClient:
         self.status: dict[str, Any] = {}
         self._day = ''
         self._spent = 0.0
+        self._limit_day = ''
         self._load_spend()
 
     def _spend_file(self):
@@ -87,23 +104,38 @@ class LLMClient:
         try:
             data = json.loads(self._spend_file().read_text(encoding='utf-8'))
             self._day, self._spent = data.get('day', ''), float(data.get('rub', 0.0))
+            self._limit_day = data.get('limit_day', '')
         except (OSError, ValueError):
             pass
 
-    def _spend(self, cost: float) -> None:
-        """Расход за сутки переживает перезапуск контейнера: файл в data_dir."""
-        day = time.strftime('%Y-%m-%d')
-        if self._day != day:
-            self._day, self._spent = day, 0.0
-        self._spent += cost
+    def _save_spend(self) -> None:
         try:
             self.settings.data_dir.mkdir(parents=True, exist_ok=True)
-            self._spend_file().write_text(json.dumps({'day': self._day, 'rub': round(self._spent, 4)}), encoding='utf-8')
+            data = {'day': self._day, 'rub': round(self._spent, 4), 'limit_day': self._limit_day}
+            self._spend_file().write_text(json.dumps(data), encoding='utf-8')
         except OSError:
             logger.warning('llm spend: не удалось записать расход')
 
+    def _spend(self, cost: float) -> None:
+        """Расход за сутки переживает перезапуск контейнера: файл в data_dir."""
+        day = _today()
+        if self._day != day:
+            self._day, self._spent = day, 0.0
+        self._spent += cost
+        self._save_spend()
+
     def spent_today(self) -> float:
-        return self._spent if self._day == time.strftime('%Y-%m-%d') else 0.0
+        return self._spent if self._day == _today() else 0.0
+
+    def limit_reached(self) -> bool:
+        """Шлюз ответил «суточный лимит исчерпан» сегодня (по МСК)."""
+        return self._limit_day == _today()
+
+    def _mark_limit(self) -> None:
+        if not self.limit_reached():
+            logger.warning('llm: суточный лимит шлюза исчерпан до 00:00 МСК')
+        self._limit_day = _today()
+        self._save_spend()
 
     @property
     def enabled(self) -> bool:
@@ -148,6 +180,8 @@ class LLMClient:
         """Вызывает модель и возвращает JSON, проверенный Pydantic-схемой навыка."""
         if not self.enabled:
             raise LLMUnavailable('LLM не настроен')
+        if self.limit_reached():
+            raise LLMUnavailable(LIMIT_MSG)
         if self.spent_today() >= self.settings.llm_daily_budget_rub:
             raise LLMUnavailable(f'Дневной бюджет LLM {self.settings.llm_daily_budget_rub:.0f} ₽ исчерпан')
         sem = self._judge_sem if role == 'judge' else self._sem
@@ -204,6 +238,10 @@ class LLMClient:
                     logger.warning('llm error skill=%s model=%s status=%s type=%s', skill, model, code, type(exc).__name__)
                     if code in (401, 403):
                         break
+                    if is_daily_limit(exc):
+                        # Лимит общий для всех моделей шлюза: повторы и резерв только тянут время
+                        self._mark_limit()
+                        raise LLMUnavailable(LIMIT_MSG) from exc
                     if code == 429:
                         # Шлюз перегружен: пауза нарастает (15, 30, 45 с), иначе повторы тоже получают 429
                         await asyncio.sleep(15.0 * (attempt + 1))
@@ -215,6 +253,8 @@ class LLMClient:
         """Векторы текстов моделью эмбеддингов шлюза (база знаний организации, FR-09)."""
         if not self.enabled:
             raise LLMUnavailable('LLM не настроен')
+        if self.limit_reached():
+            raise LLMUnavailable(LIMIT_MSG)
         out: list[list[float]] = []
         for i in range(0, len(texts), 16):
             async with self._sem:
@@ -235,6 +275,9 @@ class LLMClient:
                 messages=[{'role': 'user', 'content': 'Ответь одним словом: ок'}],
                 max_tokens=5,
             )
+            if self._limit_day:
+                self._limit_day = ''  # шлюз снова отвечает: лимит сброшен раньше полуночи
+                self._save_spend()
             return {
                 'enabled': True,
                 'ok': bool(resp.choices),
@@ -242,7 +285,9 @@ class LLMClient:
                 'latency_s': round(time.monotonic() - started, 2),
             }
         except Exception as exc:  # noqa: BLE001
-            return {'enabled': True, 'ok': False, 'error': type(exc).__name__}
+            if is_daily_limit(exc):
+                self._mark_limit()
+            return {'enabled': True, 'ok': False, 'error': type(exc).__name__, 'daily_limit_reached': self.limit_reached()}
 
 
 _client: LLMClient | None = None

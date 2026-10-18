@@ -86,6 +86,7 @@ def create_app() -> FastAPI:
         llm = get_llm()
         info['spent_today_rub'] = round(llm.spent_today(), 2)
         info['daily_budget_rub'] = s.llm_daily_budget_rub
+        info['daily_limit_reached'] = llm.limit_reached()
         return {**info, 'models': {'generate': s.llm_model_generate, 'judge': s.llm_model_judge, 'embed': s.llm_model_embed}, 'judge_enabled': s.llm_judge_enabled}
 
     @api.get('/skills', tags=['misc'], summary='Навыки агента (SKILL.md)')
