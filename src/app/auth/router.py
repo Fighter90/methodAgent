@@ -104,7 +104,7 @@ async def register(body: RegisterIn, request: Request) -> dict[str, Any]:
 @auth.get('/config', summary='Что показывать на форме входа: демо-учётки, регистрация, SSO')
 async def auth_config() -> dict[str, Any]:
     s = get_settings()
-    demo = [{'login': login, 'name': name, 'role': roles[0], 'title': title} for _, login, name, roles, title in DEMO if login != 'api'] \
+    demo = [{'login': login, 'name': name, 'role': roles[0], 'title': title} for _, login, name, roles, title in DEMO] \
         if s.demo_accounts_enabled else []
     return {
         'demo_accounts': demo,

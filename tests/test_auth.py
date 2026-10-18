@@ -31,13 +31,17 @@ def _login(client, login: str, password: str = 'demo') -> dict:
 
 def test_login_by_login_id_and_all_demo_users(client) -> None:
     cfg = client.get('/api/v1/auth/config').json()
-    assert {u['login'] for u in cfg['demo_accounts']} == {'madina', 'timur', 'olga', 'ahmed', 'admin'}
+    assert {u['login'] for u in cfg['demo_accounts']} == {'madina', 'timur', 'olga', 'ahmed', 'admin', 'api'}
     assert cfg['sso']['available'] is False
     for u in cfg['demo_accounts']:
         r = client.post('/api/v1/auth/login', json={'login': u['login'], 'password': cfg['demo_password']})
         assert r.status_code == 200 and r.json()['user']['role'] == u['role']
     assert client.post('/api/v1/auth/login', json={'user_id': 'u-api', 'password': 'demo'}).status_code == 200
     assert client.post('/api/v1/auth/login', json={'login': 'madina', 'password': 'nope'}).status_code == 401
+    # токен в X-MA-Token (так шлёт интерфейс: хаб перехватывает Authorization)
+    tok = client.post('/api/v1/auth/login', json={'login': 'madina', 'password': 'demo'}).json()['access_token']
+    assert client.get('/api/v1/auth/me', headers={'X-MA-Token': tok}).json()['login'] == 'madina'
+    assert client.get('/api/v1/auth/me', headers={'X-MA-Token': 'bad'}).status_code == 401
     assert client.get('/api/v1/auth/sso/start').json()['code'] == 'SSO_NOT_AVAILABLE'
 
 

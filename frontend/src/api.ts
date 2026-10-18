@@ -35,7 +35,8 @@ export class ApiError extends Error {
 export async function api<T = any>(path: string, opts: RequestInit & { json?: unknown } = {}): Promise<T> {
   const headers: Record<string, string> = { ...(opts.headers as Record<string, string>) }
   const s = getSession()
-  if (s) headers['Authorization'] = `Bearer ${s.token}`
+  // свой заголовок, а не Authorization: прокси хаба перехватывает запросы с Authorization
+  if (s) headers['X-MA-Token'] = s.token
   let body = opts.body
   if (opts.json !== undefined) {
     headers['Content-Type'] = 'application/json'
@@ -65,7 +66,11 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
     } catch {
       /* не JSON */
     }
-    if (res.status === 401) setSession(null)
+    if (res.status === 401 && s) {
+      // токен истёк или выпущен до смены ключа: на страницу входа, а не баннер о связи
+      setSession(null)
+      if (!location.pathname.startsWith('/auth')) location.assign('/auth?expired=1')
+    }
     throw new ApiError(res.status, msg, details)
   }
   const ct = res.headers.get('content-type') || ''
@@ -80,8 +85,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 async function probe(): Promise<'ok' | 'hub' | 'down'> {
   try {
     const r = await fetch('/api/v1/health', { redirect: 'manual', cache: 'no-store' })
-    if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) return 'hub'
-    return r.ok ? 'ok' : 'down'
+    if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400) || r.status === 401 || r.status === 403) return 'hub'
+    // Наш сервер отвечает JSON {"status":"ok"}; страница входа хаба вместо него — тоже признак истёкшей сессии
+    const j = await r.json().catch(() => null)
+    if (j?.status === 'ok') return 'ok'
+    return r.ok ? 'hub' : 'down'
   } catch {
     return 'down'
   }
@@ -115,6 +123,8 @@ function watchServer() {
 export async function login(login: string, password: string) {
   const r = await api<{ access_token: string; user: User }>('/auth/login', { method: 'POST', json: { login, password } })
   setSession({ token: r.access_token, user: r.user })
+  // у API-клиента в интерфейсе нет своих экранов: работает как методист, токен с ролью api остаётся для автопрогона
+  if (r.user.role === 'api' && (r.user.roles || []).includes('methodist')) return switchRole('methodist')
   return r.user
 }
 
@@ -150,7 +160,7 @@ export async function waitJob(jobId: string, onProgress?: (p: any) => void): Pro
 
 export async function download(programId: string, fmt: string) {
   const s = getSession()
-  const res = await fetch(`/api/v1/programs/${programId}/export/${fmt}`, { headers: s ? { Authorization: `Bearer ${s.token}` } : {} })
+  const res = await fetch(`/api/v1/programs/${programId}/export/${fmt}`, { headers: s ? { 'X-MA-Token': s.token } : {} })
   if (!res.ok) throw new ApiError(res.status, 'Не удалось выгрузить файл')
   const cd = res.headers.get('content-disposition') || ''
   const m = /filename\*=UTF-8''([^;]+)/.exec(cd)

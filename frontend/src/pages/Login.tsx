@@ -6,11 +6,22 @@ import { Logo, Spinner, useMouseParallax, useToast } from '../components/ui'
 
 // Подписи плиток демо-профиля АЦР; сами учётки приходят с сервера (/auth/config)
 const TILE_TITLE: Record<string, string> = {
-  methodist: 'Методист: собирает программу и утверждает каркас',
-  expert: 'Эксперт: вычитывает свои модули',
-  head: 'Руководитель: утверждает программу',
-  admin: 'Администратор: пользователи, ключи, настройки агента',
+  methodist: 'Методист: создаёт программы, правит каркас и комплект, назначает экспертов',
+  expert: 'Эксперт: вычитывает только назначенные ему модули, оставляет замечания',
+  head: 'Руководитель: утверждает программы, видит качество, затраты и журнал',
+  admin: 'Администратор: полный доступ, пользователи и роли, ключи и настройки агента',
+  api: 'API-клиент: автопрогон через API без вопросов; в интерфейсе работает как методист',
 }
+
+/* Все демо-учётки на случай, когда сервер (или хаб) не ответил: форма входа не должна оставаться пустой */
+const DEMO_FALLBACK: AuthConfig['demo_accounts'] = [
+  { login: 'madina', name: 'Мадина', role: 'methodist', title: 'Методист' },
+  { login: 'timur', name: 'Тимур А.', role: 'expert', title: 'Эксперт-преподаватель' },
+  { login: 'olga', name: 'Ольга К.', role: 'expert', title: 'Эксперт-преподаватель' },
+  { login: 'ahmed', name: 'Ахмед', role: 'head', title: 'Руководитель учебного центра' },
+  { login: 'admin', name: 'Администратор', role: 'admin', title: 'Администратор профиля' },
+  { login: 'api', name: 'API-клиент', role: 'api', title: 'Автопрогон' },
+]
 
 type Mode = 'login' | 'register'
 
@@ -79,6 +90,8 @@ export default function Login() {
   }
 
   const sso = cfg?.sso
+  const demoAccounts = cfg ? cfg.demo_accounts : DEMO_FALLBACK
+  const demoPassword = cfg?.demo_password || 'demo'
   const pwToggle = (
     <button type="button" className="icon-btn pw-eye" onClick={() => setShowPw((x) => !x)} aria-label={showPw ? 'Скрыть пароль' : 'Показать пароль'}>
       {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -156,12 +169,12 @@ export default function Login() {
 
           {mode === 'login' ? (
             <form onSubmit={submitLogin} noValidate>
-              {!!cfg?.demo_accounts.length && (
+              {!!demoAccounts.length && (
                 <>
-                  <p className="muted" style={{ marginTop: 0 }}>Выберите демо-пользователя — логин подставится в форму. Пароль у всех: <span className="kbd">{cfg.demo_password}</span></p>
+                  <p className="muted" style={{ marginTop: 0 }}>Демо-пользователи с разными правами доступа. Нажмите на пользователя — логин и пароль подставятся в форму. Пароль у всех: <span className="kbd">{demoPassword}</span></p>
                   <div style={{ display: 'grid', gap: 8, margin: '12px 0 18px' }} className="stagger">
-                    {cfg.demo_accounts.map((u) => (
-                      <button type="button" key={u.login} className={`user-tile ${loginName === u.login ? 'sel' : ''}`} onClick={() => { setLoginName(u.login); setPassword(cfg.demo_password); setError(null) }}>
+                    {demoAccounts.map((u) => (
+                      <button type="button" key={u.login} className={`user-tile ${loginName === u.login ? 'sel' : ''}`} onClick={() => { setLoginName(u.login); setPassword(demoPassword); setError(null) }}>
                         <span className={`avatar av-${u.role}`} style={{ width: 38, height: 38 }}>{u.name[0]}</span>
                         <span className="grow">
                           <b style={{ display: 'block' }}>{u.name} <span className="small muted" style={{ fontWeight: 400 }}>· {u.login}</span></b>
@@ -171,8 +184,10 @@ export default function Login() {
                       </button>
                     ))}
                   </div>
+                  <p className="small muted" style={{ marginTop: -8, marginBottom: 16 }}>Новый пользователь после регистрации получает минимальные права: роль «{ROLE_LABEL[cfg?.registration_default_role || 'expert']}» без назначенных модулей. Расширить права может администратор.</p>
                 </>
               )}
+              {params.get('expired') && !error && <div className="callout small" style={{ marginBottom: 12 }}>Сессия истекла, войдите снова.</div>}
               <label className="label" htmlFor="login">Логин или почта</label>
               <input id="login" className="field" value={loginName} onChange={(e) => setLoginName(e.target.value)} autoComplete="username" placeholder="например, madina" />
               <label className="label" htmlFor="pw" style={{ marginTop: 12 }}>Пароль</label>

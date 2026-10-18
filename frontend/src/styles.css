@@ -543,3 +543,4 @@ select, select.field { max-width: 100%; text-overflow: ellipsis; }
   .role-pill { padding: 4px; }
 }
 @media (max-width: 1180px) { .topbar .nav-label { display: none; } }
+.av-api { background: linear-gradient(135deg, #3A7BD5, #00B4DB); }

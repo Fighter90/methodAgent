@@ -138,12 +138,21 @@ def _anonymous(request: Request) -> Principal:
     raise Unauthorized('Нужен вход: заголовок Authorization: Bearer <токен> (POST /api/v1/auth/login)')
 
 
-async def current_principal(request: Request, authorization: str | None = Header(default=None)) -> Principal:
-    if not authorization:
+async def current_principal(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_ma_token: str | None = Header(default=None),
+) -> Principal:
+    # Интерфейс шлёт токен в X-MA-Token: прокси хаба перехватывает любой запрос с Authorization и уводит его на свой вход.
+    # Authorization: Bearer остаётся для API-клиентов и автопрогона, которые ходят мимо хаба.
+    if x_ma_token:
+        token = x_ma_token.strip()
+    elif authorization:
+        scheme, _, token = authorization.partition(' ')
+        if scheme.lower() != 'bearer' or not token:
+            raise Unauthorized('Нужен заголовок Authorization: Bearer <токен>')
+    else:
         return _anonymous(request)
-    scheme, _, token = authorization.partition(' ')
-    if scheme.lower() != 'bearer' or not token:
-        raise Unauthorized('Нужен заголовок Authorization: Bearer <токен>')
     s = get_settings()
     try:
         payload = jwt.decode(token, s.secret_key, algorithms=[s.jwt_algorithm])
