@@ -132,6 +132,8 @@ code, .mono { font-family: var(--mono); }
 .grid-main > * { min-width: 0; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .grid-main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+/* Версии: список слева, сравнение справа; на узком экране — друг под другом (правило ниже по каскаду) */
+.grid-main.versions-grid { grid-template-columns: minmax(0, 280px) minmax(0, 1fr); }
 @media (max-width: 1000px) { .grid-main, .grid-2 { grid-template-columns: 1fr; } }
 
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--bg-2); color: var(--ink-2); border: 1px solid var(--line); }
@@ -442,7 +444,7 @@ img, svg, video { max-width: 100%; }
   .grid-main { grid-template-columns: minmax(0, 1fr) 320px; }
 }
 @media (max-width: 1000px) {
-  .grid-main { grid-template-columns: minmax(0, 1fr); }
+  .grid-main, .grid-main.versions-grid { grid-template-columns: minmax(0, 1fr); }
 }
 /* Планшеты в книжной ориентации */
 @media (max-width: 860px) {

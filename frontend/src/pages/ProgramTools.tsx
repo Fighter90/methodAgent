@@ -140,7 +140,7 @@ function VersionsView({ doc }: { doc: Doc }) {
   if (!list) return <div className="skeleton" style={{ height: 160 }} />
   if (list.length < 2) return <p className="muted small">Пока одна версия. Каждая правка, утверждение и откат создают новую.</p>
   return (
-    <div className="grid-main" style={{ gridTemplateColumns: 'minmax(0, 280px) minmax(0, 1fr)' }}>
+    <div className="grid-main versions-grid">
       <div className="col" style={{ gap: 6 }}>
         {list.map((v) => (
           <div key={v.version} className={`ver-row ${v.version === a || v.version === b ? 'sel' : ''}`}>
