@@ -66,6 +66,9 @@ def _merge(kind: str, base: list[dict[str, Any]], extra: list[dict[str, Any]]) -
         if kind == 'ps':
             item.setdefault('keywords', [])
             item.setdefault('tf', [])
+            own = out.get(k, {})
+            # проверенные вручную ключевые слова реестра идут первыми, база источников их дополняет
+            item = {**item, 'keywords': list(dict.fromkeys([*own.get('keywords', []), *item['keywords']])), 'curated': own.get('keywords', [])}
         if kind == 'npa':
             item.setdefault('applies', [])
             item.setdefault('url', '')
@@ -83,20 +86,27 @@ def registry() -> dict[str, Any]:
     return data
 
 
+def _kw_hit(kw: str, low: str) -> bool:
+    """Ключевое слово из основ: все основы фразы встречаются в тексте; короткая основа (ДОТ, ИБ, SQL) — только с начала слова."""
+    parts = kw.lower().split()
+    return bool(parts) and all((re.search(rf'(?<![\w]){re.escape(w)}', low) if len(w) <= 3 else w in low) for w in parts)
+
+
 def _stems_hit(keywords: list[str], low: str) -> bool:
-    return any((re.search(rf'\b{re.escape(k)}', low) if len(k) <= 3 else k in low) for k in keywords)
+    return any(_kw_hit(k, low) for k in keywords)
 
 
 def norm_base_for(program_type: ProgramType, text: str = '') -> list[Source]:
-    """Обязательные акты типа программы (273-ФЗ + № 499 для ДПП, 273-ФЗ + № 629 для ДООП, FR-07)
-    и акты, которые подходят к запросу по ключевым словам (ДОТ, дети, практика, персональные данные)."""
+    """Обязательные акты типа программы (273-ФЗ + № 266 для ДПП, 273-ФЗ + № 629 для ДООП, FR-07)
+    и акты, помеченные для ссылок (cite), которые подходят к запросу по ключевым словам: ДОТ, дети, практика, персональные данные."""
     low = text.lower()
     out = []
     for item in registry()['npa']:
         if program_type.value not in item.get('applies', []) or not _in_force(item):
             continue
         core = item.get('core', 'keywords' not in item)
-        if core or (low and _stems_hit(item.get('keywords', []), low)):
+        citable = item.get('cite', 'cite' not in item and 'keywords' in item)
+        if core or (low and citable and _stems_hit(item.get('keywords', []), low)):
             out.append(
                 Source(id=item['id'], kind='law', bibl=item['bibl'], url=item.get('url', ''), confirmed=True, checked_at=item.get('checked_at', ''))
             )
@@ -107,28 +117,53 @@ def find_ps(code: str) -> dict[str, Any] | None:
     return next((p for p in registry()['ps'] if p['code'] == code), None)
 
 
+# Слишком общие основы: встречаются почти в любом запросе и не говорят о профессии
+_PS_STOP = {'программ', 'обучен', 'образован', 'курс', 'данн', 'систем', 'работ'}
+TF_LIMIT = 12
+
+
+def _ps_score(ps: dict[str, Any], low: str) -> int:
+    curated = set(ps.get('curated', []))
+    score = 0
+    for kw in ps.get('keywords', []):
+        if kw.lower() in _PS_STOP and kw not in curated or not _kw_hit(kw, low):
+            continue
+        score += 2 if kw in curated or ' ' in kw.strip() else 1
+    return score
+
+
 def pick_ps(text: str, hint: str = '') -> ProfStandard | None:
     """Подбирает ПС по ключевым словам направления; кандидат всегда из реестра."""
     if hint:
         found = find_ps(hint)
         if found:
-            return to_ps(found)
+            return to_ps(found, text)
     low = text.lower()
     best, best_score = None, 0
     for ps in registry()['ps']:
-        score = sum(1 for kw in ps['keywords'] if kw in low)
+        score = _ps_score(ps, low)
         if score > best_score:
             best, best_score = ps, score
-    return to_ps(best) if best else None
+    return to_ps(best, text) if best else None
 
 
-def to_ps(item: dict[str, Any]) -> ProfStandard:
+def _tf_stems(text: str) -> set[str]:
+    return {w[:5] for w in re.findall(r'[а-яёa-z]{4,}', text.lower())}
+
+
+def to_ps(item: dict[str, Any], text: str = '') -> ProfStandard:
+    """В программу идут ТФ, ближайшие к запросу (не больше TF_LIMIT): полный перечень ПС бывает на сотню функций."""
+    tfs = list(item['tf'])
+    if len(tfs) > TF_LIMIT:
+        words = _tf_stems(text)
+        ranked = sorted(range(len(tfs)), key=lambda k: (-len(words & _tf_stems(tfs[k]['title'])), k))[:TF_LIMIT]
+        tfs = [tfs[k] for k in sorted(ranked)]
     return ProfStandard(
         code=item['code'],
         title=item['title'],
         order=item['order'],
         confirmed=bool(item.get('tf_verified', False)),
-        tf=[TrudFunction(**tf) for tf in item['tf']],
+        tf=[TrudFunction(**tf) for tf in tfs],
     )
 
 

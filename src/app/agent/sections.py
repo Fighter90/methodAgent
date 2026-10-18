@@ -210,10 +210,12 @@ def build_sections(doc: ProgramDoc) -> dict[str, str]:
     base = []
     if doc.profstandard and not doop:
         ps = doc.profstandard
-        base.append(f'Профессионального стандарта {ps.code} «{ps.title}» ({ps.order})' + ('' if ps.confirmed else ' — коды трудовых функций требуют сверки с реестром Минтруда России'))
-    base.append('Федерального закона от 29.12.2012 № 273-ФЗ «Об образовании в Российской Федерации» и Порядка организации и осуществления образовательной деятельности по дополнительным профессиональным программам (приказ Минобрнауки России № 499)')
+        base.append(f'Профессиональный стандарт {ps.code} «{ps.title}» ({ps.order})' + ('' if ps.confirmed else ' — коды трудовых функций требуют сверки с реестром Минтруда России'))
+    # акты из нормативной базы программы (реестр НПА: обязательные для типа программы и подобранные под запрос)
+    acts = [src.bibl.rstrip('.') for src in doc.norm_base if src.kind == 'law']
+    base += acts or ['Федеральный закон от 29.12.2012 № 273-ФЗ «Об образовании в Российской Федерации»', 'Приказ Минпросвещения России от 27.07.2022 № 629' if doop else 'Приказ Минобрнауки России от 24.03.2025 № 266']
     if p.required_topics:
-        base.append('Требований заказчика к содержанию: ' + ', '.join(p.required_topics[:6]))
+        base.append('Требования заказчика к содержанию: ' + ', '.join(p.required_topics[:6]))
     s['ps'] = _join(base)
     tf_titles = {t.code: _clean_tf(t.title) for t in (doc.profstandard.tf if doc.profstandard else [])}
     comp_lines = []
@@ -343,7 +345,7 @@ def build_sections(doc: ProgramDoc) -> dict[str, str]:
     notes = []
     if p.distance and (eo := next((b for b in acts if '816' in b or '1678' in b), '')):
         notes.append(f'Электронное обучение и дистанционные образовательные технологии применяются в порядке, установленном документом: {eo}.')
-    if doop and (san := [b for b in acts if 'СП 2.4.3648-20' in b or '1.2.3685-21' in b]):
+    if doop and (san := [b for b in acts if '4283-26' in b or '1.2.3685-21' in b]):
         notes.append('Продолжительность занятий, перерывы и использование электронных средств обучения для детей соответствуют санитарным правилам: ' + '; '.join(san) + '.')
     if internship and (pp := next((b for b in acts if 'практической подготов' in b.lower()), '')):
         notes.append(f'Организация практической части учитывает документ: {pp}.')

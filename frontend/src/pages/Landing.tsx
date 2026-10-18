@@ -25,7 +25,7 @@ const FLOW = [
   ['06', 'Согласование', 'Эксперты принимают модули, руководитель утверждает программу.'],
 ]
 
-const FORMATS = ['ДПП ПК', 'Стажировка', 'ДООП', '273-ФЗ', 'Приказ № 499', 'Приказ № 629', 'Профстандарты', '.docx', '.pptx', 'Moodle XML', 'GIFT', 'JSON', 'GigaChat 3 Pro', 'Cloud.ru']
+const FORMATS = ['ДПП ПК', 'Стажировка', 'ДООП', '273-ФЗ', 'Приказ № 266', 'Приказ № 629', 'Профстандарты', '.docx', '.pptx', 'Moodle XML', 'GIFT', 'JSON', 'GigaChat 3 Pro', 'Cloud.ru']
 
 export default function Landing() {
   const m = useMouseParallax(1)

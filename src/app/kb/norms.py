@@ -14,7 +14,7 @@ from typing import Any
 import yaml
 
 from app.kb.orgdocs import chunks
-from app.kb.registry import REGISTRY_DIR
+from app.kb.registry import REGISTRY_DIR, _kw_hit
 
 NORMS_DIR = REGISTRY_DIR / 'norms'
 
@@ -37,7 +37,7 @@ def norms() -> list[dict[str, Any]]:
         out.append({
             'id': meta.get('id', md.stem), 'title': meta.get('title', md.stem), 'source': meta.get('source', ''),
             'url': meta.get('url', ''), 'applies': meta.get('applies', []), 'keywords': meta.get('keywords', []),
-            'npa_id': meta.get('npa_id', ''), 'checked_at': str(meta.get('checked_at', '')), 'chars': len(body),
+            'npa_id': meta.get('npa_id') or '', 'checked_at': str(meta.get('checked_at', '')), 'chars': len(body),
             'chunks': [{'i': i, 'text': t, 'words': _words(t)} for i, t in enumerate(parts)],
         })
     return out
@@ -55,7 +55,7 @@ def search(query: str, program_type: str = '', k: int = 4) -> list[dict[str, Any
     for d in norms():
         if program_type and d['applies'] and program_type not in d['applies']:
             continue
-        bonus = 0.15 * sum(1 for kw in d['keywords'] if kw in low)
+        bonus = 0.15 * sum(1 for kw in d['keywords'] if _kw_hit(str(kw), low))
         for c in d['chunks']:
             score = len(qw & c['words']) / (len(qw) or 1) + bonus
             scored.append((score, d, c))

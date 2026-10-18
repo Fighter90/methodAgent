@@ -365,7 +365,10 @@ def recompute(doc: ProgramDoc) -> None:
             rows = _split_topics(HoursRow(**m.hours.model_dump()), [TopicIn(t.title, t.weight) for t in m.topics])
             for t, r in zip(m.topics, rows, strict=True):
                 t.hours = Hours(**r.as_dict())
+    chosen = doc.calendar.chosen_option
     plan_doc_calendar(doc)
+    if chosen and doc.calendar.conflict and any(o.id == chosen for o in doc.calendar.options):
+        choose_calendar_option(doc, chosen)
     doc.report = build_report(doc, 'skeleton')
 
 

@@ -47,7 +47,7 @@ def change_template(doc: ProgramDoc, program_type: str) -> None:
         for c in doc.competencies:
             c.ps_code, c.tf_codes = None, []
     elif doc.profstandard:
-        codes = sorted(tf_codes(doc.profstandard.code))
+        codes = [t.code for t in doc.profstandard.tf] or sorted(tf_codes(doc.profstandard.code))
         for i, c in enumerate(doc.competencies):
             c.ps_code = doc.profstandard.code
             if codes and not c.tf_codes:
@@ -309,16 +309,23 @@ def tasks_for(docs: list[ProgramDoc], user_id: str, role: str) -> int:
 def apply_norms(doc: ProgramDoc) -> list[dict[str, Any]]:
     """Выдержки НПА и ФГОС под запрос: идут в промпты каркаса и комплекта, акт — в нормативную базу программы."""
     from app.kb import norms
-    from app.kb.registry import registry
+    from app.kb.registry import _stems_hit, registry
 
     if doc.type is None:
         return []
     p = doc.params
     query = ' '.join([doc.request, p.title, p.direction, p.audience, p.form, p.final_assessment_form, ' '.join(p.required_topics)])
-    hits = norms.search(query, doc.type.value, k=4)
-    doc.norm_fragments = [{'name': h['name'], 'text': h['text'], 'doc_id': h['doc_id']} for h in hits]
-    known = {s.id for s in doc.norm_base}
     npa = {i['id']: i for i in registry()['npa']}
+    low = query.lower()
+    known = {s.id for s in doc.norm_base}
+
+    def relevant(npa_id: str) -> bool:
+        # выдержки акта идут в промпт, только если сам акт относится к запросу (как в norm_base_for): ДОТ — при дистанционке, СанПиН — для детей
+        item = npa.get(npa_id)
+        return not npa_id or npa_id in known or bool(item and (item.get('core') or _stems_hit(item.get('keywords', []), low)))
+
+    hits = [h for h in norms.search(query, doc.type.value, k=12) if relevant(h['npa_id'])][:4]
+    doc.norm_fragments = [{'name': h['name'], 'text': h['text'], 'doc_id': h['doc_id']} for h in hits]
     for h in hits:
         item = npa.get(h['npa_id'])
         if item and item['id'] not in known and doc.type.value in item.get('applies', []):
