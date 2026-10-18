@@ -96,6 +96,7 @@ async def run(
     comment: str = '',
     current: dict | None = None,
     org_documents: list[dict] | None = None,
+    norm_documents: list[dict] | None = None,
 ) -> SkeletonDraft:
     llm = get_llm()
     must = must_cover(params)
@@ -121,6 +122,7 @@ async def run(
             # Возврат с комментарием (FR-24): модель видит текущий каркас и меняет только указанные части
             'current_skeleton': current,
             'org_documents': (org_documents or [])[:4],
+            'norm_documents': [{'act': d['name'], 'text': d['text']} for d in (norm_documents or [])[:4]],
         }
         try:
             data: SkeletonLLM = await llm.complete_json(

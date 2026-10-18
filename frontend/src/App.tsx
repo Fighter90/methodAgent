@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, CircleHelp, FolderKanban, LibraryBig, LogOut, Moon, Sun, ClipboardCheck } from 'lucide-react'
-import { api, getSession, login, setSession, ROLE_LABEL, type User } from './api'
+import { Bell, CircleHelp, FolderKanban, LibraryBig, LogOut, Moon, Settings2, Sun, ClipboardCheck, UserRound } from 'lucide-react'
+import { api, getSession, login, setSession, switchRole, ROLE_LABEL, NETWORK_MSG, type User } from './api'
 import { Logo, useTheme, useToast } from './components/ui'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -10,6 +10,8 @@ import Programs from './pages/Programs'
 import Program from './pages/Program'
 import Reviews from './pages/Reviews'
 import Kb from './pages/Kb'
+import Admin from './pages/Admin'
+import Me from './pages/Me'
 
 const SWITCH = [
   { id: 'u-madina', name: 'Мадина', role: 'methodist' },
@@ -27,6 +29,17 @@ function Shell({ children }: { children: ReactNode }) {
   const nav = useNavigate()
   const toast = useToast()
   const loc = useLocation()
+  const [demo, setDemo] = useState(true)
+
+  useEffect(() => {
+    api('/auth/config').then((c) => setDemo(c.demo_accounts.length > 0)).catch(() => {})
+    const onUser = () => setUser(getSession()?.user || null)
+    let shown = 0
+    const onOffline = () => { if (Date.now() - shown > 20000) { shown = Date.now(); toast(NETWORK_MSG, true) } }
+    window.addEventListener('ma:user', onUser)
+    window.addEventListener('ma:offline', onOffline)
+    return () => { window.removeEventListener('ma:user', onUser); window.removeEventListener('ma:offline', onOffline) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!user) return
@@ -40,15 +53,18 @@ function Shell({ children }: { children: ReactNode }) {
     return () => { alive = false; clearInterval(t) }
   }, [user, loc.pathname])
 
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) return <Navigate to="/auth" replace />
 
-  async function switchTo(id: string) {
+  const own = (user.roles || [user.role]).filter((r) => r !== 'api')
+  const demoUser = user.source === 'demo' || !user.source
+
+  async function switchTo(id: string, role?: string) {
     try {
-      const u = await login(id, 'demo')
+      const u = role ? await switchRole(role) : await login(id, 'demo')
       setUser(u)
       toast(`Вы вошли как ${u.name} · ${ROLE_LABEL[u.role]}`)
       if (u.role === 'expert' && !loc.pathname.includes('/p/')) nav('/app/reviews')
-      else if (u.role === 'admin') nav('/app/kb')
+      else if (u.role === 'admin') nav('/app/admin')
       else nav(loc.pathname, { replace: true })
       window.dispatchEvent(new Event('ma:user'))
     } catch (e: any) {
@@ -64,17 +80,27 @@ function Shell({ children }: { children: ReactNode }) {
           <NavLink to="/app" end className="nav-link" title="Программы"><FolderKanban size={16} /> <span className="nav-label">Программы</span></NavLink>
           {user.role === 'expert' && <NavLink to="/app/reviews" className="nav-link" title="Вычитка"><ClipboardCheck size={16} /> <span className="nav-label">Вычитка</span></NavLink>}
           {['admin', 'methodist', 'head'].includes(user.role) && <NavLink to="/app/kb" className="nav-link" title="База знаний"><LibraryBig size={16} /> <span className="nav-label">База знаний</span></NavLink>}
+          {user.role === 'admin' && <NavLink to="/app/admin" className="nav-link" title="Администрирование"><Settings2 size={16} /> <span className="nav-label">Администрирование</span></NavLink>}
           <NavLink to="/help" className="nav-link" title="Справка"><CircleHelp size={16} /> <span className="nav-label">Справка</span></NavLink>
         </nav>
         <div className="grow" />
-        <div className="roles" role="tablist" aria-label="Роль">
+        {demo && demoUser ? <div className="roles" role="tablist" aria-label="Роль">
           {SWITCH.map((u) => (
             <button key={u.id} className={`role-pill ${user.id === u.id || (u.role === user.role && u.role === 'expert') ? 'active' : ''}`} onClick={() => switchTo(u.id)} title={`Войти как ${u.name}`}>
               <span className={`avatar av-${u.role}`}>{u.name[0]}</span><span className="role-name">{u.name} · {ROLE_LABEL[u.role]}</span>
               {tasks[u.role] > 0 && <span className="role-count" title="Задачи, которые ждут эту роль">{tasks[u.role]}</span>}
             </button>
           ))}
-        </div>
+        </div> : own.length > 1 && (
+          <div className="roles" role="tablist" aria-label="Роль">
+            {own.map((r) => (
+              <button key={r} className={`role-pill ${user.role === r ? 'active' : ''}`} onClick={() => user.role !== r && switchTo(user.id, r)} title={`Работать как ${ROLE_LABEL[r]}`}>
+                <span className={`avatar av-${r}`}>{user.name[0]}</span><span className="role-name">{ROLE_LABEL[r]}</span>
+                {tasks[r] > 0 && <span className="role-count">{tasks[r]}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         <div style={{ position: 'relative' }}>
           <button className="icon-btn" aria-label="Уведомления" onClick={() => {
             setOpen((x) => !x)
@@ -97,7 +123,8 @@ function Shell({ children }: { children: ReactNode }) {
           )}
         </div>
         <button className="icon-btn" onClick={toggle} aria-label="Тема">{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button>
-        <button className="icon-btn" onClick={() => { setSession(null); nav('/login') }} aria-label="Выйти"><LogOut size={17} /></button>
+        <Link to="/app/me" className="icon-btn" aria-label="Личный кабинет" title={`${user.name} · ${ROLE_LABEL[user.role]} — личный кабинет`}><UserRound size={17} /></Link>
+        <button className="icon-btn" onClick={() => { setSession(null); nav('/auth') }} aria-label="Выйти"><LogOut size={17} /></button>
       </header>
       <main key={user.id} className="container page-enter">{children}</main>
     </div>
@@ -108,11 +135,16 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
+      <Route path="/auth" element={<Login />} />
+      <Route path="/login" element={<Navigate to="/auth" replace />} />
+      <Route path="/signin" element={<Navigate to="/auth" replace />} />
+      <Route path="/register" element={<Navigate to="/auth?mode=register" replace />} />
       <Route path="/help" element={<Help />} />
       <Route path="/app" element={<Shell><Programs /></Shell>} />
       <Route path="/app/reviews" element={<Shell><Reviews /></Shell>} />
       <Route path="/app/kb" element={<Shell><Kb /></Shell>} />
+      <Route path="/app/admin" element={<Shell><Admin /></Shell>} />
+      <Route path="/app/me" element={<Shell><Me /></Shell>} />
       <Route path="/app/p/:id" element={<Shell><Program /></Shell>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

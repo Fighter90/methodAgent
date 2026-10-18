@@ -293,9 +293,13 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
         from app.agent.extras import apply_org_docs
 
         await apply_org_docs(doc)
+    if not doc.norm_fragments:
+        from app.agent.extras import apply_norms
+
+        apply_norms(doc)
     structure = [s for r in doc.references for s in r.structure]
     current = _skeleton_brief(doc) if comment and doc.modules else None
-    draft = await skeleton.run(doc.params, doc.type, doc.profstandard, structure, stats, comment, current, doc.org_fragments)
+    draft = await skeleton.run(doc.params, doc.type, doc.profstandard, structure, stats, comment, current, doc.org_fragments, doc.norm_fragments)
     if current and draft.source != 'llm':
         # Модель недоступна: каркас, который методист уже проверял, не заменяем типовым
         doc.agent_notes.append(f'Комментарий «{comment[:200]}» не обработан: модель недоступна, каркас оставлен без изменений — правьте вручную.')

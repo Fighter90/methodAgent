@@ -104,10 +104,12 @@ def _email_of(user_id: str) -> str:
 
 
 def _send_mail(to: str, text: str) -> None:
-    """Почта по настройке профиля (FR-59): SMTP из профиля, пароль — из переменной SMTP_PASSWORD окружения."""
+    """Почта по настройке профиля (FR-59): SMTP из профиля, пароль — из настроек администратора (зашифрован) или SMTP_PASSWORD."""
     import os
     import smtplib
     from email.message import EmailMessage
+
+    from app.core.config import get_settings
 
     smtp = _profile().get('smtp') or {}
     if not smtp.get('host'):
@@ -119,7 +121,7 @@ def _send_mail(to: str, text: str) -> None:
         with smtplib.SMTP(smtp['host'], int(smtp.get('port', 587)), timeout=10) as srv:
             srv.starttls()
             if smtp.get('user'):
-                srv.login(smtp['user'], os.environ.get('SMTP_PASSWORD', ''))
+                srv.login(smtp['user'], get_settings().smtp_password or os.environ.get('SMTP_PASSWORD', ''))
             srv.send_message(msg)
     except (OSError, smtplib.SMTPException):
         logger.warning('уведомление по почте не отправлено')

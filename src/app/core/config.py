@@ -75,6 +75,21 @@ class Settings(BaseSettings):
     anon_runs_per_hour: int = 12
     max_parallel_jobs: int = 4  # больше одновременных заданий ВМ 2 ядра / 4 ГБ не тянет (429)
 
+    # --- Вход и регистрация (администратор меняет на странице «Администрирование») ---
+    registration_enabled: bool = True
+    # Новый пользователь получает минимальные права: эксперт без назначенных модулей ничего чужого не видит
+    registration_default_role: str = 'expert'
+    demo_accounts_enabled: bool = True
+    # SSO предусмотрен, но не подключён: параметры хранятся, кнопка на форме входа помечена «скоро»
+    sso_enabled: bool = False
+    sso_provider: str = 'oidc'
+    sso_display_name: str = 'Единый вход организации'
+    sso_issuer_url: str = ''
+    sso_client_id: str = ''
+    sso_client_secret: str = ''
+    # Пароль почты для уведомлений (FR-59); хост и отправитель — в профиле организации
+    smtp_password: str = ''
+
     @property
     def max_file_size_bytes(self) -> int:
         return self.max_file_size_mb * 1024 * 1024
@@ -95,10 +110,20 @@ class Settings(BaseSettings):
 
     @model_validator(mode='after')
     def validate_secret_key(self) -> Settings:
-        """Слабый ключ в production останавливает запуск."""
-        if 'change-me' in self.secret_key and self.is_production:
-            msg = 'SECRET_KEY не задан: сгенерируйте python -c "import secrets; print(secrets.token_hex(32))"'
-            raise ValueError(msg)
+        """Пустой или учебный SECRET_KEY заменяется случайным ключом из data_dir: токены и секреты не подписываются известной строкой."""
+        if len(self.secret_key) < 16 or 'change-me' in self.secret_key:
+            import secrets
+
+            f = self.data_dir / '.secret_key'
+            try:
+                if not f.exists():
+                    self.data_dir.mkdir(parents=True, exist_ok=True)
+                    f.write_text(secrets.token_hex(32), encoding='utf-8')
+                    f.chmod(0o600)
+                self.secret_key = f.read_text(encoding='utf-8').strip()
+            except OSError:
+                if self.is_production:
+                    raise ValueError('SECRET_KEY не задан, и data_dir недоступен для записи ключа') from None
         return self
 
 

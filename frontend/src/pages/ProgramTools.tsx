@@ -147,7 +147,7 @@ function VersionsView({ doc }: { doc: Doc }) {
             <div className="grow"><b>v{v.version}</b> <span className="small">{v.reason || 'сохранение'}</span><div className="tiny muted">{(v.at || '').slice(0, 16).replace('T', ' ')}</div></div>
             <button className="btn btn-ghost btn-sm" title="Сравнить как «было»" onClick={() => setA(v.version)}>A</button>
             <button className="btn btn-ghost btn-sm" title="Сравнить как «стало»" onClick={() => setB(v.version)}>B</button>
-            {v.version !== doc.version && getSession()?.user.role === 'methodist' && <button className="btn btn-ghost btn-sm" title="Откатить" onClick={() => restore(v.version)}><RotateCcw size={13} /></button>}
+            {v.version !== doc.version && ['methodist', 'admin'].includes(getSession()?.user.role || '') && <button className="btn btn-ghost btn-sm" title="Откатить" onClick={() => restore(v.version)}><RotateCcw size={13} /></button>}
           </div>
         ))}
       </div>

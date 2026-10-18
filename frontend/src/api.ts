@@ -1,6 +1,6 @@
 export type Role = 'methodist' | 'expert' | 'head' | 'admin' | 'api'
 
-export interface User { id: string; name: string; role: Role; title: string }
+export interface User { id: string; name: string; role: Role; title: string; login?: string; email?: string; roles?: Role[]; source?: string }
 
 const KEY = 'ma.session'
 
@@ -41,7 +41,14 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
     headers['Content-Type'] = 'application/json'
     body = JSON.stringify(opts.json)
   }
-  const res = await fetch(`/api/v1${path}`, { ...opts, headers, body })
+  let res: Response
+  try {
+    res = await fetch(`/api/v1${path}`, { ...opts, headers, body })
+  } catch {
+    // Запрос оборван до сервера: нет сети или истекла сессия хаба, который пускает на адрес команды только с его cookie
+    window.dispatchEvent(new Event('ma:offline'))
+    throw new ApiError(0, NETWORK_MSG)
+  }
   if (!res.ok) {
     let msg = `Ошибка ${res.status}`
     let details: unknown
@@ -59,10 +66,32 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
   return (ct.includes('json') ? res.json() : res.text()) as Promise<T>
 }
 
-export async function login(user_id: string, password: string) {
-  const r = await api<{ access_token: string; user: User }>('/auth/login', { method: 'POST', json: { user_id, password } })
+export const NETWORK_MSG = 'Нет связи с сервером. Если демо открыто через хаб, его сессия могла истечь: обновите страницу.'
+
+export async function login(login: string, password: string) {
+  const r = await api<{ access_token: string; user: User }>('/auth/login', { method: 'POST', json: { login, password } })
   setSession({ token: r.access_token, user: r.user })
   return r.user
+}
+
+export async function register(body: { name: string; login: string; email: string; password: string; consent: boolean }) {
+  const r = await api<{ access_token: string; user: User }>('/auth/register', { method: 'POST', json: body })
+  setSession({ token: r.access_token, user: r.user })
+  return r.user
+}
+
+export async function switchRole(role: string) {
+  const r = await api<{ access_token: string; user: User }>('/auth/switch-role', { method: 'POST', json: { role } })
+  setSession({ token: r.access_token, user: r.user })
+  return r.user
+}
+
+export interface AuthConfig {
+  demo_accounts: { login: string; name: string; role: Role; title: string }[]
+  demo_password: string
+  registration_enabled: boolean
+  registration_default_role: Role
+  sso: { enabled: boolean; provider: string; display_name: string; configured: boolean; available: boolean }
 }
 
 export async function waitJob(jobId: string, onProgress?: (p: any) => void): Promise<any> {

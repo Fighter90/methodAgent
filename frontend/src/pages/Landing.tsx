@@ -56,7 +56,7 @@ export default function Landing() {
           <a className="nl" href="#roles">Роли</a>
           <Link className="nl" to="/help">Справка</Link>
         </div>
-        <Link className="btn btn-glass btn-sm nn-login" to="/login">Войти</Link>
+        <Link className="btn btn-glass btn-sm nn-login" to="/auth">Войти</Link>
         <button className="nn-burger" aria-label={menu ? 'Закрыть меню' : 'Открыть меню'} aria-expanded={menu} onClick={() => setMenu((x) => !x)}>{menu ? <X size={20} /> : <Menu size={20} />}</button>
       </nav>
 
@@ -76,7 +76,7 @@ export default function Landing() {
               МетодАгент по запросу свободным текстом собирает программу повышения квалификации, стажировку или общеразвивающую программу по шаблону Академии цифрового развития. Вместе с ней он готовит полный комплект: компетенции, учебный план, тесты с ключами, задания семинаров, лекции и слайды. Перед выдачей комплект проходит автопроверку.
             </p>
             <div className="row row-wrap" style={{ marginTop: 30, gap: 14 }}>
-              <Link to="/login" className="btn btn-lg btn-glow">Попробовать <ArrowRight size={18} /></Link>
+              <Link to="/auth" className="btn btn-lg btn-glow">Попробовать <ArrowRight size={18} /></Link>
               <Link to="/help" className="btn btn-lg btn-glass"><LifeBuoy size={18} /> Как это работает</Link>
             </div>
             <div className="row row-wrap tiny" style={{ marginTop: 26, color: '#7d8792', gap: 18 }}>
@@ -193,7 +193,7 @@ export default function Landing() {
             <h2 className="section-title" style={{ position: 'relative' }}>Соберите первую программу<br />прямо сейчас</h2>
             <p className="lead" style={{ margin: '0 auto 28px', position: 'relative' }}>Войдите как методист Мадина, вставьте запрос или выберите один из пяти примеров кейса — и через пару минут увидите каркас с проверенными часами.</p>
             <div className="row" style={{ justifyContent: 'center', position: 'relative', gap: 14 }}>
-              <Link to="/login" className="btn btn-lg btn-glow"><Workflow size={18} /> Открыть рабочее место</Link>
+              <Link to="/auth" className="btn btn-lg btn-glow"><Workflow size={18} /> Открыть рабочее место</Link>
               <a href="/docs" className="btn btn-lg btn-glass">API и автопрогон</a>
             </div>
           </div>

@@ -140,7 +140,20 @@ class SearchIn(BaseModel):
 
 @router.post('/kb/search', summary='Поиск по базе знаний: эмбеддинги шлюза или пересечение слов')
 async def kb_search(body: SearchIn, p: Principal = Depends(require('admin', 'methodist', 'head', 'expert'))) -> list[dict[str, Any]]:
-    return await orgdocs.search(body.query, body.k)
+    from app.kb import norms
+
+    hits = await orgdocs.search(body.query, body.k) + norms.search(body.query, k=body.k)
+    return sorted(hits, key=lambda h: -h['score'])[: body.k]
+
+
+@router.get('/kb/norms', summary='Нормативная база знаний: выжимки НПА, ФГОС и рекомендаций с источником и датой проверки')
+async def kb_norms(p: Principal = Depends(require('admin', 'methodist', 'head', 'expert'))) -> dict[str, Any]:
+    from app.kb import norms
+    from app.kb.registry import registry
+
+    reg = registry()
+    return {'documents': [norms.public(d) for d in norms.norms()],
+            'counts': {'npa': len(reg['npa']), 'ps': len(reg['ps']), 'fgos': len(reg.get('fgos', [])), 'literature': len(reg['literature'])}}
 
 
 # --- Профиль организации и реестр (администратор, таблица 19) ---
@@ -188,8 +201,10 @@ class RegistryIn(BaseModel):
 async def org_registry_get(kind: str = 'ps', p: Principal = Depends(require('admin', 'methodist', 'head'))) -> Any:
     from app.kb.registry import registry
 
+    if kind == 'fgos':
+        return registry().get('fgos', [])
     if kind not in _REGISTRY_REQUIRED:
-        raise BadRequest('kind: ps, npa, tools или literature')
+        raise BadRequest('kind: ps, npa, fgos, tools или literature')
     return registry()[kind]
 
 

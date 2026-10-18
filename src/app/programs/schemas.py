@@ -405,6 +405,7 @@ class ProgramDoc(BaseModel):
     references: list[ReferenceInfo] = Field(default_factory=list)
     norm_mode: Literal['gos', 'org'] = 'gos'
     org_fragments: list[dict[str, Any]] = Field(default_factory=list)  # фрагменты документов организации для генерации (FR-08)
+    norm_fragments: list[dict[str, Any]] = Field(default_factory=list)  # выдержки НПА и ФГОС из нормативной базы знаний
     params: Params = Field(default_factory=Params)
     assumptions: list[Assumption] = Field(default_factory=list)
     questions: list[Question] = Field(default_factory=list)

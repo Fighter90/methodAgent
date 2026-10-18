@@ -42,18 +42,63 @@ def save_override(kind: str, data: Any) -> None:
     registry.cache_clear()
 
 
+# Нормативная база из открытых источников (НПА, профстандарты, ФГОС): дополняет основные реестры по id или коду
+EXTRA_FILES = {'npa': 'kb_npa.json', 'ps': 'kb_profstandards.json', 'fgos': 'kb_fgos.json', 'literature': 'kb_literature.json'}
+_REPEALED = ('утратил', 'repealed', 'отмен', 'не действует')
+
+
+def _key(kind: str, item: dict[str, Any]) -> str:
+    return str(item.get('code') if kind in ('ps', 'fgos') else item.get('id') or item.get('bibl'))
+
+
+def _in_force(item: dict[str, Any]) -> bool:
+    return not any(w in str(item.get('status', '')).lower() for w in _REPEALED)
+
+
+def _merge(kind: str, base: list[dict[str, Any]], extra: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Записи из базы источников заменяют одноимённые (у них свежая проверка), утратившие силу отбрасываются."""
+    out = {_key(kind, i): i for i in base}
+    for item in extra:
+        k = _key(kind, item)
+        if not _in_force(item):
+            out.pop(k, None)
+            continue
+        if kind == 'ps':
+            item.setdefault('keywords', [])
+            item.setdefault('tf', [])
+        if kind == 'npa':
+            item.setdefault('applies', [])
+            item.setdefault('url', '')
+        out[k] = {**out.get(k, {}), **item}
+    return list(out.values())
+
+
 @lru_cache
 def registry() -> dict[str, Any]:
-    return {kind: _load(name) for kind, name in REGISTRY_FILES.items()}
+    data = {kind: _load(name) for kind, name in REGISTRY_FILES.items()}
+    data['fgos'] = []
+    for kind, name in EXTRA_FILES.items():
+        if (override_dir() / name).exists() or (REGISTRY_DIR / name).exists():
+            data[kind] = _merge(kind, data.get(kind, []), _load(name))
+    return data
 
 
-def norm_base_for(program_type: ProgramType) -> list[Source]:
-    """273-ФЗ + № 499 для ДПП ПК, 273-ФЗ + № 629 для ДООП (FR-07)."""
+def _stems_hit(keywords: list[str], low: str) -> bool:
+    return any((re.search(rf'\b{re.escape(k)}', low) if len(k) <= 3 else k in low) for k in keywords)
+
+
+def norm_base_for(program_type: ProgramType, text: str = '') -> list[Source]:
+    """Обязательные акты типа программы (273-ФЗ + № 499 для ДПП, 273-ФЗ + № 629 для ДООП, FR-07)
+    и акты, которые подходят к запросу по ключевым словам (ДОТ, дети, практика, персональные данные)."""
+    low = text.lower()
     out = []
     for item in registry()['npa']:
-        if program_type.value in item['applies']:
+        if program_type.value not in item.get('applies', []) or not _in_force(item):
+            continue
+        core = item.get('core', 'keywords' not in item)
+        if core or (low and _stems_hit(item.get('keywords', []), low)):
             out.append(
-                Source(id=item['id'], kind='law', bibl=item['bibl'], url=item['url'], confirmed=True, checked_at=item['checked_at'])
+                Source(id=item['id'], kind='law', bibl=item['bibl'], url=item.get('url', ''), confirmed=True, checked_at=item.get('checked_at', ''))
             )
     return out
 

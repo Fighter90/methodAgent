@@ -87,6 +87,34 @@ class NotificationRow(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class UserRow(Base):
+    """Учётные записи: демо-профиль АЦР, зарегистрированные и созданные администратором пользователи."""
+
+    __tablename__ = 'users'
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    login: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    email: Mapped[str] = mapped_column(String(200), default='')
+    title: Mapped[str] = mapped_column(String(200), default='')
+    roles: Mapped[list[str]] = mapped_column(JSON, default=list)
+    password_hash: Mapped[str] = mapped_column(String(100))
+    source: Mapped[str] = mapped_column(String(16), default='local')  # demo, local (регистрация или администратор), sso
+    active: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SettingRow(Base):
+    """Настройки, которые администратор меняет в интерфейсе; секреты хранятся зашифрованными."""
+
+    __tablename__ = 'settings'
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON)
+    updated_by: Mapped[str] = mapped_column(String(64), default='')
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 _engine = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 

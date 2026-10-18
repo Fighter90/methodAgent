@@ -526,3 +526,20 @@ select, select.field { max-width: 100%; text-overflow: ellipsis; }
   .topbar > nav { order: 5; width: auto; flex: 0 1 auto; }
   .row-wrap > select.field { width: 100% !important; }
 }
+
+/* Поле пароля с кнопкой «показать» */
+.pw-wrap { position: relative; }
+.pw-wrap .field { padding-right: 44px; }
+.pw-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; }
+.admin-table td, .admin-table th { vertical-align: middle; }
+.admin-table input.field { padding: 6px 8px; font-size: 13px; }
+.set-row { display: grid; grid-template-columns: minmax(180px, 280px) 1fr; gap: 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); }
+.set-row:first-of-type { border-top: 0; }
+@media (max-width: 720px) { .set-row { grid-template-columns: 1fr; } }
+.icon-btn { flex-shrink: 0; }
+.nav-link, .role-pill { white-space: nowrap; }
+@media (max-width: 1500px) {
+  .role-pill .role-name { display: none; }
+  .role-pill { padding: 4px; }
+}
+@media (max-width: 1180px) { .topbar .nav-label { display: none; } }

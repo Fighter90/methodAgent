@@ -19,12 +19,23 @@ ROLES = ('methodist', 'expert', 'head', 'admin', 'api')
 
 
 @dataclass(frozen=True)
-class DemoUser:
+class User:
     id: str
     name: str
     roles: tuple[str, ...]
     password_hash: str
     title: str = ''
+    login: str = ''
+    email: str = ''
+    source: str = 'demo'
+    active: bool = True
+
+    def public(self) -> dict[str, Any]:
+        return {'id': self.id, 'login': self.login, 'name': self.name, 'roles': list(self.roles), 'title': self.title,
+                'email': self.email, 'source': self.source, 'active': self.active}
+
+
+DemoUser = User
 
 
 def hash_password(password: str) -> str:
@@ -38,27 +49,42 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def _demo_users() -> dict[str, DemoUser]:
-    """Демонстрационный профиль АЦР (ТЗ, 4.4.1): Мадина, Тимур, Ольга, Ахмед и сервисный API-клиент."""
+# Демонстрационный профиль АЦР (ТЗ, 4.4.1): id, логин, имя, роли, должность
+DEMO = (
+    ('u-madina', 'madina', 'Мадина', ('methodist',), 'Методист'),
+    ('u-timur', 'timur', 'Тимур А.', ('expert',), 'Эксперт-преподаватель'),
+    ('u-olga', 'olga', 'Ольга К.', ('expert',), 'Эксперт-преподаватель'),
+    ('u-ahmed', 'ahmed', 'Ахмед', ('head',), 'Руководитель учебного центра'),
+    ('u-admin', 'admin', 'Администратор', ('admin',), 'Администратор профиля'),
+    ('u-api', 'api', 'API-клиент', ('api', 'methodist'), 'Автопрогон'),
+)
+
+
+def _demo_users() -> dict[str, User]:
     pw = hash_password('demo')
-    return {
-        'u-madina': DemoUser('u-madina', 'Мадина', ('methodist',), pw, 'Методист'),
-        'u-timur': DemoUser('u-timur', 'Тимур А.', ('expert',), pw, 'Эксперт-преподаватель'),
-        'u-olga': DemoUser('u-olga', 'Ольга К.', ('expert',), pw, 'Эксперт-преподаватель'),
-        'u-ahmed': DemoUser('u-ahmed', 'Ахмед', ('head',), pw, 'Руководитель учебного центра'),
-        'u-admin': DemoUser('u-admin', 'Администратор', ('admin',), pw, 'Администратор профиля'),
-        'u-api': DemoUser('u-api', 'API-клиент', ('api', 'methodist'), pw, 'Автопрогон'),
-    }
+    return {i: User(i, name, roles, pw, title, login) for i, login, name, roles, title in DEMO}
 
 
-_USERS: dict[str, DemoUser] | None = None
+_USERS: dict[str, User] | None = None
 
 
-def users() -> dict[str, DemoUser]:
+def users() -> dict[str, User]:
+    """Кэш учётных записей в памяти; источник — таблица users (load_users при старте и после каждого изменения)."""
     global _USERS
     if _USERS is None:
         _USERS = _demo_users()
     return _USERS
+
+
+def set_users(items: dict[str, User]) -> None:
+    global _USERS
+    _USERS = items
+
+
+def by_login(login: str) -> User | None:
+    """Вход по логину или по id (автопрогон и старые клиенты передают user_id)."""
+    key = login.strip().lower()
+    return next((u for u in users().values() if u.login.lower() == key), None) or users().get(login.strip())
 
 
 def create_token(user_id: str, role: str) -> str:
@@ -125,16 +151,18 @@ async def current_principal(request: Request, authorization: str | None = Header
         raise Unauthorized('Токен недействителен или истёк') from exc
     user = users().get(payload.get('sub', ''))
     role = payload.get('role', '')
-    if user is None or role not in user.roles:
+    if user is None or role not in user.roles or not user.active:
         raise Unauthorized('Токен недействителен')
+    if user.source == 'demo' and user.id not in ('u-api', 'u-admin') and not s.demo_accounts_enabled:
+        raise Unauthorized('Демо-учётки отключены администратором')
     return Principal(user.id, role, user.name)
 
 
 def require(*roles: str):
-    """Зависимость FastAPI: действие доступно только перечисленным ролям, иначе 403."""
+    """Зависимость FastAPI: действие доступно только перечисленным ролям, иначе 403. Администратор управляет всем."""
 
     async def _dep(p: Principal = Depends(current_principal)) -> Principal:
-        if p.role not in roles:
+        if p.role not in roles and p.role != 'admin':
             raise ForbiddenRole(f'Роль «{p.role}» не может выполнить это действие', details={'allowed': list(roles)})
         return p
 

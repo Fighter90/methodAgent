@@ -39,7 +39,7 @@ def run(text: str, params: Params) -> ClassifyResult:
     if ptype is None:
         return ClassifyResult(None, '', '', [], None, conf, 'Тип программы из запроса не ясен — уточню у методиста.')
     template, doc = TEMPLATES[ptype]
-    norm = norm_base_for(ptype)
+    norm = norm_base_for(ptype, ' '.join([text, params.form, params.audience, params.direction, params.title]))
     ps = None
     if ptype != ProgramType.DOOP:
         ps = pick_ps(' '.join([text, params.direction, params.title, ' '.join(params.required_topics)]), params.ps_hint)

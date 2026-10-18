@@ -1,38 +1,84 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, Check, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react'
-import { login } from '../api'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, ArrowRight, Building2, Check, Eye, EyeOff, LockKeyhole, RefreshCw, ShieldCheck, Sparkles, UserPlus } from 'lucide-react'
+import { api, ApiError, login, register, ROLE_LABEL, type AuthConfig } from '../api'
 import { Logo, Spinner, useMouseParallax, useToast } from '../components/ui'
 
-const USERS = [
-  { id: 'u-madina', name: 'Мадина', role: 'methodist', title: 'Методист: собирает программу и утверждает каркас' },
-  { id: 'u-timur', name: 'Тимур А.', role: 'expert', title: 'Эксперт: вычитывает свои модули' },
-  { id: 'u-olga', name: 'Ольга К.', role: 'expert', title: 'Эксперт: вычитывает свои модули' },
-  { id: 'u-ahmed', name: 'Ахмед', role: 'head', title: 'Руководитель: утверждает программу' },
-]
+// Подписи плиток демо-профиля АЦР; сами учётки приходят с сервера (/auth/config)
+const TILE_TITLE: Record<string, string> = {
+  methodist: 'Методист: собирает программу и утверждает каркас',
+  expert: 'Эксперт: вычитывает свои модули',
+  head: 'Руководитель: утверждает программу',
+  admin: 'Администратор: пользователи, ключи, настройки агента',
+}
+
+type Mode = 'login' | 'register'
 
 export default function Login() {
-  const [userId, setUserId] = useState('u-madina')
+  const [params, setParams] = useSearchParams()
+  const mode: Mode = params.get('mode') === 'register' ? 'register' : 'login'
+  const [cfg, setCfg] = useState<AuthConfig | null>(null)
+  const [loginName, setLoginName] = useState('madina')
   const [password, setPassword] = useState('demo')
+  const [showPw, setShowPw] = useState(false)
+  const [reg, setReg] = useState({ name: '', login: '', email: '', password: '', confirm: '', consent: false })
+  const [error, setError] = useState<{ text: string; offline?: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const nav = useNavigate()
   const toast = useToast()
   const m = useMouseParallax(1)
   const L = (d: number) => ({ transform: `translate3d(${m.x * d}px, ${m.y * d}px, 0)` })
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setBusy(true)
-    try {
-      const u = await login(userId, password)
-      toast(`Здравствуйте, ${u.name}!`)
-      nav(u.role === 'expert' ? '/app/reviews' : '/app')
-    } catch (err: any) {
-      toast(err.message || 'Не удалось войти', true)
-    } finally {
-      setBusy(false)
-    }
+  useEffect(() => {
+    api<AuthConfig>('/auth/config').then((c) => {
+      setCfg(c)
+      if (!c.demo_accounts.length) { setLoginName(''); setPassword('') }
+    }).catch((e) => setError({ text: e.message, offline: e instanceof ApiError && e.status === 0 }))
+  }, [])
+
+  const switchMode = (next: Mode) => {
+    const p = new URLSearchParams(params)
+    if (next === 'register') p.set('mode', 'register')
+    else p.delete('mode')
+    setParams(p, { replace: true })
+    setError(null)
   }
+
+  const fail = (e: any) => setError({ text: e.message || 'Не удалось выполнить запрос', offline: e instanceof ApiError && e.status === 0 })
+  const enter = (u: { name: string; role: string }) => {
+    toast(`Здравствуйте, ${u.name}!`)
+    nav(u.role === 'expert' ? '/app/reviews' : u.role === 'admin' ? '/app/admin' : '/app')
+  }
+
+  async function submitLogin(e: React.FormEvent) {
+    e.preventDefault()
+    if (!loginName.trim() || !password) return setError({ text: 'Введите логин и пароль' })
+    setBusy(true); setError(null)
+    try { enter(await login(loginName.trim(), password)) } catch (err) { fail(err) } finally { setBusy(false) }
+  }
+
+  async function submitRegister(e: React.FormEvent) {
+    e.preventDefault()
+    if (reg.name.trim().length < 2) return setError({ text: 'Укажите имя' })
+    if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(reg.login.trim().toLowerCase())) return setError({ text: 'Логин: 3–32 символа, латиница, цифры, точка, дефис или подчёркивание' })
+    if (reg.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(reg.email.trim())) return setError({ text: 'Некорректный адрес почты' })
+    if (reg.password.length < 8 || !/\d/.test(reg.password) || !/\p{L}/u.test(reg.password)) return setError({ text: 'Пароль: не меньше 8 символов, буква и цифра' })
+    if (reg.password !== reg.confirm) return setError({ text: 'Пароли не совпадают' })
+    if (!reg.consent) return setError({ text: 'Нужно согласие на обработку персональных данных' })
+    setBusy(true); setError(null)
+    try {
+      const u = await register({ name: reg.name.trim(), login: reg.login.trim().toLowerCase(), email: reg.email.trim(), password: reg.password, consent: reg.consent })
+      toast(`Учётная запись создана. Роль: ${ROLE_LABEL[u.role]}. Права расширяет администратор.`)
+      nav(u.role === 'expert' ? '/app/reviews' : '/app')
+    } catch (err) { fail(err) } finally { setBusy(false) }
+  }
+
+  const sso = cfg?.sso
+  const pwToggle = (
+    <button type="button" className="icon-btn pw-eye" onClick={() => setShowPw((x) => !x)} aria-label={showPw ? 'Скрыть пароль' : 'Показать пароль'}>
+      {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+    </button>
+  )
 
   return (
     <div className="auth">
@@ -83,37 +129,92 @@ export default function Login() {
       </aside>
 
       <main className="auth-form-wrap">
-        <form className="auth-form" onSubmit={submit}>
+        <div className="auth-form">
           <div className="row" style={{ gap: 10, marginBottom: 6 }}>
-            <span className="glass-icon" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'transparent' }}><LockKeyhole size={20} /></span>
+            <span className="glass-icon" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', borderColor: 'transparent' }}>{mode === 'login' ? <LockKeyhole size={20} /> : <UserPlus size={20} />}</span>
           </div>
-          <h2 className="h1" style={{ marginTop: 14 }}>Вход в МетодАгент</h2>
-          <p className="muted" style={{ marginTop: 0 }}>Выберите демо-пользователя. Пароль у всех: <span className="kbd">demo</span></p>
+          <h2 className="h1" style={{ marginTop: 14 }}>{mode === 'login' ? 'Вход в МетодАгент' : 'Регистрация'}</h2>
 
-          <div style={{ display: 'grid', gap: 8, margin: '20px 0' }} className="stagger">
-            {USERS.map((u) => (
-              <button type="button" key={u.id} className={`user-tile ${userId === u.id ? 'sel' : ''}`} onClick={() => setUserId(u.id)}>
-                <span className={`avatar av-${u.role}`} style={{ width: 38, height: 38 }}>{u.name[0]}</span>
-                <span className="grow">
-                  <b style={{ display: 'block' }}>{u.name}</b>
-                  <span className="small muted">{u.title}</span>
-                </span>
-                {userId === u.id && <Check size={18} color="var(--accent)" />}
+          {(cfg?.registration_enabled ?? true) && (
+            <div className="seg" role="tablist" style={{ margin: '6px 0 14px', gridTemplateColumns: '1fr 1fr' }}>
+              <button role="tab" aria-selected={mode === 'login'} className={`seg-btn ${mode === 'login' ? 'active' : ''}`} onClick={() => switchMode('login')}>Вход</button>
+              <button role="tab" aria-selected={mode === 'register'} className={`seg-btn ${mode === 'register' ? 'active' : ''}`} onClick={() => switchMode('register')}>Регистрация</button>
+            </div>
+          )}
+
+          {error && (
+            <div className="callout small" role="alert" style={{ borderColor: 'var(--err, #d64545)', marginBottom: 12 }}>
+              {error.text}
+              {error.offline && <button type="button" className="btn btn-soft btn-sm" style={{ marginLeft: 8 }} onClick={() => location.reload()}><RefreshCw size={13} /> Обновить страницу</button>}
+            </div>
+          )}
+
+          {mode === 'login' ? (
+            <form onSubmit={submitLogin} noValidate>
+              {!!cfg?.demo_accounts.length && (
+                <>
+                  <p className="muted" style={{ marginTop: 0 }}>Выберите демо-пользователя — логин подставится в форму. Пароль у всех: <span className="kbd">{cfg.demo_password}</span></p>
+                  <div style={{ display: 'grid', gap: 8, margin: '12px 0 18px' }} className="stagger">
+                    {cfg.demo_accounts.map((u) => (
+                      <button type="button" key={u.login} className={`user-tile ${loginName === u.login ? 'sel' : ''}`} onClick={() => { setLoginName(u.login); setPassword(cfg.demo_password); setError(null) }}>
+                        <span className={`avatar av-${u.role}`} style={{ width: 38, height: 38 }}>{u.name[0]}</span>
+                        <span className="grow">
+                          <b style={{ display: 'block' }}>{u.name} <span className="small muted" style={{ fontWeight: 400 }}>· {u.login}</span></b>
+                          <span className="small muted">{TILE_TITLE[u.role] || u.title}</span>
+                        </span>
+                        {loginName === u.login && <Check size={18} color="var(--accent)" />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <label className="label" htmlFor="login">Логин или почта</label>
+              <input id="login" className="field" value={loginName} onChange={(e) => setLoginName(e.target.value)} autoComplete="username" placeholder="например, madina" />
+              <label className="label" htmlFor="pw" style={{ marginTop: 12 }}>Пароль</label>
+              <div className="pw-wrap">
+                <input id="pw" className="field" type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+                {pwToggle}
+              </div>
+              <button className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center', marginTop: 18 }} disabled={busy}>
+                {busy ? <Spinner /> : <>Войти <ArrowRight size={18} /></>}
               </button>
-            ))}
-          </div>
+              <button type="button" className="btn btn-ghost btn-lg" style={{ width: '100%', justifyContent: 'center', marginTop: 10 }} disabled
+                title="Единый вход организации (OIDC или SAML) предусмотрен: параметры задаёт администратор, подключение — в следующей версии">
+                <Building2 size={17} /> {sso?.enabled ? sso.display_name : 'Войти через SSO организации'} <span className="chip" style={{ marginLeft: 6 }}>скоро</span>
+              </button>
+              <p className="tiny muted" style={{ marginTop: 6 }}>Вход через SSO (OIDC или SAML) предусмотрен: администратор задаёт параметры в настройках, протокол подключается в следующей версии.</p>
+            </form>
+          ) : (
+            <form onSubmit={submitRegister} noValidate>
+              <p className="muted" style={{ marginTop: 0 }}>После регистрации вы получите минимальные права: роль «{ROLE_LABEL[cfg?.registration_default_role || 'expert']}». Расширить их может администратор.</p>
+              <label className="label" htmlFor="r-name">Имя и фамилия</label>
+              <input id="r-name" className="field" value={reg.name} onChange={(e) => setReg({ ...reg, name: e.target.value })} autoComplete="name" placeholder="Ирина Петрова" />
+              <label className="label" htmlFor="r-login" style={{ marginTop: 12 }}>Логин</label>
+              <input id="r-login" className="field" value={reg.login} onChange={(e) => setReg({ ...reg, login: e.target.value })} autoComplete="username" placeholder="irina.petrova" />
+              <label className="label" htmlFor="r-email" style={{ marginTop: 12 }}>Почта <span className="muted small">(необязательно, для уведомлений и входа)</span></label>
+              <input id="r-email" className="field" type="email" value={reg.email} onChange={(e) => setReg({ ...reg, email: e.target.value })} autoComplete="email" placeholder="you@example.ru" />
+              <label className="label" htmlFor="r-pw" style={{ marginTop: 12 }}>Пароль <span className="muted small">(не меньше 8 символов, буква и цифра)</span></label>
+              <div className="pw-wrap">
+                <input id="r-pw" className="field" type={showPw ? 'text' : 'password'} value={reg.password} onChange={(e) => setReg({ ...reg, password: e.target.value })} autoComplete="new-password" />
+                {pwToggle}
+              </div>
+              <label className="label" htmlFor="r-pw2" style={{ marginTop: 12 }}>Повторите пароль</label>
+              <input id="r-pw2" className="field" type={showPw ? 'text' : 'password'} value={reg.confirm} onChange={(e) => setReg({ ...reg, confirm: e.target.value })} autoComplete="new-password" />
+              <label className="row small" style={{ gap: 8, marginTop: 14, alignItems: 'flex-start' }}>
+                <input type="checkbox" checked={reg.consent} onChange={(e) => setReg({ ...reg, consent: e.target.checked })} style={{ marginTop: 3 }} />
+                <span>Согласен на обработку персональных данных (имя, логин, почта) для работы в МетодАгенте по 152-ФЗ</span>
+              </label>
+              <button className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center', marginTop: 18 }} disabled={busy}>
+                {busy ? <Spinner /> : <>Зарегистрироваться <ArrowRight size={18} /></>}
+              </button>
+            </form>
+          )}
 
-          <label className="label" htmlFor="pw">Пароль</label>
-          <input id="pw" className="field" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
-
-          <button className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center', marginTop: 18 }} disabled={busy}>
-            {busy ? <Spinner /> : <>Войти <ArrowRight size={18} /></>}
-          </button>
           <p className="small muted row" style={{ gap: 8, marginTop: 18 }}>
             <ShieldCheck size={16} /> Права проверяются на каждом действии: эксперт видит только свои модули.
           </p>
-          <p className="small muted">Нужна помощь? Откройте <Link to="/help" style={{ color: 'var(--accent)', fontWeight: 700 }}>справку</Link>.</p>
-        </form>
+          <p className="small muted">Нужна помощь? Откройте <Link to="/help#access" style={{ color: 'var(--accent)', fontWeight: 700 }}>справку</Link>.</p>
+        </div>
       </main>
     </div>
   )

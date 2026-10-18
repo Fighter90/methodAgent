@@ -305,6 +305,31 @@ def tasks_for(docs: list[ProgramDoc], user_id: str, role: str) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- нормативная база знаний
+def apply_norms(doc: ProgramDoc) -> list[dict[str, Any]]:
+    """Выдержки НПА и ФГОС под запрос: идут в промпты каркаса и комплекта, акт — в нормативную базу программы."""
+    from app.kb import norms
+    from app.kb.registry import registry
+
+    if doc.type is None:
+        return []
+    p = doc.params
+    query = ' '.join([doc.request, p.title, p.direction, p.audience, p.form, p.final_assessment_form, ' '.join(p.required_topics)])
+    hits = norms.search(query, doc.type.value, k=4)
+    doc.norm_fragments = [{'name': h['name'], 'text': h['text'], 'doc_id': h['doc_id']} for h in hits]
+    known = {s.id for s in doc.norm_base}
+    npa = {i['id']: i for i in registry()['npa']}
+    for h in hits:
+        item = npa.get(h['npa_id'])
+        if item and item['id'] not in known and doc.type.value in item.get('applies', []):
+            known.add(item['id'])
+            doc.norm_base.append(Source(id=item['id'], kind='law', bibl=item['bibl'], url=item.get('url', ''), confirmed=True, checked_at=item.get('checked_at', '')))
+    if hits:
+        names = ', '.join(dict.fromkeys(f'«{h["name"]}»' for h in hits))
+        doc.agent_notes.append(f'Опираюсь на нормативную базу знаний: {names}.')
+    return hits
+
+
 # --------------------------------------------------------------------------- FR-09
 async def apply_org_docs(doc: ProgramDoc) -> list[dict[str, Any]]:
     """Режим «документы организации»: находит фрагменты положений и шаблонов и ссылается на них."""

@@ -57,6 +57,7 @@ export default function Kb() {
             </>
           ) : <div className="callout small">Загружает и удаляет документы администратор профиля. Искать по базе может любой сотрудник.</div>}
         </section>
+        <NormBase />
         {admin && <OrgAdmin />}
         <section className="card card-pad">
           <h2 className="h2">Документы · {docs?.length ?? 0}</h2>
@@ -81,7 +82,7 @@ export default function Kb() {
           <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
             {hits?.map((h, i) => (
               <div key={i} className="card" style={{ padding: 12 }}>
-                <div className="tiny muted">{h.name} · фрагмент {h.chunk + 1} · сходство {h.score}</div>
+                <div className="tiny muted">{h.kind === 'norm' ? 'Нормативная база: ' : ''}{h.name} · фрагмент {h.chunk + 1} · сходство {h.score}</div>
                 <div className="small" style={{ marginTop: 4 }}>{h.text}</div>
               </div>
             ))}
@@ -172,5 +173,34 @@ function OrgAdmin() {
         <button className="btn btn-primary" style={{ marginTop: 10 }} disabled={!!busy} onClick={saveRegistry}>{busy === 'reg' ? <Spinner /> : 'Сохранить реестр'}</button>
       </section>
     </>
+  )
+}
+
+/* Нормативная база знаний: выжимки НПА, ФГОС и рекомендаций из официальных источников, на которые опирается агент */
+function NormBase() {
+  const [data, setData] = useState<{ documents: any[]; counts: Record<string, number> } | null>(null)
+  const [open, setOpen] = useState(false)
+  useEffect(() => { api('/kb/norms').then(setData).catch(() => setData({ documents: [], counts: {} })) }, [])
+  if (!data) return null
+  const c = data.counts
+  return (
+    <section className="card card-pad">
+      <h2 className="h3" style={{ marginTop: 0 }}>Нормативная база агента</h2>
+      <p className="small muted">Собрана из официальных источников (publication.pravo.gov.ru, реестр профстандартов Минтруда, fgos.ru) с датой проверки. Агент подбирает из неё акты и выдержки под запрос и передаёт их в генерацию каркаса и комплекта; в программу попадают только реквизиты из реестра.</p>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <span className="chip chip-blue">НПА: {c.npa ?? 0}</span>
+        <span className="chip chip-blue">Профстандарты: {c.ps ?? 0}</span>
+        <span className="chip chip-blue">ФГОС: {c.fgos ?? 0}</span>
+        <span className="chip chip-blue">Источники литературы: {c.literature ?? 0}</span>
+        <span className="chip chip-ok">Выжимки актов: {data.documents.length}</span>
+      </div>
+      {data.documents.length > 0 && <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={() => setOpen((x) => !x)}>{open ? 'Скрыть выжимки' : 'Показать выжимки'}</button>}
+      {open && data.documents.map((d) => (
+        <div key={d.id} className="small" style={{ borderTop: '1px solid var(--line)', padding: '8px 0' }}>
+          <b>{d.title}</b>
+          <div className="tiny muted">{d.source}{d.url && <> · <a href={d.url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>источник</a></>}{d.checked_at && <> · проверено {d.checked_at}</>}</div>
+        </div>
+      ))}
+    </section>
   )
 }
