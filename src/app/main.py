@@ -97,6 +97,10 @@ def create_app() -> FastAPI:
     async def skills() -> list[dict]:
         return [{'name': k, **{x: v.get(x) for x in ('description', 'version')}} for k, v in load_skills().items()]
 
+    @api.get('/health', tags=['misc'], summary='Состояние сервиса (то же, что /health)')
+    async def api_health() -> dict:
+        return {'status': 'ok', 'version': s.app_version, 'llm': s.llm_enabled}
+
     app.include_router(api)
 
     @app.get('/health', tags=['misc'])
@@ -108,6 +112,9 @@ def create_app() -> FastAPI:
 
         @app.get('/{path:path}', include_in_schema=False)
         async def spa(path: str):
+            if path == 'api' or path.startswith('api/'):
+                # Неизвестный метод API — ошибка в формате таблицы 20, а не страница интерфейса
+                return JSONResponse({'code': 'NOT_FOUND', 'message_ru': f'Метод /{path} не найден', 'details': {}}, status_code=404)
             f = STATIC_DIR / path
             if path and f.is_file() and STATIC_DIR in f.resolve().parents:
                 return FileResponse(f)

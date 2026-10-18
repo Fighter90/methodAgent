@@ -1072,10 +1072,12 @@ def review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: st
     m = doc.module_by_id(module_id)
     if m is None:
         raise NotFound('Модуль не найден')
-    if m.expert_id and m.expert_id != actor_id:
+    if m.expert_id != actor_id:
         from app.core.errors import ForbiddenRole
 
         raise ForbiddenRole('Эксперт видит и принимает только назначенные ему модули')
+    if not doc.kit.questions and not doc.kit.tasks:
+        raise Conflict('Комплект ещё не собран — вычитывать нечего', code='KIT_NOT_READY')
     if decision == 'accept_item':
         if not node_id or node_id not in module_items(doc, module_id):
             raise NotFound('Элемент не найден в модуле')
@@ -1088,8 +1090,9 @@ def review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: st
         total, done = review_items(doc, module_id)
         if done < total:
             # Таблица 11: «Принять модуль» доступна, когда проверены все элементы
+            missing = [x for x in module_items(doc, module_id) if x not in m.accepted_items]
             raise Conflict(f'{done} из {total} элементов проверено — примите каждый элемент модуля', code='ITEMS_NOT_CHECKED',
-                           details={'done': done, 'total': total})
+                           details={'done': done, 'total': total, 'missing': missing})
         m.review_status = 'accepted'
     elif decision == 'return':
         if not comment.strip():

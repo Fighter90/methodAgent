@@ -168,3 +168,19 @@ def test_head_sees_quality_and_owners(client, kit) -> None:
     assert {'human_edit_share', 'accepted_without_edits', 'expert_score', 'code_ok_share', 'work_days', 'generation_rub'} <= set(q)
     assert all(o['owner'] for o in doc['readiness']['open'])
     assert any('эксперт' in o['owner'] for o in doc['readiness']['open'])
+
+
+def test_unassigned_expert_cannot_accept_and_api_404(client, kit) -> None:
+    hm, he = _h(client, 'u-madina'), _h(client, 'u-timur')
+    doc = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
+    free = next((m for m in doc['modules'] if not m['expert_id']), None)
+    if free:
+        r = client.post(f'/api/v1/programs/{kit}/reviews/decision', json={'module_id': free['id'], 'decision': 'accept'}, headers=he)
+        assert r.status_code == 403
+    mine = next(m for m in doc['modules'] if m['expert_id'] == 'u-timur')
+    r = client.post(f'/api/v1/programs/{kit}/reviews/decision', json={'module_id': mine['id'], 'decision': 'accept'}, headers=he)
+    if r.status_code == 409:
+        assert r.json()['details']['missing']
+    r = client.get('/api/v1/no-such-method')
+    assert r.status_code == 404 and r.headers['content-type'].startswith('application/json')
+    assert client.get('/api/v1/health').json()['status'] == 'ok'
