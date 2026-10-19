@@ -49,6 +49,9 @@ def public(item: dict[str, Any]) -> dict[str, Any]:
 
 def search(query: str, program_type: str = '', k: int = 4) -> list[dict[str, Any]]:
     """Лучшие фрагменты: доля общих слов с запросом плюс бонус за ключевые слова акта и тип программы."""
+    from app.kb.abbr import expand
+
+    query = expand(query)  # «педагог ДО» → и «дополнительное образование детей»
     low = query.lower()
     qw = _words(query)
     scored = []

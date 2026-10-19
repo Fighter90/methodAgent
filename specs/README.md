@@ -95,7 +95,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | [auth-and-roles.md](auth-and-roles.md) | 29 | 29 | — |
 | [export.md](export.md) | 13 | 13 | — |
 | [frontend.md](frontend.md) | 21 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21 |
-| [knowledge-base.md](knowledge-base.md) | 19 | 18 | SPEC-KB-13 |
+| [knowledge-base.md](knowledge-base.md) | 20 | 19 | SPEC-KB-13 |
 | [llm-client.md](llm-client.md) | 24 | 24 | — |
 | [programs-service.md](programs-service.md) | 13 | 13 | — |
 | [skill-content.md](skill-content.md) | 13 | 13 | — |
@@ -260,6 +260,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-KB-17 | `test_spec_kb_vectors.py`, `test_spec_kb_vectors.py::test_vectors_in_npy_migration_search_and_reindex` |
 | SPEC-KB-18 | `test_spec_kb_vectors.py::test_mixed_index_keeps_semantic_hits_on_top` |
 | SPEC-KB-19 | `test_spec_kb_vectors.py::test_kb_search_fuses_org_and_norms_by_rank` |
+| SPEC-KB-20 | `test_spec_kb_vectors.py::test_abbreviations_expanded_in_search` |
 | SPEC-LLM-01 | `test_extras.py::test_parse_json_truncated_reasoning`, `test_spec_llm_client.py::test_parse_json_cleanup` |
 | SPEC-LLM-02 | `test_spec_llm_client.py::test_daily_limit_detection` |
 | SPEC-LLM-03 | `test_spec_llm_client.py::test_call_stats_accumulate` |

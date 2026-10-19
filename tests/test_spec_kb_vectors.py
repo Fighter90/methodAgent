@@ -77,3 +77,15 @@ def test_kb_search_fuses_org_and_norms_by_rank() -> None:
     law = [{'doc_id': 'n-1', 'kind': 'norm', 'score': 1.15}, {'doc_id': 'n-2', 'kind': 'norm', 'score': 0.9}]
     assert [h['doc_id'] for h in fuse(org, law, 3)] == ['kb-1', 'n-1', 'kb-2']
     assert [h['doc_id'] for h in fuse([], law, 5)] == ['n-1', 'n-2']
+
+
+def test_abbreviations_expanded_in_search() -> None:
+    """SPEC-KB-20: сокращения образования в запросе (ДО, ДПО, СПО, ПС, ОВЗ…) расшифровываются для поиска, только целым словом в верхнем регистре; «педагог ДО» находит профстандарт 01.003."""
+    from app.kb import norms
+    from app.kb.abbr import expand
+
+    assert 'дополнительное образование' in expand('квалификация педагога ДО')
+    assert expand('работа до вечера') == 'работа до вечера'
+    assert expand('ДОТ и ЭО') == 'ДОТ и ЭО (дистанционные образовательные технологии; электронное обучение)'
+    top = norms.search('квалификация педагога ДО', k=3)
+    assert any('01.003' in h['name'] for h in top)

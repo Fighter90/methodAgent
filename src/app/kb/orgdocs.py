@@ -185,9 +185,12 @@ def delete_document(doc_id: str) -> None:
 
 async def search(query: str, k: int = 5) -> list[dict[str, Any]]:
     """Лучшие фрагменты по запросу: косинус эмбеддингов (матрица float32), иначе доля общих слов."""
+    from app.kb.abbr import expand
+
     docs = _load()['docs']
     if not docs or not query.strip():
         return []
+    query = expand(query)  # сокращения расшифровываются и для эмбеддинга, и для поиска по словам
     mats = {d['id']: _vectors(d['id']) for d in docs if d.get('indexed') == 'embeddings'}
     qvec = None
     if any(m is not None for m in mats.values()):
