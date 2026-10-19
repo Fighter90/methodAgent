@@ -1,4 +1,4 @@
-# CI: тесты с порогом покрытия, линтер, трассировка требований SDD и сборка интерфейса.
+# CI: тесты с порогом покрытия, линтер, трассировка требований SDD, схема OpenAPI, ESLint, vitest и сборка интерфейса.
 # Формат совместим с Gitea Actions и GitHub Actions.
 name: ci
 
@@ -28,6 +28,8 @@ jobs:
         run: pytest -q --cov=src/app --cov-report=term
       - name: Трассировка требований specs/ → тесты
         run: python scripts/spec_trace.py
+      - name: Схема OpenAPI docs/openapi.json совпадает с кодом
+        run: python scripts/export_openapi.py --check
 
   frontend:
     runs-on: ubuntu-latest
@@ -36,6 +38,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Сборка интерфейса
+      - name: ESLint, vitest и сборка интерфейса
         working-directory: frontend
-        run: npm ci --no-audit --no-fund && npm run build
+        run: npm ci --no-audit --no-fund && npm run check

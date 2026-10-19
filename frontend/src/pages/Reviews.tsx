@@ -20,7 +20,7 @@ export default function Reviews() {
   useEffect(() => {
     if (user?.role !== 'expert') { setItems([]); return }
     api('/reviews').then(setItems).catch((e) => { setItems([]); toast(e.message, true) })
-  }, [user?.id, toast])
+  }, [user?.id, user?.role, toast])
 
   return (
     <div>

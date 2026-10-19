@@ -120,6 +120,7 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers NODE_PATH=$(npm root -g) \
 - Навык — папка `src/app/skills/<имя>/` с `SKILL.md` (frontmatter: name, description, version), `schema_in.json`, `run.py`.
 - Секреты только в окружении (`/opt/hackathon/ai.env`, `.env`), в git и логи не попадают.
 - Перед коммитом: `pytest -q` и `python scripts/autorun.py`.
+- Всё, что запускает CI, одной командой: `make check` (ruff, pytest с порогом покрытия, трассировка SDD, `scripts/export_openapi.py --check`, а в `frontend/` — `npm run check`: ESLint, vitest и сборка). После изменения API обновите схему: `python scripts/export_openapi.py`.
 
 Дополнительно из кода:
 

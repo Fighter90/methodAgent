@@ -213,7 +213,7 @@ function SandboxView({ doc }: { doc: Doc }) {
   const [r, setR] = useState<any>(null)
   const [busy, setBusy] = useState(false)
   const run = () => { setBusy(true); api(`/programs/${doc.id}/sandbox`).then(setR).catch(() => setR({ items: [] })).finally(() => setBusy(false)) }
-  useEffect(run, [doc.id, doc.version]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(run, [doc.id, doc.version])
   if (!r) return <div className="row small muted"><Spinner /> Запускаю примеры кода в песочнице без сети…</div>
   if (!r.items.length) return <p className="small muted">В лекциях нет примеров кода.</p>
   return (

@@ -53,3 +53,18 @@ def test_images_pinned_and_lock_files_cover_requirements() -> None:
     pkg = json.loads((ROOT / 'frontend' / 'package.json').read_text(encoding='utf-8'))
     assert pkg['engines']['node'].startswith('>=22')
     assert (ROOT / 'frontend' / 'package-lock.json').exists()
+
+
+def test_openapi_schema_matches_code() -> None:
+    """SPEC-API-28: docs/openapi.json совпадает со схемой приложения, CI сверяет её и запускает ESLint и vitest интерфейса."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location('export_openapi', ROOT / 'scripts' / 'export_openapi.py')
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.OUT.read_text(encoding='utf-8') == mod.render()
+    ci = (ROOT / '.gitea' / 'workflows' / 'ci.yml').read_text(encoding='utf-8')
+    assert 'export_openapi.py --check' in ci and 'npm run check' in ci
+    scripts = json.loads((ROOT / 'frontend' / 'package.json').read_text(encoding='utf-8'))['scripts']
+    assert 'eslint' in scripts['lint'] and 'vitest' in scripts['test']
+    assert 'lint' in scripts['check'] and 'test' in scripts['check']

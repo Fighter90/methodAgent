@@ -91,7 +91,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | Спецификация | Требований | Покрыто | Не покрыты |
 |---|---|---|---|
 | [agent-workflow.md](agent-workflow.md) | 40 | 40 | — |
-| [api.md](api.md) | 27 | 27 | — |
+| [api.md](api.md) | 28 | 28 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 24 | 24 | — |
 | [export.md](export.md) | 13 | 13 | — |
 | [frontend.md](frontend.md) | 20 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20 |
@@ -176,6 +176,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-API-25 | `test_spec_robustness.py::test_interactive_returns_questions_and_resumes`, `test_spec_robustness.py::test_answers_then_auto_completes_kit`, `test_spec_robustness.py::test_answers_endpoint_checks_owner` |
 | SPEC-API-26 | `test_spec_robustness.py::test_auto_lists_assumptions_for_missing_fields` |
 | SPEC-API-27 | `test_reproducibility.py::test_images_pinned_and_lock_files_cover_requirements` |
+| SPEC-API-28 | `test_reproducibility.py::test_openapi_schema_matches_code` |
 | SPEC-AUTH-01 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
 | SPEC-AUTH-02 | `test_auth.py::test_login_by_login_id_and_all_demo_users`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-AUTH-03 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
