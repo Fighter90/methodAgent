@@ -67,3 +67,13 @@ def test_mixed_index_keeps_semantic_hits_on_top(tmp_path, monkeypatch) -> None:
     hits = asyncio.run(orgdocs.search('практическая подготовка', k=2))
     assert [h['doc_id'] for h in hits] == ['kb-001', 'kb-002']
     assert hits[1]['score'] <= hits[0]['score'] / 2 + 1e-6
+
+
+def test_kb_search_fuses_org_and_norms_by_rank() -> None:
+    """SPEC-KB-19: выдача /kb/search сливает документы организации и выжимки норм по местам в своих выдачах, а не по сырым оценкам разных шкал; при равном месте документ организации идёт первым."""
+    from app.programs.extra_router import fuse
+
+    org = [{'doc_id': 'kb-1', 'kind': 'regulation', 'score': 0.38}, {'doc_id': 'kb-2', 'kind': 'regulation', 'score': 0.31}]
+    law = [{'doc_id': 'n-1', 'kind': 'norm', 'score': 1.15}, {'doc_id': 'n-2', 'kind': 'norm', 'score': 0.9}]
+    assert [h['doc_id'] for h in fuse(org, law, 3)] == ['kb-1', 'n-1', 'kb-2']
+    assert [h['doc_id'] for h in fuse([], law, 5)] == ['n-1', 'n-2']

@@ -158,9 +158,18 @@ class SearchIn(BaseModel):
 async def kb_search(body: SearchIn, p: Principal = Depends(require('admin', 'methodist', 'head', 'expert'))) -> list[dict[str, Any]]:
     from app.kb import norms
 
-    hits = await orgdocs.search(body.query, body.k) + norms.search(body.query, k=body.k)
-    # документы своей организации важнее общей нормативной базы при близкой оценке
-    return sorted(hits, key=lambda h: -(h['score'] + (0.25 if h.get('kind') != 'norm' else 0)))[: body.k]
+    org = await orgdocs.search(body.query, body.k)
+    law = norms.search(body.query, k=body.k)
+    return fuse(org, law, body.k)
+
+
+def fuse(org: list[dict[str, Any]], law: list[dict[str, Any]], k: int) -> list[dict[str, Any]]:
+    """Слияние двух выдач по рангам (reciprocal rank fusion): у документов организации косинус 0,3–0,6,
+    у выжимок норм доля слов с бонусом до 1,5 — оценки несопоставимы, а места в своей выдаче сопоставимы.
+    Документы своей организации при равном месте идут раньше общей нормативной базы."""
+    ranked = [(1 / (60 + i), 0, h) for i, h in enumerate(org)] + [(1 / (60 + i), 1, h) for i, h in enumerate(law)]
+    ranked.sort(key=lambda x: (-x[0], x[1]))
+    return [h for _, _, h in ranked[:k]]
 
 
 @router.get('/kb/norms', summary='Нормативная база знаний: выжимки НПА, ФГОС и рекомендаций с источником и датой проверки')
