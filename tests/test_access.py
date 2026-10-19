@@ -45,12 +45,14 @@ def kit(client) -> str:
 
 
 def test_no_token_cannot_read_others(client, kit) -> None:
+    """SPEC-AUTH-04, SPEC-EXPORT-10"""
     assert client.get(f'/api/v1/programs/{kit}').status_code == 401
     assert client.get(f'/api/v1/programs/{kit}/export/docx').status_code == 401
     assert all(p['id'] != kit for p in client.get('/api/v1/programs').json())
 
 
 def test_auto_async_returns_202_and_job_result(client) -> None:
+    """SPEC-API-06, SPEC-FLOW-02, SPEC-RULES-04"""
     r = client.post('/api/v1/programs?mode=auto', json={'request': REQ, 'wait': False})
     assert r.status_code == 202, r.text
     job = r.json()['job_id']
@@ -64,6 +66,7 @@ def test_auto_async_returns_202_and_job_result(client) -> None:
 
 
 def test_expert_sees_only_own_modules_and_accepts_items(client, kit) -> None:
+    """SPEC-API-12, SPEC-API-13, SPEC-API-14, SPEC-AUTH-08, SPEC-EXPORT-10, SPEC-FLOW-16, SPEC-FLOW-17, SPEC-FLOW-18"""
     hm, he = _h(client, 'u-madina'), _h(client, 'u-timur')
     doc = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
     m1, m2 = doc['modules'][0]['id'], doc['modules'][1]['id']
@@ -89,6 +92,7 @@ def test_expert_sees_only_own_modules_and_accepts_items(client, kit) -> None:
 
 
 def test_restore_does_not_bring_back_approval(client, kit) -> None:
+    """SPEC-API-11, SPEC-API-12, SPEC-FLOW-22"""
     hm = _h(client, 'u-madina')
     from app.programs.schemas import Status
 
@@ -101,6 +105,7 @@ def test_restore_does_not_bring_back_approval(client, kit) -> None:
 
 
 def test_json_export_follows_schema_48(client, kit) -> None:
+    """SPEC-EXPORT-04"""
     import json
 
     hm = _h(client, 'u-madina')
@@ -113,6 +118,7 @@ def test_json_export_follows_schema_48(client, kit) -> None:
 
 
 def test_edit_hours_keeps_module_total_and_text_edit_finds_target(client, kit) -> None:
+    """SPEC-AUTH-09, SPEC-FLOW-13, SPEC-FLOW-14"""
     hm = _h(client, 'u-madina')
     doc = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
     m = doc['modules'][0]
@@ -135,6 +141,7 @@ def test_edit_hours_keeps_module_total_and_text_edit_finds_target(client, kit) -
 
 
 def test_module_accept_requires_all_items(client, kit) -> None:
+    """SPEC-API-02, SPEC-API-13, SPEC-FLOW-17"""
     he = _h(client, 'u-timur')
     review = next(r for r in client.get('/api/v1/reviews', headers=he).json())
     r = client.post(f'/api/v1/reviews/{review["rid"]}/decision', json={'decision': 'accept'}, headers=he)
@@ -142,6 +149,7 @@ def test_module_accept_requires_all_items(client, kit) -> None:
 
 
 def test_admin_profile_registry_and_expert_suggestions(client, kit) -> None:
+    """SPEC-FLOW-29, SPEC-KB-14, SPEC-KB-15, SPEC-SKILLS-09"""
     ha, hm = _h(client, 'u-admin'), _h(client, 'u-madina')
     assert client.put('/api/v1/org/profile', json={'defaults': {'volume_h': 36}}, headers=hm).status_code == 403
     r = client.put('/api/v1/org/profile', json={'defaults': {'volume_h': 36, 'form': 'очная'}}, headers=ha)
@@ -162,6 +170,7 @@ def test_admin_profile_registry_and_expert_suggestions(client, kit) -> None:
 
 
 def test_head_sees_quality_and_owners(client, kit) -> None:
+    """SPEC-FLOW-20, SPEC-FLOW-21"""
     hh = _h(client, 'u-ahmed')
     doc = client.get(f'/api/v1/programs/{kit}', headers=hh).json()
     q = doc['quality']
@@ -171,6 +180,7 @@ def test_head_sees_quality_and_owners(client, kit) -> None:
 
 
 def test_unassigned_expert_cannot_accept_and_api_404(client, kit) -> None:
+    """SPEC-API-01, SPEC-API-05, SPEC-AUTH-09, SPEC-FLOW-17"""
     hm, he = _h(client, 'u-madina'), _h(client, 'u-timur')
     doc = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
     free = next((m for m in doc['modules'] if not m['expert_id']), None)

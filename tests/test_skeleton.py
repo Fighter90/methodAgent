@@ -20,6 +20,7 @@ REQ = ('Нужна программа повышения квалификаци�
 @given(duration=st.integers(5, 400), mins=st.lists(st.integers(1, 120), min_size=1, max_size=10))
 @settings(max_examples=200, deadline=None)
 def test_fit_plan_sums_to_duration(duration: int, mins: list[int]) -> None:
+    """SPEC-FLOW-12"""
     plan = [{'min': m, 'text': str(i)} for i, m in enumerate(mins)]
     out = fit_plan(plan, duration)
     assert sum(p['min'] for p in out) == duration
@@ -27,6 +28,7 @@ def test_fit_plan_sums_to_duration(duration: int, mins: list[int]) -> None:
 
 
 def test_match_tf_by_meaning() -> None:
+    """SPEC-SKILLS-11"""
     from app.skills.skeleton.run import match_tf
 
     ps = ProfStandard(code='06.001', title='Программист', order='', tf=[
@@ -39,6 +41,7 @@ def test_match_tf_by_meaning() -> None:
 
 
 def test_pdf_reference_hours_checked() -> None:
+    """SPEC-KB-12"""
     fitz = pytest.importorskip('fitz')
     font = Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
     if not font.exists():
@@ -104,6 +107,7 @@ def _skeleton(client, request: str = REQ) -> tuple[str, dict]:
 
 
 def test_topic_hours_manual_and_assumptions(client) -> None:
+    """SPEC-FLOW-01, SPEC-FLOW-05, SPEC-FLOW-06, SPEC-RULES-17, SPEC-SKILLS-09"""
     h = _h(client, 'u-madina')
     pid, doc = _skeleton(client, 'Нужна программа «Основы Git» для разработчиков. Темы: ветки, слияние.')
     assert doc['report']['assumptions'], 'допущения агента видны в отчёте (FR-13)'
@@ -125,6 +129,7 @@ def test_topic_hours_manual_and_assumptions(client) -> None:
 
 
 def test_decisions_per_node(client) -> None:
+    """SPEC-FLOW-08, SPEC-RULES-15, SPEC-RULES-17"""
     from app.agent import workflow as wf
     from app.programs.schemas import ProgramDoc
 
@@ -148,6 +153,7 @@ def test_decisions_per_node(client) -> None:
 
 
 def test_calendar_kinds_and_lecture_plans(client) -> None:
+    """SPEC-FLOW-12, SPEC-SOLVER-14"""
     r = client.post('/api/v1/programs?mode=auto', json={'request': REQ}, headers=_h(client, 'u-madina'))
     assert r.status_code == 200, r.text
     pid = r.json()['program_id']

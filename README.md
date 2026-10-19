@@ -16,7 +16,7 @@
 
 ## Документация
 
-Подробная документация лежит в [`docs/`](docs/).
+Подробная документация лежит в [`docs/`](docs/). Подробная wiki для пользователей и разработчиков — в [`wiki/`](wiki/Home.md), спецификации требований (SDD, формат EARS) — в [`specs/`](specs/README.md).
 
 | Раздел | О чём |
 |---|---|
@@ -130,7 +130,11 @@ curl -X POST 'http://localhost:8000/api/v1/programs?mode=auto' \
 ```bash
 PYTHONPATH=src pytest -q          # модульные и API-тесты
 python scripts/autorun.py         # пять открытых кейсов с проверкой по чек-листам
+PYTHONPATH=src pytest --cov=src/app --cov-report=term   # покрытие, порог 60% (.coveragerc)
+python scripts/spec_trace.py      # трассировка требований specs/ → тесты
 ```
+
+Разработка ведётся по SDD: сначала требование в `specs/` с идентификатором `SPEC-<МОДУЛЬ>-NN`, потом тест, который ссылается на него в docstring, потом код.
 
 Подробно: [разработка и тесты](docs/development.md).
 
@@ -154,4 +158,6 @@ testset/        открытые запросы кейса
 scripts/        автопрогон и развёртывание на ВМ
 tests/          pytest
 docs/           документация
+wiki/           подробная wiki (страницы в формате Gitea Wiki)
+specs/          спецификации требований SDD (EARS)
 ```

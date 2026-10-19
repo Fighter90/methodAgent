@@ -14,12 +14,14 @@ def ids(ptype: ProgramType, text: str) -> list[str]:
 
 
 def test_repealed_acts_are_not_used():
+    """SPEC-KB-01, SPEC-KB-02"""
     acts = {i['id'] for i in registry()['npa']}
     assert 'order-499' not in acts and 'order-816' not in acts
     assert all('утратил' not in str(i.get('status', '')).lower() for i in registry()['npa'])
 
 
 def test_core_and_keyword_acts():
+    """SPEC-KB-03, SPEC-KB-04"""
     dpp = ids(ProgramType.DPP_PK, CASES[3])
     assert dpp[:2] == ['law-273', 'order-266']
     assert 'decree-1678' not in dpp, 'очно-заочная форма сама по себе не означает ДОТ'
@@ -33,12 +35,14 @@ def test_core_and_keyword_acts():
 
 
 def test_profstandards_for_cases():
+    """SPEC-KB-05"""
     picked = {cid: pick_ps(CASES[cid]) for cid in (2, 3, 4, 5)}
     assert {cid: ps.code for cid, ps in picked.items()} == {2: '01.001', 3: '06.042', 4: '06.033', 5: '06.026'}
     assert all(0 < len(ps.tf) <= 12 for ps in picked.values())
 
 
 def test_norm_digests_link_to_registry():
+    """SPEC-KB-07"""
     acts = {i['id'] for i in registry()['npa']}
     docs = norms.norms()
     assert len(docs) >= 24
@@ -48,6 +52,7 @@ def test_norm_digests_link_to_registry():
 
 
 def test_norm_base_for_school_college_university():
+    """SPEC-KB-06, SPEC-KB-07"""
     from app.kb.registry import norm_base_for_level
 
     school = {s.id for s in norm_base_for_level('school', 'Рабочая программа для детей с ОВЗ, адаптированная')}

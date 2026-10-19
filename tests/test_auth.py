@@ -30,6 +30,7 @@ def _login(client, login: str, password: str = 'demo') -> dict:
 
 
 def test_login_by_login_id_and_all_demo_users(client) -> None:
+    """SPEC-AUTH-01, SPEC-AUTH-02, SPEC-AUTH-03, SPEC-AUTH-12, SPEC-AUTH-23"""
     cfg = client.get('/api/v1/auth/config').json()
     assert {u['login'] for u in cfg['demo_accounts']} == {'madina', 'timur', 'olga', 'ahmed', 'admin', 'api'}
     assert cfg['sso']['available'] is False
@@ -46,6 +47,7 @@ def test_login_by_login_id_and_all_demo_users(client) -> None:
 
 
 def test_register_gets_minimal_role_and_cabinet(client) -> None:
+    """SPEC-API-02, SPEC-API-03, SPEC-AUTH-02, SPEC-AUTH-10, SPEC-AUTH-13"""
     body = {'name': 'Ирина Петрова', 'login': 'irina', 'email': 'irina@example.ru', 'password': 'Secret123', 'consent': True}
     assert client.post('/api/v1/auth/register', json={**body, 'password': 'short'}).status_code == 422
     assert client.post('/api/v1/auth/register', json={**body, 'password': 'onlyletters'}).json()['code'] == 'WEAK_PASSWORD'
@@ -65,6 +67,7 @@ def test_register_gets_minimal_role_and_cabinet(client) -> None:
 
 
 def test_admin_manages_users_but_not_programs(client) -> None:
+    """SPEC-AUTH-06, SPEC-AUTH-07, SPEC-AUTH-15, SPEC-AUTH-16, SPEC-AUTH-20, SPEC-AUTH-21"""
     ha = _login(client, 'admin')
     users = client.get('/api/v1/admin/users', headers=ha).json()
     irina = next(u for u in users if u['login'] == 'irina')
@@ -92,6 +95,7 @@ def test_admin_manages_users_but_not_programs(client) -> None:
 
 
 def test_settings_secret_masked_encrypted_and_applied(client) -> None:
+    """SPEC-AUTH-18, SPEC-AUTH-20"""
     import asyncio
 
     from sqlalchemy import select
@@ -123,6 +127,7 @@ def test_settings_secret_masked_encrypted_and_applied(client) -> None:
 
 
 def test_registration_and_demo_switches(client) -> None:
+    """SPEC-AUTH-11, SPEC-AUTH-12"""
     ha = _login(client, 'admin')
     client.put('/api/v1/admin/settings', json={'values': {'registration_enabled': False}}, headers=ha)
     body = {'name': 'Гость', 'login': 'guest1', 'password': 'Guest12345', 'consent': True}
@@ -137,6 +142,7 @@ def test_registration_and_demo_switches(client) -> None:
 
 
 def test_skill_override_and_reset(client) -> None:
+    """SPEC-API-17, SPEC-SKILLS-01, SPEC-SKILLS-02, SPEC-SKILLS-03"""
     from app.skills.base import load_skills
 
     ha = _login(client, 'admin')

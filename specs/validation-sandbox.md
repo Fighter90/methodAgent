@@ -1,0 +1,26 @@
+# Песочница примеров кода
+
+Префикс требований: `SPEC-SANDBOX`. Код: `src/app/validation/sandbox.py`. Подробности — [docs/validation.md](../docs/validation.md#песочница-sandboxpy). Тесты: `tests/test_spec_sandbox.py`.
+
+## Назначение
+
+Выполнение примеров кода из лекций в отдельном процессе без сети, с лимитами времени, CPU и памяти (правило V-24, отчёт песочницы FR-46). Примеры, обращающиеся к системе, не запускаются; примеры с тяжёлыми библиотеками проверяются только на синтаксис.
+
+## Требования
+
+| ID | Требование | Источник | Тест |
+|---|---|---|---|
+| SPEC-SANDBOX-01 | IF пример пуст, THEN THE SYSTEM SHALL не запускать его и вернуть `ok=True`, режим `skip`. | код | `test_spec_sandbox.py::test_empty_code_skipped` |
+| SPEC-SANDBOX-02 | IF пример обращается к системе, сети, файлам, dunder-атрибутам или вызывает `eval`/`exec`/`open` и подобные, THEN THE SYSTEM SHALL не запускать его и вернуть режим `skip` с сообщением «проверьте вручную». | V-24 | `test_spec_sandbox.py::test_system_access_not_run` |
+| SPEC-SANDBOX-03 | IF пример импортирует тяжёлую библиотеку (pandas, numpy, matplotlib, seaborn, sklearn, requests, sqlalchemy) или использует sqlite3, THEN THE SYSTEM SHALL только скомпилировать его (режим `syntax`) и при синтаксической ошибке вернуть «Синтаксическая ошибка: … (строка N)». | V-24 | `test_spec_sandbox.py::test_heavy_libraries_syntax_only` |
+| SPEC-SANDBOX-04 | THE SYSTEM SHALL определять импортируемые библиотеки примера без повторов в порядке появления. | FR-46 | `test_spec_sandbox.py::test_libraries_detected_in_order` |
+| SPEC-SANDBOX-05 | WHEN пример допускает запуск, THE SYSTEM SHALL выполнить его в отдельном процессе `python -I` во временном каталоге с подачей ввода `5\n5\n5\n` и вернуть stdout (до 800 символов), время и режим `run`. | V-24, FR-46 | `test_spec_sandbox.py::test_run_success_stdout_and_input` |
+| SPEC-SANDBOX-06 | IF процесс завершился с ненулевым кодом, THEN THE SYSTEM SHALL вернуть `ok=False` и последнюю строку stderr (до 200 символов). | V-24 | `test_spec_sandbox.py::test_run_error_last_stderr_line` |
+| SPEC-SANDBOX-07 | THE SYSTEM SHALL запускать пример с минимальным окружением без переменных родителя, с прокси на недоступный адрес и таймаутом 10 с. | V-24, NFR-10 | `test_spec_sandbox.py::test_network_is_blocked` |
+| SPEC-SANDBOX-08 | IF пример выполняется дольше 10 с, THEN THE SYSTEM SHALL вернуть `ok=False`, «Пример выполняется дольше 10 с» и время 10 с. | V-24 | `test_spec_sandbox.py::test_timeout_reported` |
+| SPEC-SANDBOX-09 | THE SYSTEM SHALL возвращать из `run_snippet` `None` при успехе и текст ошибки при сбое. | код | `test_spec_sandbox.py::test_run_snippet` |
+| SPEC-SANDBOX-10 | WHEN проверяются примеры комплекта, THE SYSTEM SHALL выполнить не больше `limit` (по умолчанию 12) примеров по порядку лекций и вернуть ошибки в виде «Пример к лекции <название>: <ошибка>». | V-24 | `test_spec_sandbox.py::test_check_examples_limit_and_messages` |
+
+## Вне области
+
+Лимиты `RLIMIT_CPU/AS/NPROC` в дочернем процессе (`_limits`, не измеряются тестами), отчёт песочницы `extras.sandbox_report`, исправление упавших примеров моделью (`workflow._fix_examples`). Тесты с реальным запуском пропускаются (`pytest.skip`), если песочница недоступна в окружении.

@@ -1,0 +1,42 @@
+# Вход, роли и разделение прав
+
+Префикс требований: `SPEC-AUTH`. Код: `src/app/auth/router.py`, `src/app/auth/service.py`, `src/app/core/security.py`, `src/app/core/crypto.py`, `src/app/core/runtime.py` (секреты настроек). Подробности — [docs/roles-and-access.md](../docs/roles-and-access.md).
+
+## Назначение
+
+Модуль выдаёт и проверяет токены, ведёт учётные записи (демо, регистрация, администрирование), разводит пять ролей (`methodist`, `expert`, `head`, `admin`, `api`) строго по таблице 19 ТЗ и хранит секреты настроек зашифрованными. Права всегда проверяет сервер; интерфейс только скрывает разделы.
+
+## Требования
+
+| ID | Требование | Источник | Тест |
+|---|---|---|---|
+| SPEC-AUTH-01 | THE SYSTEM SHALL поддерживать ровно пять ролей `methodist`, `expert`, `head`, `admin`, `api` и выдавать токен JWT (`sub`, `role`, `exp`), подписанный `SECRET_KEY` и несущий одну активную роль. | NFR-10 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
+| SPEC-AUTH-02 | WHEN пользователь входит по логину, почте или id с верным паролем, THE SYSTEM SHALL вернуть сессию с ролью пользователя; IF пароль неверен, THEN THE SYSTEM SHALL ответить 401. | NFR-10, Доп. | `test_auth.py::test_login_by_login_id_and_all_demo_users`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
+| SPEC-AUTH-03 | WHEN запрос содержит заголовок `X-MA-Token`, THE SYSTEM SHALL проверять его вместо `Authorization`; IF токен недействителен или истёк, THEN THE SYSTEM SHALL ответить 401. | код | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
+| SPEC-AUTH-04 | WHEN запрос пришёл без токена, THE SYSTEM SHALL выполнять GET/HEAD/OPTIONS как анонимный `api` (видны только программы `u-api`, к чужой программе — 401), `POST /programs?mode=auto` — как анонимный `api`, а остальные запросы отклонять с 401. | NFR-10, FR-62 | `test_access.py::test_no_token_cannot_read_others`, `test_extras.py::test_anonymous_limited_to_auto_and_reads` |
+| SPEC-AUTH-05 | IF анонимный клиент превысил `anon_runs_per_hour` автопрогонов в час с одного IP, THEN THE SYSTEM SHALL ответить 429 `RATE_LIMIT`. | NFR-14 | `test_spec_misc.py::test_anon_rate_limit` |
+| SPEC-AUTH-06 | IF активная роль не входит в список ролей метода (`require`), THEN THE SYSTEM SHALL ответить 403 `FORBIDDEN_ROLE` с `details.allowed`. | NFR-10 | `test_core.py::test_roles`, `test_auth.py::test_admin_manages_users_but_not_programs` |
+| SPEC-AUTH-07 | THE SYSTEM SHALL разводить роли: администратор не создаёт и не видит программы и не вычитывает (403 на `/programs`, `/reviews`), эксперт и руководитель не создают программы. | Доп. (табл. 19) | `test_auth.py::test_admin_manages_users_but_not_programs`, `test_core.py::test_roles` |
+| SPEC-AUTH-08 | WHILE активная роль — `expert`, THE SYSTEM SHALL показывать в карточке программы только назначенные ему модули и их элементы комплекта, отдавать `program = null` и отклонять выгрузку и журнал программы с 403. | FR-44 | `test_access.py::test_expert_sees_only_own_modules_and_accepts_items` |
+| SPEC-AUTH-09 | IF эксперт принимает решение по неназначенному ему модулю или правит часы, THEN THE SYSTEM SHALL ответить 403. | FR-44, FR-48 | `test_access.py::test_unassigned_expert_cannot_accept_and_api_404`, `test_access.py::test_edit_hours_keeps_module_total_and_text_edit_finds_target` |
+| SPEC-AUTH-10 | WHEN пользователь регистрируется, THE SYSTEM SHALL требовать согласие (`CONSENT_REQUIRED`), пароль не короче 8 символов с буквой и цифрой (`WEAK_PASSWORD`), уникальный логин (`LOGIN_TAKEN`) и назначать роль `registration_default_role` (по умолчанию `expert`, без модулей — пустой список программ). | Доп. | `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
+| SPEC-AUTH-11 | IF регистрация выключена (`registration_enabled = false`), THEN THE SYSTEM SHALL ответить 403 `REGISTRATION_CLOSED`; WHEN роль по умолчанию изменена на `methodist`, `expert` или `head`, THE SYSTEM SHALL назначать её новым пользователям. | Доп. | `test_auth.py::test_registration_and_demo_switches` |
+| SPEC-AUTH-12 | THE SYSTEM SHALL создавать при первом запуске шесть демо-учёток с паролем `demo`; WHILE `demo_accounts_enabled = false`, THE SYSTEM SHALL отклонять вход и токены демо-учёток (кроме `u-api`, `u-admin`) и не отдавать их в `/auth/config`. | Доп. | `test_auth.py::test_login_by_login_id_and_all_demo_users`, `test_auth.py::test_registration_and_demo_switches` |
+| SPEC-AUTH-13 | WHEN вошедший пользователь меняет профиль или пароль в личном кабинете, THE SYSTEM SHALL сохранить изменения; IF текущий пароль неверен, THEN THE SYSTEM SHALL ответить 400. | Доп. | `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
+| SPEC-AUTH-14 | IF демо-учётка пытается изменить свой профиль или пароль, THEN THE SYSTEM SHALL ответить 403. | Доп. | `test_spec_misc.py::test_demo_account_cannot_change_profile` |
+| SPEC-AUTH-15 | WHEN пользователь переключает роль, THE SYSTEM SHALL выдать новый токен, если роль есть среди его ролей, иначе ответить 403. | FR-63 | `test_auth.py::test_admin_manages_users_but_not_programs` |
+| SPEC-AUTH-16 | WHEN администратор создаёт, изменяет роли или отключает пользователя, THE SYSTEM SHALL применить изменения сразу (отключённый не входит — 401); IF снимается роль `admin` или отключается последний активный администратор, THEN THE SYSTEM SHALL ответить 409 `LAST_ADMIN`. | Доп. | `test_auth.py::test_admin_manages_users_but_not_programs` |
+| SPEC-AUTH-17 | THE SYSTEM SHALL хранить пароли только хешем bcrypt. | NFR-10 | `test_spec_misc.py::test_passwords_bcrypt_only` |
+| SPEC-AUTH-18 | WHEN администратор сохраняет секрет настроек, THE SYSTEM SHALL хранить его в БД зашифрованным (`enc1:`), отдавать наружу только маской `••••` + 4 последних символа, не перезаписывать значение маской, применять настройки сразу и по `clear` возвращать значение окружения. | NFR-10 | `test_auth.py::test_settings_secret_masked_encrypted_and_applied` |
+| SPEC-AUTH-19 | IF секрет зашифрован другим `SECRET_KEY` или повреждён, THEN THE SYSTEM SHALL отказать в расшифровке (`SecretUnreadable`). | код | `test_spec_misc.py::test_secret_unreadable` |
+| SPEC-AUTH-20 | THE SYSTEM SHALL открывать методы `/admin/*` (пользователи, настройки, навыки, журнал) только роли `admin`. | NFR-10 | `test_auth.py::test_settings_secret_masked_encrypted_and_applied`, `test_auth.py::test_admin_manages_users_but_not_programs` |
+| SPEC-AUTH-21 | WHEN происходит регистрация, смена пароля, изменение пользователя, настроек, навыка, профиля или реестра организации, THE SYSTEM SHALL записать событие в журнал организации без значений паролей и секретов. | FR-58, NFR-12 | `test_auth.py::test_admin_manages_users_but_not_programs` |
+| SPEC-AUTH-22 | IF `SECRET_KEY` короче 16 символов или содержит `change-me`, THEN THE SYSTEM SHALL использовать случайный ключ из `data_dir/.secret_key`. | код | `test_spec_misc.py::test_weak_secret_key_replaced` |
+| SPEC-AUTH-23 | WHEN запрашивается вход через SSO, THE SYSTEM SHALL ответить 400 `SSO_NOT_AVAILABLE` и отдавать в `/auth/config` признак `sso.available = false`. | Доп. | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
+
+## Вне области
+
+- Настоящий вход через SSO организации (кнопка предусмотрена, помечена «скоро»).
+- Восстановление пароля по почте, двухфакторная аутентификация.
+- Права на уровне отдельных полей программы (кроме правил эксперта).
+- Интерфейсное скрытие разделов — см. [frontend.md](frontend.md).

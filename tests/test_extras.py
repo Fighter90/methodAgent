@@ -40,6 +40,7 @@ def program(client) -> str:
 
 
 def test_anonymous_limited_to_auto_and_reads(client, program) -> None:
+    """SPEC-AUTH-04"""
     assert client.get(f'/api/v1/programs/{program}').status_code == 200
     r = client.post('/api/v1/programs', json={'request': REQ})
     assert r.status_code == 401
@@ -48,6 +49,7 @@ def test_anonymous_limited_to_auto_and_reads(client, program) -> None:
 
 
 def test_adapt_keeps_competencies_and_resolves_hours(client, program) -> None:
+    """SPEC-FLOW-25, SPEC-SOLVER-04"""
     src = client.get(f'/api/v1/programs/{program}').json()
     r = client.post(f'/api/v1/programs/{program}/adapt', json={'volume_h': 36, 'audience': 'аналитики малого бизнеса'}, headers=_h(client, 'u-madina'))
     assert r.status_code == 200, r.text
@@ -60,6 +62,7 @@ def test_adapt_keeps_competencies_and_resolves_hours(client, program) -> None:
 
 
 def test_change_template_before_approval(client) -> None:
+    """SPEC-FLOW-24, SPEC-SOLVER-07"""
     h = _h(client, 'u-madina')
     r = client.post('/api/v1/programs', json={'request': REQ, 'answers': {}}, headers=h)
     pid = r.json()['program_id']
@@ -80,6 +83,7 @@ def test_change_template_before_approval(client) -> None:
 
 
 def test_actualize_text_and_program(client, program) -> None:
+    """SPEC-API-18, SPEC-FLOW-26"""
     from app.agent.extras import scan_text
 
     found = scan_text('Используем Python 2.7 и df.append, PostgreSQL 12, ChatGPT для проверки. Иванов И. Учебник. — М., 2009. — 300 с.')
@@ -92,6 +96,7 @@ def test_actualize_text_and_program(client, program) -> None:
 
 
 def test_versions_diff_and_sections(client, program) -> None:
+    """SPEC-API-10, SPEC-API-11, SPEC-FLOW-23, SPEC-FLOW-30"""
     h = _h(client, 'u-madina')
     vs = client.get(f'/api/v1/programs/{program}/versions', headers=h).json()
     assert len(vs) >= 2
@@ -105,6 +110,7 @@ def test_versions_diff_and_sections(client, program) -> None:
 
 
 def test_sandbox_and_tasks(client, program) -> None:
+    """SPEC-API-15, SPEC-FLOW-27, SPEC-FLOW-28"""
     r = client.get(f'/api/v1/programs/{program}/sandbox', headers=_h(client, 'u-madina'))
     assert r.status_code == 200 and 'items' in r.json()
     t = client.get('/api/v1/me/tasks', headers=_h(client, 'u-ahmed')).json()
@@ -112,11 +118,13 @@ def test_sandbox_and_tasks(client, program) -> None:
 
 
 def test_head_filter(client, program) -> None:
+    """SPEC-API-09"""
     r = client.get('/api/v1/programs?status=on_approval,approved', headers=_h(client, 'u-ahmed'))
     assert r.status_code == 200 and all(p['status'] in ('on_approval', 'approved') for p in r.json())
 
 
 def test_kb_upload_and_search(client) -> None:
+    """SPEC-API-23, SPEC-KB-09, SPEC-KB-10"""
     text = 'Положение о дополнительном образовании. Итоговая аттестация проводится в форме защиты проекта. Объём программы не менее 16 часов.'
     r = client.post('/api/v1/kb/documents', files={'file': ('polozhenie.txt', io.BytesIO(text.encode()), 'text/plain')}, data={'kind': 'regulation'}, headers=_h(client, 'u-admin'))
     assert r.status_code == 200, r.text
@@ -126,6 +134,7 @@ def test_kb_upload_and_search(client) -> None:
 
 
 def test_skeleton_guards() -> None:
+    """SPEC-SKILLS-12"""
     from app.programs.schemas import Module, Params, Topic
     from app.skills.skeleton.run import (
         SkeletonDraft,
@@ -177,6 +186,7 @@ def test_judge_merge_and_title_cap() -> None:
 
 
 def test_sources_school_and_generic_docs() -> None:
+    """SPEC-KB-08"""
     from app.kb.registry import literature_for, match_source
 
     assert match_source('GitLab Docs')['id'] == 'lit-gitlab-ci-docs'
@@ -185,6 +195,7 @@ def test_sources_school_and_generic_docs() -> None:
 
 
 def test_interview_questions_vary(client, program) -> None:
+    """SPEC-FLOW-31"""
     from app.agent.workflow import interview_questions
     from app.programs.schemas import ProgramDoc
 
@@ -195,6 +206,7 @@ def test_interview_questions_vary(client, program) -> None:
 
 
 def test_parse_json_truncated_reasoning() -> None:
+    """SPEC-LLM-01: оборванный блок рассуждения не мешает разбору JSON."""
     import json
 
     from app.llm.client import parse_json
@@ -205,6 +217,7 @@ def test_parse_json_truncated_reasoning() -> None:
 
 
 def test_blocked_services_scrubbed() -> None:
+    """SPEC-CONTENT-11: сервисы, недоступные в России, вычищаются из текста."""
     from app.skills.content.run import ModuleContentLLM, scrub_blocked
 
     data = ModuleContentLLM.model_validate({
@@ -219,7 +232,7 @@ def test_blocked_services_scrubbed() -> None:
 
 
 def test_daily_limit_fails_fast(tmp_path, monkeypatch) -> None:
-    """429 «суточный лимит» не повторяется и не идёт в резерв; перегрузка шлюза — повторяется."""
+    """SPEC-LLM-11: 429 «суточный лимит» не повторяется и не идёт в резерв; перегрузка шлюза — повторяется."""
     import asyncio
 
     from app.llm import client as c
@@ -259,6 +272,7 @@ def test_daily_limit_fails_fast(tmp_path, monkeypatch) -> None:
 
 
 def test_budget_day_is_moscow(monkeypatch) -> None:
+    """SPEC-LLM-15: сутки расхода считаются по Москве."""
     from app.llm import client as c
 
     monkeypatch.setattr(c.time, 'time', lambda: 1760738400.0)  # 2025-10-17 22:00 UTC = 18.10 01:00 МСК
@@ -266,6 +280,7 @@ def test_budget_day_is_moscow(monkeypatch) -> None:
 
 
 def test_cyrillic_txt_cut_at_2000_bytes_is_text():
+    """SPEC-KB-11"""
     from app.kb.files import detect_format
 
     body = ('я' * 999 + 'ж' * 10).encode('utf-8')  # 2000-й байт приходится на середину буквы
@@ -274,5 +289,6 @@ def test_cyrillic_txt_cut_at_2000_bytes_is_text():
 
 
 def test_skills_list_endpoint(client) -> None:
+    """SPEC-API-16, SPEC-SKILLS-01"""
     r = client.get('/api/v1/skills')
     assert r.status_code == 200 and any(s['name'] == 'skeleton' for s in r.json())

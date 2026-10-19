@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @given(total=st.integers(1, 500), weights=st.lists(st.floats(0.1, 10), min_size=1, max_size=12))
 @settings(max_examples=200, deadline=None)
 def test_largest_remainder_sums(total: int, weights: list[float]) -> None:
+    """SPEC-SOLVER-01"""
     parts = largest_remainder(total, weights)
     assert sum(parts) == total
     assert all(p >= 0 for p in parts)
@@ -41,6 +42,7 @@ def client(tmp_path_factory):
 
 @pytest.mark.parametrize('case_id', [1, 2, 3, 4, 5])
 def test_open_cases_auto(client, case_id: int) -> None:
+    """SPEC-API-07, SPEC-EXPORT-02, SPEC-FLOW-02, SPEC-FLOW-03, SPEC-RULES-04, SPEC-RULES-05, SPEC-RULES-20, SPEC-SKILLS-05, SPEC-SOLVER-04, SPEC-SOLVER-05, SPEC-SOLVER-06"""
     import base64
 
     case = next(c for c in json.loads((ROOT / 'testset' / 'cases.json').read_text()) if c['id'] == case_id)
@@ -58,6 +60,7 @@ def test_open_cases_auto(client, case_id: int) -> None:
 
 
 def test_roles(client) -> None:
+    """SPEC-AUTH-06, SPEC-AUTH-07"""
     tok = client.post('/api/v1/auth/login', json={'user_id': 'u-timur', 'password': 'demo'}).json()['access_token']
     r = client.post('/api/v1/programs', json={'request': 'Курс Python 16 часов для школьников'}, headers={'Authorization': f'Bearer {tok}'})
     assert r.status_code == 403

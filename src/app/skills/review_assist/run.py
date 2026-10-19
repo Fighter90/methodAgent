@@ -23,7 +23,7 @@ def fragment_of(doc: ProgramDoc, node_id: str) -> str:
     base, _, part = node_id.partition('#')
     for t in doc.kit.tasks:
         if t.id == base:
-            if part.startswith('c') and part[1:].isdigit() and int(part[1:]) <= len(t.criteria):
+            if part.startswith('c') and part[1:].isdigit() and 1 <= int(part[1:]) <= len(t.criteria):
                 return f'Критерий задания «{t.title}»: {t.criteria[int(part[1:]) - 1].text}'
             return f'{t.title}: {t.statement}; критерии: ' + '; '.join(c.text for c in t.criteria)
     for q in doc.kit.questions:
@@ -31,7 +31,7 @@ def fragment_of(doc: ProgramDoc, node_id: str) -> str:
             return q.stem + ' | ' + ' / '.join(q.options)
     for lec in doc.kit.lectures:
         if lec.id == base:
-            if part.startswith('p') and part[1:].isdigit() and int(part[1:]) <= len(lec.plan):
+            if part.startswith('p') and part[1:].isdigit() and 1 <= int(part[1:]) <= len(lec.plan):
                 step = lec.plan[int(part[1:]) - 1]
                 return f'Пункт плана лекции «{lec.title}»: {step.get("min", "")} мин — {step.get("text", "")}'
             return f'Лекция «{lec.title}»: ' + '; '.join(str(x.get('text', '')) for x in lec.plan)

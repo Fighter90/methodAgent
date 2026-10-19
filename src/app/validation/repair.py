@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+import zlib
 
 from app.programs.schemas import (
     Assessment,
@@ -25,8 +26,11 @@ def repair(doc: ProgramDoc, rules: list[RuleResult]) -> list[str]:
     lo_ids = {lo.id for lo in doc.all_outcomes()}
     if 'V-19' in failed:
         for q in doc.kit.questions:
+            right = q.options[q.key].strip() if 0 <= q.key < len(q.options) else None
             uniq = list(dict.fromkeys(o.strip() for o in q.options))
             if len(uniq) != len(q.options):
+                if right is not None:
+                    q.key = uniq.index(right)
                 while len(uniq) < 4:
                     uniq.append(f'Другой вариант {len(uniq) + 1}')
                 q.options = uniq
@@ -48,7 +52,7 @@ def repair(doc: ProgramDoc, rules: list[RuleResult]) -> list[str]:
             valid = [x for x in q.lo_ids if x in lo_ids]
             if not valid:
                 pool = module_lo.get(q.module_id or '', []) or list(lo_ids)
-                valid = [pool[hash(q.id) % len(pool)]] if pool else []
+                valid = [pool[zlib.crc32(q.id.encode()) % len(pool)]] if pool else []
                 log.append(f'Вопрос {q.id}: привязан к РО по теме модуля')
             q.lo_ids = valid
     if 'V-13' in failed or 'V-14' in failed:

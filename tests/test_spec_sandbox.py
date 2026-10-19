@@ -1,0 +1,114 @@
+"""Спецификация specs/validation-sandbox.md: песочница примеров кода (V-24, FR-46)."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+
+import pytest
+
+os.environ.setdefault('LLM_PROVIDERS', 'fixtures')
+
+from app.programs.schemas import Lecture, ProgramDoc  # noqa: E402
+from app.validation import sandbox  # noqa: E402
+
+
+@pytest.fixture(scope='module')
+def runtime() -> None:
+    probe = sandbox.run_detailed('print(1)')
+    if not probe['ok'] or probe['stdout'].strip() != '1':
+        pytest.skip(f'Песочница недоступна: {probe["error"]}')
+
+
+def test_empty_code_skipped() -> None:
+    """SPEC-SANDBOX-01: пустой пример не запускается: ok, режим skip."""
+    r = sandbox.run_detailed('   \n')
+    assert r['ok'] and r['mode'] == 'skip' and r['error'] == ''
+
+
+@pytest.mark.parametrize('code', ['import os\nprint(os.getcwd())', 'open("x.txt")', 'print(__import__("sys"))', 'eval("1+1")', 'import socket'])
+def test_system_access_not_run(code: str, monkeypatch) -> None:
+    """SPEC-SANDBOX-02: пример, обращающийся к системе, сети, файлам или eval, не запускается и помечается для ручной проверки."""
+    monkeypatch.setattr(sandbox.subprocess, 'run', lambda *a, **k: pytest.fail('не должен запускаться'))
+    r = sandbox.run_detailed(code)
+    assert r['mode'] == 'skip' and r['ok'] and 'проверьте вручную' in r['error']
+
+
+def test_heavy_libraries_syntax_only(monkeypatch) -> None:
+    """SPEC-SANDBOX-03: пример с тяжёлыми библиотеками или sqlite3 проверяется только на синтаксис, без запуска процесса."""
+    monkeypatch.setattr(sandbox.subprocess, 'run', lambda *a, **k: pytest.fail('не должен запускаться'))
+    ok = sandbox.run_detailed('import pandas as pd\ndf = pd.DataFrame()\n')
+    assert ok['ok'] and ok['mode'] == 'syntax'
+    bad = sandbox.run_detailed('import numpy as np\nx = np.array([1, 2\n')
+    assert not bad['ok'] and bad['mode'] == 'syntax' and bad['error'].startswith('Синтаксическая ошибка')
+    assert 'строка' in bad['error']
+    assert sandbox.run_detailed('import sqlite3\nc = sqlite3.connect(":memory:")')['mode'] == 'syntax'
+
+
+def test_libraries_detected_in_order() -> None:
+    """SPEC-SANDBOX-04: libraries возвращает импортируемые библиотеки без повторов в порядке появления."""
+    code = 'import pandas as pd\nfrom math import pi\n  import pandas\nimport json\n'
+    assert sandbox.libraries(code) == ['pandas', 'math', 'json']
+
+
+def test_run_success_stdout_and_input(runtime) -> None:
+    """SPEC-SANDBOX-05: корректный пример выполняется в отдельном процессе; возвращаются stdout, время и режим run; input() получает данные."""
+    r = sandbox.run_detailed('a = int(input())\nprint(a * 2)')
+    assert r['ok'] and r['mode'] == 'run' and r['stdout'].strip() == '10'
+    assert r['seconds'] >= 0
+
+
+def test_run_error_last_stderr_line(runtime) -> None:
+    """SPEC-SANDBOX-06: при ошибке выполнения ok=False, текст ошибки — последняя строка stderr."""
+    r = sandbox.run_detailed('print("до")\nraise ValueError("плохо")')
+    assert not r['ok'] and r['error'] == 'ValueError: плохо' and 'до' in r['stdout']
+
+
+def test_network_is_blocked(runtime, monkeypatch) -> None:
+    """SPEC-SANDBOX-07: дочерний процесс запускается с пустым прокси и изолированным окружением (без переменных родителя)."""
+    captured = {}
+    real = subprocess.run
+
+    def spy(cmd, **kw):
+        captured.update(kw)
+        return real(cmd, **kw)
+
+    monkeypatch.setattr(sandbox.subprocess, 'run', spy)
+    assert sandbox.run_detailed('print(1)')['ok']
+    assert captured['env']['HTTPS_PROXY'] == 'http://0.0.0.0:9' and 'DATA_DIR' not in captured['env']
+    assert captured['timeout'] == sandbox._TIMEOUT_S
+
+
+def test_timeout_reported(monkeypatch) -> None:
+    """SPEC-SANDBOX-08: IF пример выполняется дольше лимита, THEN ok=False с сообщением о 10 с."""
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired(cmd='python', timeout=10)
+
+    monkeypatch.setattr(sandbox.subprocess, 'run', boom)
+    r = sandbox.run_detailed('while True: pass')
+    assert not r['ok'] and r['error'] == 'Пример выполняется дольше 10 с' and r['seconds'] == 10.0
+
+
+def test_run_snippet(monkeypatch) -> None:
+    """SPEC-SANDBOX-09: run_snippet возвращает None при успехе и текст ошибки при сбое."""
+    monkeypatch.setattr(sandbox, 'run_detailed', lambda code: {'ok': code == 'good', 'error': 'E'})
+    assert sandbox.run_snippet('good') is None
+    assert sandbox.run_snippet('bad') == 'E'
+
+
+def test_check_examples_limit_and_messages(monkeypatch) -> None:
+    """SPEC-SANDBOX-10: check_examples проверяет не больше limit примеров и возвращает ошибки с названием лекции."""
+    seen = []
+
+    def fake(code: str):
+        seen.append(code)
+        return 'упал' if code.startswith('bad') else None
+
+    monkeypatch.setattr(sandbox, 'run_snippet', fake)
+    doc = ProgramDoc(id='p', request='x')
+    doc.kit.lectures = [
+        Lecture(id='l1', topic_id='t', module_id='m', title='Циклы', code_examples=['ok1', 'bad1']),
+        Lecture(id='l2', topic_id='t', module_id='m', title='Функции', code_examples=['bad2', 'ok2']),
+    ]
+    assert sandbox.check_examples(doc, limit=3) == ['Пример к лекции Циклы: упал', 'Пример к лекции Функции: упал']
+    assert seen == ['ok1', 'bad1', 'bad2']

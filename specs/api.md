@@ -1,0 +1,42 @@
+# REST API
+
+Префикс требований: `SPEC-API`. Код: `src/app/main.py`, `src/app/programs/router.py`, `src/app/programs/extra_router.py`, `src/app/core/errors.py`. Подробности — [docs/api.md](../docs/api.md).
+
+## Назначение
+
+HTTP-слой МетодАгента: REST API с префиксом `/api/v1`, единый формат ошибок, задания с опросом статуса, методы программ, вычитки, уведомлений, базы знаний и служебные методы. Права на каждый метод проверяются зависимостями из `core/security.py` (см. [auth-and-roles.md](auth-and-roles.md)).
+
+## Требования
+
+| ID | Требование | Источник | Тест |
+|---|---|---|---|
+| SPEC-API-01 | THE SYSTEM SHALL публиковать методы под `/api/v1` и отвечать `{"status": "ok", "version", "llm"}` на `GET /health` и `GET /api/v1/health`. | NFR-06 | `test_access.py::test_unassigned_expert_cannot_accept_and_api_404` |
+| SPEC-API-02 | IF метод завершился ошибкой приложения, THEN THE SYSTEM SHALL ответить телом `{"code", "message_ru", "details"}` и статусом класса ошибки (400, 401, 403, 404, 409, 429). | NFR-13 | `test_access.py::test_module_accept_requires_all_items`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
+| SPEC-API-03 | IF тело или параметры не соответствуют схеме, THEN THE SYSTEM SHALL ответить 422 `VALIDATION_ERROR` со списком `details.errors`. | код | `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
+| SPEC-API-04 | IF возникло необработанное исключение, THEN THE SYSTEM SHALL ответить 500 `INTERNAL_ERROR` без внутренних деталей. | NFR-10 | `test_spec_misc.py::test_unhandled_error_hides_details` |
+| SPEC-API-05 | WHEN запрошен неизвестный путь под `/api/`, THE SYSTEM SHALL ответить 404 в формате JSON, а не страницей интерфейса. | код | `test_access.py::test_unassigned_expert_cannot_accept_and_api_404` |
+| SPEC-API-06 | WHEN `POST /programs?mode=auto` вызван с `wait=false`, THE SYSTEM SHALL ответить 202 с `job_id`; WHEN задание завершено, THE SYSTEM SHALL отдавать в `GET /jobs/{id}` статус `done` и результат в формате автопрогона. | FR-62 | `test_access.py::test_auto_async_returns_202_and_job_result` |
+| SPEC-API-07 | WHEN `POST /programs?mode=auto` вызван с `wait=true`, THE SYSTEM SHALL вернуть полный ответ автопрогона (каркас, комплект, отчёт, файлы, время, токены); IF прогон упал, THEN THE SYSTEM SHALL вернуть тот же формат со `status: "failed"`, а не 500. | FR-62 | `test_core.py::test_open_cases_auto` |
+| SPEC-API-08 | THE SYSTEM SHALL принимать запрос длиной 5–5000 символов и до 5 вложений не больше `MAX_FILE_SIZE_MB`; IF ограничения нарушены, THEN THE SYSTEM SHALL ответить 400 или 422. | FR-01, FR-02 | `test_spec_misc.py::test_request_limits` |
+| SPEC-API-09 | WHEN список программ запрошен с фильтром `status` (через запятую), `since` или `until`, THE SYSTEM SHALL вернуть только подходящие программы. | FR-50 | `test_extras.py::test_head_filter` |
+| SPEC-API-10 | WHEN запрошены разделы программы, THE SYSTEM SHALL вернуть список `key`, `title`, `level`, `text` в порядке шаблона. | FR-25 | `test_extras.py::test_versions_diff_and_sections` |
+| SPEC-API-11 | THE SYSTEM SHALL отдавать список версий, сравнение двух версий и откат к версии (404 для несуществующей). | FR-38 | `test_extras.py::test_versions_diff_and_sections`, `test_access.py::test_restore_does_not_bring_back_approval` |
+| SPEC-API-12 | THE SYSTEM SHALL отдавать журнал событий программы методисту и руководителю (новые сверху) и отклонять его для эксперта с 403. | FR-58 | `test_access.py::test_restore_does_not_bring_back_approval`, `test_access.py::test_expert_sees_only_own_modules_and_accepts_items` |
+| SPEC-API-13 | WHILE активная роль — `expert`, THE SYSTEM SHALL отдавать в `GET /reviews` задания на вычитку (`rid`, `items_total`, `items_done`, статус) и принимать решения и комментарии по `rid`. | FR-40, FR-49 | `test_access.py::test_expert_sees_only_own_modules_and_accepts_items`, `test_access.py::test_module_accept_requires_all_items` |
+| SPEC-API-14 | THE SYSTEM SHALL отдавать уведомления текущего пользователя и по `POST /notifications/read` возвращать число отмеченных. | FR-59 | `test_access.py::test_expert_sees_only_own_modules_and_accepts_items` |
+| SPEC-API-15 | WHEN запрошен `GET /me/tasks`, THE SYSTEM SHALL вернуть число задач по ролям `methodist`, `expert`, `head`. | FR-63 | `test_extras.py::test_sandbox_and_tasks` |
+| SPEC-API-16 | THE SYSTEM SHALL отдавать список навыков (`name`, `description`, `version`) в `GET /api/v1/skills` без токена. | NFR-16 | `test_extras.py::test_skills_list_endpoint` |
+| SPEC-API-17 | WHEN администратор меняет параметры навыка через `PUT /admin/skills/{name}`, THE SYSTEM SHALL проверить диапазоны (иначе 400) и поддерживать сброс `reset`. | NFR-16 | `test_auth.py::test_skill_override_and_reset` |
+| SPEC-API-18 | WHEN файл программы загружен в `POST /actualize`, THE SYSTEM SHALL вернуть находки и их число. | FR-61 | `test_extras.py::test_actualize_text_and_program` |
+| SPEC-API-19 | IF превышен лимит параллельных заданий `MAX_PARALLEL_JOBS`, THEN THE SYSTEM SHALL ответить 429 `RATE_LIMIT`. | NFR-03 | `test_spec_misc.py::test_parallel_jobs_limit` |
+| SPEC-API-20 | WHEN приложение стартует, THE SYSTEM SHALL продолжить задания, прерванные перезапуском. | код | `test_spec_misc.py::test_resume_jobs_on_start` |
+| SPEC-API-21 | THE SYSTEM SHALL разрешать CORS для всех источников и публиковать Swagger UI по `/docs`, WHILE включена настройка `DOCS_ENABLED`. | код | `test_spec_misc.py::test_cors_and_docs` |
+| SPEC-API-22 | WHEN запрошен `GET /api/v1/llm/status`, THE SYSTEM SHALL вернуть доступность шлюза, расход за день, дневной бюджет, признак исчерпания лимита и выбранные модели. | NFR-14 | `test_spec_misc.py::test_llm_status` |
+| SPEC-API-23 | THE SYSTEM SHALL открывать поиск `POST /kb/search` ролям admin, methodist, head, expert, а загрузку документов `POST /kb/documents` — только admin. | FR-09 | `test_extras.py::test_kb_upload_and_search` |
+
+## Вне области
+
+- Логика конвейера и состояний программы — [agent-workflow.md](agent-workflow.md).
+- Хранение программ, версий, событий и заданий — [programs-service.md](programs-service.md).
+- Матрица прав по ролям — [auth-and-roles.md](auth-and-roles.md).
+- Версионирование API (только `/api/v1`).
