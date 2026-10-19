@@ -90,7 +90,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 <!-- trace:begin -->
 | Спецификация | Требований | Покрыто | Не покрыты |
 |---|---|---|---|
-| [agent-workflow.md](agent-workflow.md) | 40 | 40 | — |
+| [agent-workflow.md](agent-workflow.md) | 41 | 41 | — |
 | [api.md](api.md) | 29 | 29 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 29 | 29 | — |
 | [export.md](export.md) | 13 | 13 | — |
@@ -149,6 +149,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-FLOW-38 | `test_spec_robustness.py::test_parallel_generation_is_deterministic` |
 | SPEC-FLOW-39 | `test_spec_robustness.py::test_module_failure_is_isolated_and_recorded` |
 | SPEC-FLOW-40 | `test_spec_robustness.py::test_pptx_slides_without_llm`, `test_spec_robustness.py::test_pptx_slides_when_content_skill_unavailable`, `test_spec_robustness.py::test_slides_guaranteed_when_content_returns_none` |
+| SPEC-FLOW-41 | `test_spec_misc.py::test_question_edit_keeps_lo_links` |
 | SPEC-API-01 | `test_access.py::test_unassigned_expert_cannot_accept_and_api_404` |
 | SPEC-API-02 | `test_access.py::test_module_accept_requires_all_items`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-API-03 | `test_auth.py::test_register_gets_minimal_role_and_cabinet` |

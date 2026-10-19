@@ -90,7 +90,7 @@ python scripts/autorun.py --only 1 3               # только выбранн
 
 ## Сквозной регресс
 
-Два прогона против запущенного сервера: API по всем ролям (`scripts/e2e_regression.py`, stdlib + httpx) и интерфейс по ролям в Chromium (`e2e/ui_roles.spec.cjs`, библиотека playwright). Оба печатают `PASS`/`FAIL` по каждой проверке и сводку, при любом `FAIL` код выхода 1.
+Два прогона против запущенного сервера: API по всем ролям (`scripts/e2e_regression.py`, stdlib + httpx) и интерфейс по ролям в Chromium (`e2e/ui_roles.spec.cjs`, библиотека playwright). Оба печатают `PASS`/`FAIL` по каждой проверке и сводку, при любом `FAIL` код выхода 1. Проверки содержимого DOCX и PPTX читают файлы через python-docx и python-pptx, поэтому на машине, откуда идёт прогон, нужны зависимости `requirements.lock`; на ВМ без них запускайте прогон внутри контейнера: `docker compose exec app python scripts/e2e_regression.py --base http://127.0.0.1:8000`.
 
 ```bash
 cd frontend && npm run build && cd ..                 # интерфейс собирается в frontend/dist, его отдаёт FastAPI

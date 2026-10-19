@@ -606,3 +606,26 @@ def test_weak_secret_key_replaced(tmp_path, weak: str) -> None:
     assert Settings(secret_key=weak, data_dir=tmp_path).secret_key == stored  # ключ стабилен между запусками
     strong = 'a-strong-production-secret-1234'
     assert Settings(secret_key=strong, data_dir=tmp_path / 'other').secret_key == strong
+
+
+def test_question_edit_keeps_lo_links(client, kit, monkeypatch) -> None:
+    """SPEC-FLOW-41: WHEN правка переформулирует вопрос, а модель привязала новый вопрос к другому РО, THE SYSTEM SHALL сохранить прежние РО вопроса, чтобы правка не нарушала V-13 и не отклонялась."""
+    from app.agent import workflow as wf
+
+    content = importlib.import_module('app.skills.content.run')
+    doc = _load(client, kit)
+    q = doc.kit.questions[0]
+    old_lo = list(q.lo_ids)
+    other = next(lo.id for lo in doc.all_outcomes() if lo.id not in old_lo)
+    real_run = content.run
+
+    async def wrong_lo_run(*a, **kw):
+        res = await real_run(*a, **kw)
+        for nq in res.questions:
+            nq.lo_ids = [other]
+        return res
+
+    monkeypatch.setattr(wf.content, 'run', wrong_lo_run)
+    res = client.portal.call(wf.edit, doc, q.id, 'Сделать вопрос проще')
+    assert res['applied']
+    assert next(x for x in doc.kit.questions if x.id == q.id).lo_ids == old_lo

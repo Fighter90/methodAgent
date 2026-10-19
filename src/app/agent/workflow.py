@@ -959,11 +959,13 @@ async def edit(
         for qid, nq in zip(old_q_ids, res.questions, strict=False):
             idx = next(i for i, q in enumerate(doc.kit.questions) if q.id == qid)
             nq.id, nq.assessment_id, nq.module_id = qid, doc.kit.questions[idx].assessment_id, module.id
+            nq.lo_ids = doc.kit.questions[idx].lo_ids  # правка формулировки не переносит проверку на другие РО (V-13)
             doc.kit.questions[idx] = nq
         for i, t in enumerate(doc.kit.tasks):
             if t.topic_id == topic.id and res.tasks:
                 nt = res.tasks[0]
                 nt.id, nt.assessment_id, nt.topic_id, nt.module_id = t.id, t.assessment_id, topic.id, module.id
+                nt.lo_ids = t.lo_ids
                 doc.kit.tasks[i] = nt
         for i, lec in enumerate(doc.kit.lectures):
             if lec.topic_id == topic.id:
@@ -991,7 +993,9 @@ async def edit(
                 if res.questions:
                     nq = res.questions[0]
                     nq.id, nq.assessment_id, nq.module_id = question.id, question.assessment_id, question.module_id
-                    nq.lo_ids = nq.lo_ids or question.lo_ids
+                    # модель может привязать новый вопрос к другому РО — тогда у прежнего РО остаётся одно средство
+                    # и правка отклоняется по V-13; формулировка меняется, связь с РО — нет
+                    nq.lo_ids = question.lo_ids or nq.lo_ids
                     nq.difficulty = min(5, question.difficulty + (1 if 'слож' in instruction.lower() else 0))
                     doc.kit.questions[doc.kit.questions.index(question)] = nq
         elif target.startswith('hours:'):
