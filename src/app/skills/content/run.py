@@ -158,6 +158,7 @@ async def run(
                 temperature=spec.temperature,
                 max_tokens=spec.max_tokens if need_slides else min(spec.max_tokens, 4500),
                 stats=stats,
+                partial_ok=True,  # недостающие вопросы, задания и лекции _from_llm добирает по шаблону
             )
         except LLMUnavailable as exc:
             # Модель не ответила после всех повторов и резерва (или лимит/бюджет): шаблон из каркаса

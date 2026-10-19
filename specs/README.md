@@ -96,7 +96,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | [export.md](export.md) | 13 | 13 | — |
 | [frontend.md](frontend.md) | 21 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21 |
 | [knowledge-base.md](knowledge-base.md) | 19 | 18 | SPEC-KB-13 |
-| [llm-client.md](llm-client.md) | 23 | 23 | — |
+| [llm-client.md](llm-client.md) | 24 | 24 | — |
 | [programs-service.md](programs-service.md) | 13 | 13 | — |
 | [skill-content.md](skill-content.md) | 13 | 13 | — |
 | [skill-review-assist.md](skill-review-assist.md) | 5 | 5 | — |
@@ -283,6 +283,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-LLM-21 | `test_spec_robustness.py::test_call_stats_threadsafe_and_merge` |
 | SPEC-LLM-22 | `test_spec_robustness.py::test_embed_retries_transient`, `test_spec_robustness.py::test_embed_no_retry_on_auth_and_limit` |
 | SPEC-LLM-23 | `test_spec_robustness.py::test_ping_timeout_and_malformed_response` |
+| SPEC-LLM-24 | `test_spec_llm_client.py::test_truncated_answer_salvaged_when_partial_ok` |
 | SPEC-SVC-01 | `test_spec_service.py::test_new_id_format` |
 | SPEC-SVC-02 | `test_spec_service.py::test_save_and_load_roundtrip` |
 | SPEC-SVC-03 | `test_spec_service.py::test_missing_program_not_found` |

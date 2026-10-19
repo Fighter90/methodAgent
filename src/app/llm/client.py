@@ -104,8 +104,11 @@ class CallStats:
             self.fallbacks.append({'skill': skill, 'module': module, 'error': text, 'fallback': used})
 
 
-def parse_json(text: str) -> Any:
-    """Снимает обрамление ```json, блоки рассуждений и лишние запятые, затем разбирает JSON."""
+def parse_json(text: str, salvage: bool = False) -> Any:
+    """Снимает обрамление ```json, блоки рассуждений и лишние запятые, затем разбирает JSON.
+
+    salvage=True: оборванный ответ закрывается по последнему целому значению (_close_truncated).
+    """
     cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
     cleaned = re.sub(r'<think>.*$', '', cleaned, flags=re.DOTALL).strip()  # рассуждение оборвано лимитом — ответа нет
     fence = re.search(r'```(?:json)?\s*(.*?)```', cleaned, flags=re.DOTALL)
@@ -118,7 +121,68 @@ def parse_json(text: str) -> Any:
     if end >= 0:
         cleaned = cleaned[: end + 1]
     cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
-    return json.loads(cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        salvaged = _close_truncated(cleaned) if salvage else None
+        if salvaged is None:
+            raise
+        return json.loads(salvaged)
+
+
+def _close_truncated(text: str) -> str | None:
+    """Ответ оборван лимитом токенов или шлюзом: отрезает незаконченный хвост до последнего целого
+    значения и закрывает открытые скобки. Недостающее навык добирает по шаблону; None — спасать нечего."""
+    stack: list[str] = []
+    in_str = esc = False
+    cut = -1  # позиция после последнего целого значения внутри объекта или массива
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                in_str = False
+                if stack and stack[-1] == '[':
+                    cut = i + 1
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in '{[':
+            stack.append(ch)
+        elif ch in '}]':
+            if not stack:
+                return None
+            stack.pop()
+            cut = i + 1
+            if not stack:
+                return None  # корень закрыт: обрыва нет, ошибка в другом
+        elif ch == ',':
+            cut = i
+    if not stack or cut <= 0:
+        return None
+    head = text[:cut].rstrip().rstrip(',')
+    # стек на позиции среза: заново по обрезанному тексту
+    stack, in_str, esc = [], False, False
+    for ch in head:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch in '{[':
+            stack.append(ch)
+        elif ch in '}]' and stack:
+            stack.pop()
+    if in_str or not stack:
+        return None
+    head = re.sub(r'[,:]\s*$', '', head)
+    return head + ''.join('}' if b == '{' else ']' for b in reversed(stack))
 
 
 def _budget_s(skill_name: str, default: float) -> float:
@@ -218,8 +282,13 @@ class LLMClient:
         temperature: float = 0.2,
         max_tokens: int = 2000,
         stats: CallStats | None = None,
+        partial_ok: bool = False,
     ) -> Any:
-        """Вызывает модель и возвращает JSON, проверенный Pydantic-схемой навыка."""
+        """Вызывает модель и возвращает JSON, проверенный Pydantic-схемой навыка.
+
+        partial_ok=True — навык умеет добрать недостающее по шаблону: если ответ оборван и исправление
+        не помогло, на последней попытке берётся его целая часть, а не резервная генерация целиком.
+        """
         if not self.enabled:
             raise LLMUnavailable('LLM не настроен')
         if self.limit_reached():
@@ -232,6 +301,18 @@ class LLMClient:
         # Исчерпан — навык уходит на резервную генерацию, и сроки FR-19/FR-31 держатся (подраздел 4.7)
         budget = _budget_s(skill, self.settings.llm_timeout_s)
         active = 0.0
+        partial = ''  # последний оборванный ответ: при partial_ok спасается его целая часть
+
+        def salvage() -> Any:
+            try:
+                data = parse_json(partial, salvage=True)
+                out = schema.model_validate(data) if schema is not None else data
+            except (json.JSONDecodeError, ValidationError):
+                return None
+            logger.warning('llm skill=%s: ответ оборван, взята целая часть (%d симв.)', skill, len(partial))
+            if stats is not None:
+                stats.fallback(skill, f'ответ модели оборван: {type(last_error).__name__}', 'целая часть ответа, недостающее по шаблону')
+            return out
         for model in self._models(role):
             messages: list[dict[str, str]] = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
             # Ответ судьи дорогой и долгий (модель рассуждений): одна попытка, затем резервная модель
@@ -239,6 +320,8 @@ class LLMClient:
             for attempt in range(attempts):
                 started = time.monotonic()
                 if active >= budget:
+                    if partial and (got := salvage()) is not None:
+                        return got
                     raise LLMUnavailable(f'{skill}: бюджет времени {budget:.0f} с исчерпан')
                 try:
                     async with sem:
@@ -279,6 +362,8 @@ class LLMClient:
                     return data
                 except (json.JSONDecodeError, ValidationError) as exc:
                     last_error = exc
+                    if partial_ok and isinstance(exc, json.JSONDecodeError):
+                        partial = content
                     if not re.sub(r'<think>.*?(</think>|$)', '', content, flags=re.DOTALL).strip():
                         # Пустой ответ (модель рассуждений израсходовала лимит): повтор исходного запроса,
                         # пустое сообщение ассистента шлюз отклоняет с 400
@@ -307,6 +392,8 @@ class LLMClient:
                         await asyncio.sleep(15.0 * (attempt + 1))
                 if attempt < attempts - 1:
                     await asyncio.sleep(_RETRY_PAUSES[attempt])
+        if partial and (got := salvage()) is not None:
+            return got
         raise LLMUnavailable(f'{skill}: модель не ответила ({type(last_error).__name__}: {str(last_error)[:200]})')
 
     async def embed(self, texts: list[str], stats: CallStats | None = None) -> list[list[float]]:

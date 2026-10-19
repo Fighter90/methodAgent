@@ -33,6 +33,7 @@
 | SPEC-LLM-21 | THE SYSTEM SHALL учитывать вызовы в `CallStats` атомарно (`add` и `merge` под замком): параллельные задачи и потоки не теряют токены, рубли и число вызовов; `merge` переносит и отказы навыков. | NFR-08 | `test_spec_robustness.py::test_call_stats_threadsafe_and_merge` |
 | SPEC-LLM-22 | WHEN запрошены эмбеддинги, THE SYSTEM SHALL ограничивать каждую пачку таймаутом и повторять её при сетевой ошибке, таймауте, 429 и 5xx с паузами 1 и 3 с; IF шлюз ответил 401/403 или «суточный лимит», THEN THE SYSTEM SHALL бросить `LLMUnavailable` без повторов. | NFR-08 | `test_spec_robustness.py::test_embed_retries_transient`, `test_spec_robustness.py::test_embed_no_retry_on_auth_and_limit` |
 | SPEC-LLM-23 | THE SYSTEM SHALL ограничивать таймаутом и проверочный запрос `ping`; IF ответ шлюза не содержит `choices`, THEN THE SYSTEM SHALL считать его ошибкой транспорта и повторить по общим правилам, а наружу отдать только `LLMUnavailable`. | NFR-08 | `test_spec_robustness.py::test_ping_timeout_and_malformed_response` |
+| SPEC-LLM-24 | IF ответ модели оборван (не разбирается как JSON) и исправления в пределах попыток и бюджета времени не помогли, а навык разрешил частичный ответ (`partial_ok`, навык content), THEN THE SYSTEM SHALL вернуть целую часть ответа, закрыв её по последнему целому значению, и записать отказ в `step_errors`; недостающее навык добирает по шаблону. | NFR-08, FR-31 | `test_spec_llm_client.py::test_truncated_answer_salvaged_when_partial_ok` |
 
 ## Таймауты, повторы и отказы (сводка)
 

@@ -319,3 +319,22 @@ def test_gateway_http_errors_and_no_foreign_sdk() -> None:
     root = Path(__file__).resolve().parents[1]
     deps = (root / 'requirements.txt').read_text(encoding='utf-8').lower()
     assert not any(name in deps for name in ('openai', 'anthropic', 'google-generativeai', 'mistralai', 'cohere'))
+
+
+class Many(BaseModel):
+    annotation: str
+    questions: list[dict] = []
+
+
+def test_truncated_answer_salvaged_when_partial_ok(make, sleeps) -> None:
+    """SPEC-LLM-24: IF ответ оборван и исправления не помогли, а навык разрешил частичный ответ (partial_ok), THEN THE SYSTEM SHALL вернуть его целую часть и записать отказ в step_errors; без partial_ok — LLMUnavailable."""
+    cut = '{"annotation": "Модуль", "questions": [{"stem": "Что?", "key": 0}, {"stem": "Где, ке'
+    st = c.CallStats()
+    out = _run(make(Gateway(_resp(cut))).complete_json(skill='content', system='s', user='u', schema=Many, stats=st, partial_ok=True))
+    assert out.annotation == 'Модуль' and out.questions == [{'stem': 'Что?', 'key': 0}]
+    assert st.fallbacks and 'оборван' in st.fallbacks[-1]['error']
+    with pytest.raises(c.LLMUnavailable):
+        _run(make(Gateway(_resp(cut))).complete_json(skill='content', system='s', user='u', schema=Many))
+    assert c.parse_json('{"a": [1, 2', salvage=True) == {'a': [1]}
+    with pytest.raises(json.JSONDecodeError):
+        c.parse_json('{"a": [1, 2')
