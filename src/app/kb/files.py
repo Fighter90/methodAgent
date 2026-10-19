@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import codecs
 import io
 import logging
 import re
@@ -32,7 +33,8 @@ def detect_format(content: bytes) -> str | None:
     if content.startswith(b'PK\x03\x04'):
         return 'docx'
     try:
-        content[:2000].decode('utf-8')
+        # инкрементальный декодер не считает ошибкой букву, разрезанную границей 2000 байт
+        codecs.getincrementaldecoder('utf-8')().decode(content[:2000], final=False)
         return 'txt'
     except UnicodeDecodeError:
         return None

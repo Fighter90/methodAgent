@@ -143,7 +143,8 @@ async def kb_search(body: SearchIn, p: Principal = Depends(require('admin', 'met
     from app.kb import norms
 
     hits = await orgdocs.search(body.query, body.k) + norms.search(body.query, k=body.k)
-    return sorted(hits, key=lambda h: -h['score'])[: body.k]
+    # документы своей организации важнее общей нормативной базы при близкой оценке
+    return sorted(hits, key=lambda h: -(h['score'] + (0.25 if h.get('kind') != 'norm' else 0)))[: body.k]
 
 
 @router.get('/kb/norms', summary='Нормативная база знаний: выжимки НПА, ФГОС и рекомендаций с источником и датой проверки')

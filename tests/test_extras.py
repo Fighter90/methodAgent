@@ -263,3 +263,11 @@ def test_budget_day_is_moscow(monkeypatch) -> None:
 
     monkeypatch.setattr(c.time, 'time', lambda: 1760738400.0)  # 2025-10-17 22:00 UTC = 18.10 01:00 МСК
     assert c._today() == '2025-10-18'
+
+
+def test_cyrillic_txt_cut_at_2000_bytes_is_text():
+    from app.kb.files import detect_format
+
+    body = ('я' * 999 + 'ж' * 10).encode('utf-8')  # 2000-й байт приходится на середину буквы
+    assert detect_format(b'a' + body) == 'txt'
+    assert detect_format(b'\xff\xfe\x00bin') is None

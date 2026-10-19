@@ -45,3 +45,15 @@ def test_norm_digests_link_to_registry():
     assert all(d['npa_id'] in acts for d in docs if d['npa_id'])
     hits = norms.search('стажировка наставник практическая подготовка', 'dpp_pk_internship')
     assert hits and hits[0]['npa_id'] in ('order-885-390', 'order-266')
+
+
+def test_norm_base_for_school_college_university():
+    from app.kb.registry import norm_base_for_level
+
+    school = {s.id for s in norm_base_for_level('school', 'Рабочая программа для детей с ОВЗ, адаптированная')}
+    assert {'law-273', 'order-372', 'order-370', 'order-371', 'order-115', 'law-273-art79'} <= school
+    spo = {s.id for s in norm_base_for_level('spo', 'Программа по специальности, демонстрационный экзамен')}
+    assert {'order-464-2024-fgos-spo', 'order-336', 'order-800-spo-gia', 'order-762'} <= spo
+    vo = {s.id for s in norm_base_for_level('vo', 'Программа магистратуры, аспирантура')}
+    assert {'order-1061', 'order-636-vo-gia', 'order-951-fgt'} <= vo
+    assert len(norms.norms()) >= 52

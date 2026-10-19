@@ -113,6 +113,24 @@ def norm_base_for(program_type: ProgramType, text: str = '') -> list[Source]:
     return out
 
 
+LEVELS = ('school', 'spo', 'vo')
+
+
+def norm_base_for_level(level: str, text: str = '') -> list[Source]:
+    """Нормативная база основной программы школы, колледжа или вуза: обязательные для уровня акты (core_for)
+    и подходящие по ключевым словам. Задел на расширение агента за пределы ДПП и ДООП."""
+    if level not in LEVELS:
+        raise ValueError(f'Неизвестный уровень: {level}')
+    low = text.lower()
+    out = [Source(id='law-273', kind='law', bibl=next(i['bibl'] for i in registry()['npa'] if i['id'] == 'law-273'), url='', confirmed=True)]
+    for item in registry()['npa']:
+        if item['id'] == 'law-273' or level not in item.get('applies', []) or not _in_force(item):
+            continue
+        if level in item.get('core_for', []) or (low and item.get('cite') and _stems_hit(item.get('keywords', []), low)):
+            out.append(Source(id=item['id'], kind='law', bibl=item['bibl'], url=item.get('url', ''), confirmed=True, checked_at=item.get('checked_at', '')))
+    return out
+
+
 def find_ps(code: str) -> dict[str, Any] | None:
     return next((p for p in registry()['ps'] if p['code'] == code), None)
 
