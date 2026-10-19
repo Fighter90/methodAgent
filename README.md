@@ -166,12 +166,35 @@ curl -X POST 'http://localhost:8000/api/v1/programs?mode=auto' \
 
 Без модели (`LLM_PROVIDERS=fixtures` или отказ шлюза) комплект собирается по шаблонам, включая слайды хотя бы одного модуля; отказы навыков перечислены в `step_errors`.
 
+Оба свойства проверяются одной командой на запущенном сервисе, в том числе без ключа модели:
+
+```bash
+LLM_PROVIDERS=fixtures PYTHONPATH=src uvicorn app.main:app --port 8000 &
+python scripts/demo_clarify_slides.py --base http://127.0.0.1:8000
+```
+
+```text
+1) Неполный запрос: «Нужен курс по Excel для бухгалтеров»
+OK   конвейер остановился на шаге clarify и вернул вопросы
+     ? Какой это тип программы?  [Повышение квалификации (удостоверение) / Общеразвивающая (сертификат) / Стажировка]
+     ? Сколько всего академических часов?  [36 / 72 / 144]
+     …
+2) Ответы через API: {'program_type': 'Повышение квалификации', 'volume_h': '36'}
+OK   тот же конвейер дошёл до комплекта: status done
+OK   объём из ответа учтён: 36 ч
+3) Слайды в выгрузке PPTX
+OK   в PPTX 11 слайдов
+     модель: не используется — слайды собраны без LLM
+```
+
+Те же свойства закреплены тестами: `test_spec_robustness.py::test_interactive_returns_questions_and_resumes`, `test_answers_then_auto_completes_kit`, `test_pptx_slides_without_llm` (все 5 кейсов) и `test_slides_guaranteed_when_content_returns_none`.
+
 ## Тесты
 
 ```bash
 PYTHONPATH=src pytest -q          # модульные и API-тесты
 python scripts/autorun.py         # пять открытых кейсов с проверкой по чек-листам
-PYTHONPATH=src pytest --cov=src/app --cov-report=term   # покрытие, порог 60% (.coveragerc)
+PYTHONPATH=src pytest --cov=src/app --cov-report=term   # покрытие, порог 70% (.coveragerc)
 python scripts/spec_trace.py      # трассировка требований specs/ → тесты
 ```
 

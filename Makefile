@@ -27,4 +27,5 @@ BASE ?= http://127.0.0.1:8000
 e2e:
 	$(PY) scripts/e2e_regression.py --base $(BASE) --all-cases
 	BASE_URL=$(BASE) bash scripts/smoke.sh
+	$(PY) scripts/demo_clarify_slides.py --base $(BASE)
 	BASE_URL=$(BASE) node e2e/ui_roles.spec.cjs  # нужен playwright: NODE_PATH=$$(npm root -g)

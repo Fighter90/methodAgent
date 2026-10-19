@@ -422,7 +422,7 @@
 | T-19 | Загрузка файлов: сигнатура, 20 МБ, распаковка до 100 МБ, макросы не исполняются, PDF ограничен | выполнено | `kb/files.py:29` и `_parse_docx`; PDF до 200 страниц | |
 | T-20 | Секреты только в окружении, ключ и тексты запросов не в журнале | выполнено | `.env.example`, `llm/client.py` (лог без текста запроса), шифрование секретов настроек | |
 | T-21 | Спецификации EARS и ADR | частично | `specs/*.md` в EARS, трассировка `scripts/spec_trace.py` | каталога ADR (`docs/decisions/`) нет |
-| T-22 | ruff, mypy strict, pytest с покрытием не ниже 70 %, hypothesis для солвера | частично | ruff чист, покрытие 90 %, `test_tz_compliance.py::test_solver_property_all_levels` | mypy не настроен; порог в `.coveragerc` 60 %, а не 70 % (фактически 90 %) |
+| T-22 | ruff, mypy strict, pytest с покрытием не ниже 70 %, hypothesis для солвера | частично | ruff чист, покрытие 92 %, порог 70 % в `.coveragerc` и CI, `test_tz_compliance.py::test_solver_property_all_levels` | mypy не настроен |
 | T-23 | Фронтенд: ESLint, сборка TS, vitest | выполнено | `frontend/eslint.config.js` (правила TS и хуков React, 0 предупреждений), `frontend/src/__tests__/api.test.ts` (vitest, jsdom), `npm run check` = lint + test + build | |
 | T-24 | autorun.py со сверкой чек-листов, отчётом времени и токенов | выполнено | `scripts/autorun.py` | |
 | T-25 | smoke.py, e2e (Playwright), export_openapi.py --check | выполнено | `scripts/smoke.sh` (основной сценарий и выгрузки), `scripts/e2e_regression.py` (API по всем ролям и 5 кейсам, 1381 проверка), `e2e/ui_roles.spec.cjs` (Playwright, 90 проверок по ролям), `scripts/export_openapi.py --check`, `test_reproducibility.py::test_openapi_schema_matches_code` | smoke написан на bash, а не Python |
