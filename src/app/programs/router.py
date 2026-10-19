@@ -25,7 +25,9 @@ misc = APIRouter(tags=['misc'])
 
 
 async def _load_for(program_id: str, p: Principal) -> ProgramDoc:
-    """Загрузка с проверкой прав: API-клиент видит только свои программы и задания (ТЗ, 4.1)."""
+    """Загрузка с проверкой прав: API-клиент видит только свои программы и задания (ТЗ, 4.1), администратор программ не видит."""
+    if p.role == 'admin':
+        raise ForbiddenRole('Администратор ведёт пользователей и настройки; программы ведут методист, эксперт и руководитель')
     doc = await svc.load(program_id)
     if p.role == 'api' and await svc.owner_of(program_id) != p.user_id:
         if p.anonymous:

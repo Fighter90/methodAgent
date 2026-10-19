@@ -271,3 +271,8 @@ def test_cyrillic_txt_cut_at_2000_bytes_is_text():
     body = ('я' * 999 + 'ж' * 10).encode('utf-8')  # 2000-й байт приходится на середину буквы
     assert detect_format(b'a' + body) == 'txt'
     assert detect_format(b'\xff\xfe\x00bin') is None
+
+
+def test_skills_list_endpoint(client) -> None:
+    r = client.get('/api/v1/skills')
+    assert r.status_code == 200 and any(s['name'] == 'skeleton' for s in r.json())

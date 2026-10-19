@@ -75,7 +75,7 @@ def create_app() -> FastAPI:
 
     @api.get('/skills', tags=['misc'], summary='Навыки агента (SKILL.md)')
     async def skills() -> list[dict]:
-        return [{'name': k, **{x: v.get(x) for x in ('description', 'version')}} for k, v in load_skills().items()]
+        return [{'name': k, **{x: getattr(v, x, '') for x in ('description', 'version')}} for k, v in load_skills().items()]
 
     @api.get('/health', tags=['misc'], summary='Состояние сервиса (то же, что /health)')
     async def api_health() -> dict:

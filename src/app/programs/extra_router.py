@@ -53,7 +53,9 @@ async def adapt(program_id: str, body: AdaptIn, p: Principal = Depends(require('
 
 @router.get('/programs/{program_id}/actualize', summary='Актуализация: устаревшие темы, инструменты и версии по реестру (FR-61)')
 async def actualize_program(program_id: str, p: Principal = Depends(require('methodist', 'expert', 'head', 'api'))) -> dict[str, Any]:
-    doc = await svc.load(program_id)
+    from app.programs.router import _load_for
+
+    doc = await _load_for(program_id, p)
     found = extras.actualize_doc(doc)
     return {'program_id': doc.id, 'findings': found, 'total': len(found), 'registry_checked_at': extras.tools().get('checked_at', '')}
 

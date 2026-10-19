@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 120.0
     # cloudru — рабочий режим; fixtures — без сети, детерминированные ответы навыков
     llm_providers: str = 'cloudru'
-    # Судья тратит токены рассуждающей модели: включается явно
+    # Судья тратит токены рассуждающей модели; отключается LLM_JUDGE_ENABLED=false или в админке
     llm_judge_enabled: bool = True
     # Тарифы, ₽ за 1 млн токенов (вход, выход) — для отчёта о стоимости
     llm_price_in_rub: float = 73.03
