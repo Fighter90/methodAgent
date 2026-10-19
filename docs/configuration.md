@@ -41,7 +41,12 @@
 |---|---|---|
 | `SECRET_KEY` | `dev-secret-change-me` | Ключ подписи JWT и вывода ключа шифрования секретов (см. ниже) |
 | `JWT_ALGORITHM` | `HS256` | Алгоритм JWT |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `720` | Срок жизни токена входа, мин |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Срок токена доступа, мин (ТЗ, 4.11) |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Срок токена обновления, дней (`POST /auth/refresh`) |
+| `API_TOKEN_DEFAULT_DAYS` | `90` | Срок токена API, если администратор не указал `ttl_days` (не больше 365) |
+| `LOGIN_FAILURES_PER_MINUTE` | `5` | Неудачных попыток входа в минуту с одного IP, дальше 429 |
+| `PROGRAMS_PER_HOUR` | `30` | Новых программ в час на пользователя (`POST /programs`, `/programs/upload`, `/adapt`), дальше 429 (ТЗ, 4.11) |
+| `API_PROGRAMS_PER_HOUR` | `30` | То же для роли `api` (служебная учётка и токены API) — «лимит api по профилю» |
 
 ### LLM
 
@@ -53,6 +58,7 @@
 | `LLM_MODEL_JUDGE` | `ai-sage/GigaChat3.5-432B-A28B-Reasoning` | Модель-судья |
 | `LLM_MODEL_RESERVE` | `GigaChat/GigaChat-3-Pro` | Резервная модель |
 | `LLM_MODEL_EMBED` | `ai-sage/Giga-Embeddings-instruct-3B` | Модель эмбеддингов (поиск по базе знаний) |
+| `LLM_MODEL_RERANK` | пусто | **Зарезервировано** (таблица 26 ТЗ): переменная читается, но реранкера в сборке нет, значение ни на что не влияет |
 | `LLM_CONCURRENCY` | `2` | Одновременных запросов к шлюзу |
 | `LLM_TIMEOUT_S` | `120.0` | Таймаут запроса к модели, с |
 | `LLM_PROVIDERS` | `cloudru` | `cloudru` — работа через шлюз; `fixtures` — без сети, детерминированные ответы навыков |
@@ -63,6 +69,9 @@
 | `GEN_WORKERS` | `6` | Потоков сборки модулей (фактически используется `max(4, GEN_WORKERS)`) |
 | `ANON_RUNS_PER_HOUR` | `12` | Автопрогонов без токена в час с одного IP |
 | `MAX_PARALLEL_JOBS` | `4` | Одновременных фоновых заданий; сверх — ответ 429 |
+| `REDIS_URL` | пусто | **Зарезервировано** (таблица 26 ТЗ): очередь заданий встроенная (asyncio, продолжение после перезапуска), Redis и arq не подключены, значение ни на что не влияет |
+| `SANDBOX_TIMEOUT_S` | `10` | Лимит времени примера кода в песочнице V-24 (CPU rlimit и таймаут процесса), с |
+| `SANDBOX_MEMORY_MB` | `512` | Лимит памяти процесса песочницы (`RLIMIT_AS`), МБ |
 
 LLM считается включённой (`llm_enabled`), если `LLM_PROVIDERS=cloudru` и ключ не пуст.
 
@@ -86,7 +95,7 @@ LLM считается включённой (`llm_enabled`), если `LLM_PROVI
 | Группа | Ключи | Тип и ограничения |
 |---|---|---|
 | Модель и ключи | `llm_providers` (choice: cloudru, fixtures), `llm_base_url`, `llm_api_key` (secret), `llm_model_generate`, `llm_model_judge`, `llm_model_reserve`, `llm_model_embed`, `llm_judge_enabled` (bool) | — |
-| Лимиты | `llm_concurrency` 1–16, `gen_workers` 1–32, `llm_timeout_s` 5–900, `llm_daily_budget_rub` 0–1 000 000, `max_parallel_jobs` 1–64, `anon_runs_per_hour` 0–10 000 | int/float с проверкой диапазона |
+| Лимиты | `llm_concurrency` 1–16, `gen_workers` 1–32, `llm_timeout_s` 5–900, `llm_daily_budget_rub` 0–1 000 000, `max_parallel_jobs` 1–64, `anon_runs_per_hour` 0–10 000, `programs_per_hour` 1–10 000, `api_programs_per_hour` 1–10 000 | int/float с проверкой диапазона |
 | Вход и регистрация | `registration_enabled`, `registration_default_role` (expert, methodist, head), `demo_accounts_enabled`, `access_token_expire_minutes` 15–43 200 | — |
 | SSO | `sso_enabled`, `sso_provider` (oidc, saml), `sso_display_name`, `sso_issuer_url`, `sso_client_id`, `sso_client_secret` (secret) | — |
 | Почта | `smtp_password` (secret) | — |
@@ -116,13 +125,13 @@ LLM считается включённой (`llm_enabled`), если `LLM_PROVI
 - Если `SECRET_KEY` короче 16 символов или содержит `change-me` (в том числе значение по умолчанию), при создании настроек генерируется случайный ключ (`secrets.token_hex(32)`) и сохраняется в `DATA_DIR/.secret_key` с правами 600; при следующих запусках он читается оттуда.
 - Если записать ключ не удалось: в `production` запуск падает, в остальных окружениях используется исходная (небезопасная) строка.
 - `scripts/deploy_vm.sh` и `scripts/run_vm.sh` дописывают случайный `SECRET_KEY` в `.env`, если его там нет.
-- Смена ключа делает недействительными все выданные токены и зашифрованные в БД секреты.
+- Смена ключа делает недействительными все выданные JWT (токены доступа и обновления) и зашифрованные в БД секреты. Токены API (`ma_…`) от ключа не зависят: в БД хранится их SHA-256, отзывает их администратор.
 
 ## Файлы окружения
 
 | Файл | Назначение |
 |---|---|
-| `.env.example` | Образец: `SECRET_KEY`, `LLM_PROVIDERS`, `LLM_JUDGE_ENABLED`, закомментированные `LLM_BASE_URL`, `LLM_API_KEY`, модели |
+| `.env.example` | Образец: `SECRET_KEY`, `LLM_PROVIDERS`, `LLM_JUDGE_ENABLED`, закомментированные `LLM_BASE_URL`, `LLM_API_KEY`, модели, сроки токенов, лимиты, песочница и зарезервированные `LLM_MODEL_RERANK`, `REDIS_URL` |
 | `.env` | Локальные значения; в git не попадает (`.gitignore`), в образ не копируется (`.dockerignore`) |
 | `/opt/hackathon/ai.env` | Ключ и адрес шлюза на ВМ (scripts/deploy_vm.sh переносит ключ и адрес в `.env` как `LLM_API_KEY` и `LLM_BASE_URL`); читается `Settings`, подключается как `env_file` в `docker-compose.yml` и через `source` в `run_vm.sh` |
 

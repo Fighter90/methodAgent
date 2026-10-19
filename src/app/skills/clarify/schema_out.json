@@ -1,0 +1,57 @@
+{
+  "$defs": {
+    "Question": {
+      "properties": {
+        "allow_custom": {
+          "default": true,
+          "title": "Allow Custom",
+          "type": "boolean"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Answer"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "field",
+        "text"
+      ],
+      "title": "Question",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "items": {
+    "$ref": "#/$defs/Question"
+  },
+  "title": "clarify output",
+  "type": "array"
+}

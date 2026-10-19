@@ -1,0 +1,327 @@
+{
+  "$defs": {
+    "Competency": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "indicators": {
+          "items": {
+            "$ref": "#/$defs/Indicator"
+          },
+          "title": "Indicators",
+          "type": "array"
+        },
+        "ps_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ps Code"
+        },
+        "tf_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tf Codes",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "title"
+      ],
+      "title": "Competency",
+      "type": "object"
+    },
+    "Hours": {
+      "properties": {
+        "lb": {
+          "default": 0,
+          "title": "Lb",
+          "type": "integer"
+        },
+        "lk": {
+          "default": 0,
+          "title": "Lk",
+          "type": "integer"
+        },
+        "pr": {
+          "default": 0,
+          "title": "Pr",
+          "type": "integer"
+        },
+        "srs": {
+          "default": 0,
+          "title": "Srs",
+          "type": "integer"
+        },
+        "total": {
+          "default": 0,
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "title": "Hours",
+      "type": "object"
+    },
+    "Indicator": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "know",
+            "can",
+            "own"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "outcomes": {
+          "items": {
+            "$ref": "#/$defs/LearningOutcome"
+          },
+          "title": "Outcomes",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "text"
+      ],
+      "title": "Indicator",
+      "type": "object"
+    },
+    "LearningOutcome": {
+      "properties": {
+        "bloom_level": {
+          "default": 2,
+          "title": "Bloom Level",
+          "type": "integer"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "verb": {
+          "default": "",
+          "title": "Verb",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "text"
+      ],
+      "title": "LearningOutcome",
+      "type": "object"
+    },
+    "Module": {
+      "properties": {
+        "accepted_items": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accepted Items",
+          "type": "array"
+        },
+        "control": {
+          "default": "Тест",
+          "title": "Control",
+          "type": "string"
+        },
+        "expert_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expert Id"
+        },
+        "hours": {
+          "$ref": "#/$defs/Hours"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lb_hours": {
+          "default": 0,
+          "title": "Lb Hours",
+          "type": "integer"
+        },
+        "lk_share": {
+          "default": 0.33,
+          "title": "Lk Share",
+          "type": "number"
+        },
+        "manual_topics": {
+          "default": false,
+          "title": "Manual Topics",
+          "type": "boolean"
+        },
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "review_status": {
+          "default": "not_started",
+          "title": "Review Status",
+          "type": "string"
+        },
+        "srs_share": {
+          "default": 0.2,
+          "title": "Srs Share",
+          "type": "number"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "topics": {
+          "items": {
+            "$ref": "#/$defs/Topic"
+          },
+          "title": "Topics",
+          "type": "array"
+        },
+        "weight": {
+          "default": 0.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "n",
+        "title"
+      ],
+      "title": "Module",
+      "type": "object"
+    },
+    "Topic": {
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "hours": {
+          "$ref": "#/$defs/Hours"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lo_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Lo Ids",
+          "type": "array"
+        },
+        "n": {
+          "title": "N",
+          "type": "string"
+        },
+        "prerequisites": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prerequisites",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "weight": {
+          "default": 1.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "n",
+        "title"
+      ],
+      "title": "Topic",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "competencies": {
+      "items": {
+        "$ref": "#/$defs/Competency"
+      },
+      "title": "Competencies",
+      "type": "array"
+    },
+    "goal": {
+      "title": "Goal",
+      "type": "string"
+    },
+    "modules": {
+      "items": {
+        "$ref": "#/$defs/Module"
+      },
+      "title": "Modules",
+      "type": "array"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "goal",
+    "competencies",
+    "modules",
+    "source"
+  ],
+  "title": "SkeletonDraft",
+  "type": "object"
+}

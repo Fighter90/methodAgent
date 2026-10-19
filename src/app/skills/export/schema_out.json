@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Навык export отдаёт файл; схема описывает его метаданные (тело — байты файла в ответе GET /export/{fmt}).",
+  "properties": {
+    "filename": {
+      "description": "Имя файла из заголовка Content-Disposition",
+      "title": "Filename",
+      "type": "string"
+    },
+    "format": {
+      "enum": [
+        "docx",
+        "pptx",
+        "gift",
+        "moodle_xml",
+        "json",
+        "order_draft",
+        "lectures_docx"
+      ],
+      "title": "Format",
+      "type": "string"
+    },
+    "media_type": {
+      "description": "Тип содержимого ответа",
+      "title": "Media Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "format",
+    "filename",
+    "media_type"
+  ],
+  "title": "ExportFile",
+  "type": "object"
+}

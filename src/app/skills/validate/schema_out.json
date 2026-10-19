@@ -1,0 +1,132 @@
+{
+  "$defs": {
+    "RuleResult": {
+      "properties": {
+        "check": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Check"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "code",
+            "llm"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "owner": {
+          "default": "методист",
+          "title": "Owner",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "warn",
+            "fail",
+            "skip"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "check",
+        "kind",
+        "status"
+      ],
+      "title": "RuleResult",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "assumptions": {
+      "items": {
+        "type": "object"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "blocking_passed": {
+      "default": 0,
+      "title": "Blocking Passed",
+      "type": "integer"
+    },
+    "blocking_total": {
+      "default": 10,
+      "title": "Blocking Total",
+      "type": "integer"
+    },
+    "coverage": {
+      "items": {
+        "type": "object"
+      },
+      "title": "Coverage",
+      "type": "array"
+    },
+    "proposals": {
+      "items": {
+        "type": "object"
+      },
+      "title": "Proposals",
+      "type": "array"
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/RuleResult"
+      },
+      "title": "Rules",
+      "type": "array"
+    },
+    "stage": {
+      "default": "skeleton",
+      "enum": [
+        "skeleton",
+        "kit"
+      ],
+      "title": "Stage",
+      "type": "string"
+    }
+  },
+  "title": "Report",
+  "type": "object"
+}

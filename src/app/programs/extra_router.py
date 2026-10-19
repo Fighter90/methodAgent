@@ -11,7 +11,13 @@ from app.agent import extras
 from app.agent.sections import build_sections
 from app.core.config import get_settings
 from app.core.errors import BadRequest
-from app.core.security import Principal, current_principal, require, users
+from app.core.security import (
+    Principal,
+    check_program_rate,
+    current_principal,
+    require,
+    users,
+)
 from app.kb import orgdocs
 from app.kb.files import parse_reference
 from app.programs import service as svc
@@ -46,6 +52,7 @@ async def adapt(program_id: str, body: AdaptIn, p: Principal = Depends(require('
     from app.programs.router import _load_for
 
     src = await _load_for(program_id, p)  # API-клиент адаптирует только свои программы (ТЗ, 4.1)
+    check_program_rate(p)  # адаптация создаёт новую программу
     doc = extras.adapt(src, svc.new_id('prg'), volume_h=body.volume_h, audience=body.audience, title=body.title, duration_weeks=body.duration_weeks)
     await svc.save(doc, p.user_id, reason=f'адаптация из {src.id}', snapshot=True)
     await svc.log_event(doc.id, p.user_id, 'created', f'Адаптация программы «{src.title}»', version=doc.version)

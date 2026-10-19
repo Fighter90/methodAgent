@@ -27,10 +27,10 @@
 
 | Раздел | Строк | Выполнено | Частично | Не выполнено |
 |---|---|---|---|---|
-| Требования брифа кейса (К-01…К-32) | 32 | 27 | 5 | 0 |
+| Требования брифа кейса (К-01…К-32) | 32 | 28 | 4 | 0 |
 | 1.5 Порядок предъявления результатов | 5 | 4 | 1 | 0 |
-| 4.1 Роли и права | 7 | 6 | 1 | 0 |
-| 4.2 Пользовательские истории | 24 | 19 | 5 | 0 |
+| 4.1 Роли и права | 7 | 7 | 0 | 0 |
+| 4.2 Пользовательские истории | 24 | 20 | 4 | 0 |
 | 4.3 Функциональные требования | 63 | 58 | 5 | 0 |
 | 4.4 Интерфейс: экраны и правила блокировки | 20 | 20 | 0 | 0 |
 | 4.5 Навыки агента | 12 | 9 | 3 | 0 |
@@ -39,11 +39,11 @@
 | 4.8 Модель данных и JSON | 19 | 19 | 0 | 0 |
 | 4.9 API: методы, ошибки, автопрогон | 38 | 36 | 2 | 0 |
 | 4.10 Нефункциональные требования | 16 | 10 | 6 | 0 |
-| 4.11 Архитектура, стек, безопасность, разработка | 26 | 16 | 10 | 0 |
+| 4.11 Архитектура, стек, безопасность, разработка | 26 | 19 | 7 | 0 |
 | 5 Метрики качества | 26 | 14 | 8 | 4 |
 | 6.4 Критерии приёмки | 8 | 3 | 3 | 2 |
 | Чек-листы открытых тест-кейсов | 51 | 45 | 6 | 0 |
-| **Итого** | **381** | **318** | **57** | **6** |
+| **Итого** | **381** | **324** | **51** | **6** |
 
 Все «не выполнено» относятся к метрикам пилота, для которых нужны эксперты, слушатели или золотой набор (Q-14, Q-16, Q-20, Q-24), и к замерам с методистом на живом комплекте (ПР-07, ПР-08). Функциональных требований со статусом «не выполнено» нет.
 
@@ -67,7 +67,7 @@
 | К-14 | Адаптация под другую аудиторию или объём | выполнено | `agent/extras.py:63` (adapt), `test_extras.py::test_adapt_keeps_competencies_and_resolves_hours` | |
 | К-15 | Только модели Cloud.ru Evolution Foundation Models | выполнено | `core/config.py` (адрес `foundation-models.api.cloud.ru`, модели GigaChat), в зависимостях нет SDK зарубежных провайдеров; SDK `openai` используется только как клиент OpenAI-совместимого API | |
 | К-16 | Единый API-эндпоинт для проверки | выполнено | `POST /api/v1/programs?mode=auto`, `programs/router.py (create_program)` | |
-| К-17 | Шаги агента как навыки с инструкцией | частично | 11 каталогов `skills/*/SKILL.md` со `schema_in.json` | файлы `schema_out.json`, на которые ссылаются все SKILL.md, отсутствуют; выходные схемы заданы моделями Pydantic в `run.py`; оркестратор вызывает навыки прямым импортом |
+| К-17 | Шаги агента как навыки с инструкцией | выполнено | 11 каталогов `skills/*/` с `SKILL.md`, `schema_in.json` и `schema_out.json`; выходные схемы генерируются из моделей результата (`skills/outputs.py`, `scripts/export_skill_schemas.py --check`), `test_spec_skill_schemas.py::test_schema_out_matches_models` | |
 | К-18 | Каркас до 3 мин, комплект 72 ч до 20 мин | частично | бюджеты времени навыков из SKILL.md (`test_spec_llm_client.py::test_budget_from_skill_md`), `timing_s` в ответе; на fixtures каркас и комплект меньше 1 с | замера на живой модели Cloud.ru нет |
 | К-19 | Человек утверждает цель, компетенции и часы до содержания | выполнено | `agent/workflow.py (approve_skeleton, generate_kit)`, `test_spec_misc.py::test_generate_requires_approved_skeleton` | |
 | К-20 | Реквизиты приказа, ФИО, подписи остаются полями | выполнено | V-11 (`validation/rules.py:263`, теперь и раздел 3.4), `test_spec_export.py::test_human_fields_left_blank` | |
@@ -101,7 +101,7 @@
 | Р-01 | Методист: запрос, вопросы, каркас, правка, эксперты, отправка; не утверждает программу | выполнено | `require('methodist')` на методах `programs/router.py`, `test_core.py::test_roles` | |
 | Р-02 | Эксперт: только свои модули, часы и шаблон только для чтения | выполнено | `programs/router.py (expert_view, _load_for)`, `test_access.py::test_unassigned_expert_cannot_accept_and_api_404` | |
 | Р-03 | Руководитель: утверждает только при готовности 100 %, не правит содержание | выполнено | `agent/workflow.py (head_decision)`, код `NOT_READY` | |
-| Р-04 | Администратор: шаблоны, документы, реестр, пользователи, роли и токены API; не работает с программами | частично | `/admin/*`, `/org/*`, `test_auth.py::test_admin_manages_users_but_not_programs` | отдельной выдачи и отзыва токенов API нет: токен выдаётся входом, отозвать можно только отключением пользователя |
+| Р-04 | Администратор: шаблоны, документы, реестр, пользователи, роли и токены API; не работает с программами | выполнено | `/admin/*`, `/org/*`, `test_auth.py::test_admin_manages_users_but_not_programs`; токены API: `POST/GET /admin/api-tokens`, `DELETE /admin/api-tokens/{id}` (`auth/tokens.py`, в базе только SHA-256, отозванный токен — 401), вкладка «Токены API» в `Admin.tsx`, `test_spec_tokens.py::test_admin_issues_lists_and_revokes_api_tokens` | |
 | Р-05 | API-клиент: только свои задания, в auto полный комплект, не утверждает | выполнено | `programs/router.py (_load_for)`, `test_access.py::test_no_token_cannot_read_others` | |
 | Р-06 | Несколько ролей у пользователя и переключатель | выполнено | `/auth/switch-role`, `/me/tasks`, `test_extras.py::test_sandbox_and_tasks` | |
 | Р-07 | Права на каждом вызове API, вне прав 403 (RACI, таблица 7) | выполнено | `core/security.py (require)`, `test_auth.py::test_admin_manages_users_but_not_programs` | |
@@ -131,7 +131,7 @@
 | US-19 | Программы на утверждении и утверждённые за период | выполнено | `test_extras.py::test_head_filter` | |
 | US-20 | Загрузка шаблонов и положений организации | частично | FR-08, FR-09 | версия профиля фиксируется только датой `checked_at`; эмбеддинги не bge-m3 |
 | US-21 | Реестр ПС, НПА и версий с датой проверки | выполнено | FR-10, `PUT /org/registry`, журнал `org_registry` | |
-| US-22 | Пользователи, роли и токены API | частично | `/admin/users` | выдачи и отзыва токенов API нет (Р-04) |
+| US-22 | Пользователи, роли и токены API | выполнено | `/admin/users`, `/admin/api-tokens` (выдача со сроком, список без секретов, отзыв), `test_spec_tokens.py::test_admin_issues_lists_and_revokes_api_tokens`, `test_spec_tokens.py::test_expired_api_token_rejected` | |
 | US-23 | Автопрогон одним запросом | выполнено | FR-62 | |
 | US-24 | Внешняя система забирает результат по API | выполнено | `GET /jobs/{id}`, выгрузки по форматам, ошибки JSON на русском | |
 
@@ -245,7 +245,7 @@
 | Н-09 | export: .docx, .pptx, GIFT, Moodle XML, JSON без модели | выполнено | `export/service.py` | |
 | Н-10 | review_assist: предложение, затрагиваемые элементы, песочница | выполнено | `test_spec_review_assist.py` | |
 | Н-11 | workflow: конечный автомат, состояние после каждого шага | частично | `agent/workflow.py`, `programs/service.py (save)` | навыки вызываются прямым импортом, а не по каталогу; новый навык требует правки оркестратора |
-| Н-12 | Навык: SKILL.md, schema_in.json, schema_out.json, тесты | частично | 11 каталогов `skills/*` со SKILL.md и schema_in.json | `schema_out.json` и `tests/` внутри навыков нет |
+| Н-12 | Навык: SKILL.md, schema_in.json, schema_out.json, тесты | частично | 11 каталогов `skills/*` со SKILL.md, schema_in.json и schema_out.json (сверка с моделями — `test_spec_skill_schemas.py`) | тесты лежат в общем каталоге `tests/`, а не внутри каталогов навыков; `schema_in.json` минимальны (`type: object`) |
 
 ## 4.6 Алгоритм распределения часов
 
@@ -415,17 +415,17 @@
 | T-12 | Почта SMTP по настройке профиля | выполнено | `programs/service.py:106`, `test_spec_service.py::test_send_mail_smtp` | |
 | T-13 | Правила слоя моделей: паузы 1 и 3 с, резерв, 429 снижает параллельность | выполнено | `llm/client.py`, `test_spec_llm_client.py::test_overload_429_backoff` | |
 | T-14 | Провайдер fixtures для тестов и CI | выполнено | `LLM_PROVIDERS=fixtures` | |
-| T-15 | Переменные окружения таблицы 26 | частично | `core/config.py` | нет `LLM_MODEL_RERANK`, `REDIS_URL`, `SANDBOX_TIMEOUT_S`, `SANDBOX_MEMORY_MB`; `LLM_CONCURRENCY` по умолчанию 2, а не 6 |
+| T-15 | Переменные окружения таблицы 26 | выполнено | `core/config.py`: добавлены `SANDBOX_TIMEOUT_S` (10) и `SANDBOX_MEMORY_MB` (512), их читает `validation/sandbox.py`; `LLM_MODEL_RERANK` и `REDIS_URL` читаются, но помечены в `docs/configuration.md` как зарезервированные (реранкера и Redis нет — см. T-05, T-07); `LLM_CONCURRENCY` по умолчанию 2 из-за ограничения шлюза хакатона, меняется переменной; `test_spec_tokens.py::test_env_settings_table_26`, `test_spec_sandbox.py::test_limits_from_settings` | |
 | T-16 | Пароли bcrypt | выполнено | `test_spec_misc.py::test_passwords_bcrypt_only` | |
-| T-17 | JWT 30 мин и токен обновления 30 дней | частично | `core/security.py (create_token)` | срок токена 12 ч, токена обновления нет |
-| T-18 | Лимиты: вход 5 в минуту с адреса, создание программ 30 в час, api по профилю | частично | вход: `auth/router.py (login)`, `test_tz_compliance.py::test_login_failures_rate_limited` (добавлено в этой сверке, считаются неудачные попытки); анонимный автопрогон 12 в час; 4 параллельных задания | лимита 30 программ в час на пользователя и лимита токена api по профилю нет |
+| T-17 | JWT 30 мин и токен обновления 30 дней | выполнено | `core/security.py (create_token, decode_token)`: токен доступа 30 мин (`typ=access`), токен обновления 30 дней (`typ=refresh`), `POST /auth/refresh`; токены не взаимозаменяемы; интерфейс при 401 один раз обновляет сессию (`frontend/src/api.ts`, vitest); `test_spec_tokens.py::test_access_30_min_and_refresh_30_days`, `test_spec_tokens.py::test_refresh_endpoint_and_token_types` | |
+| T-18 | Лимиты: вход 5 в минуту с адреса, создание программ 30 в час, api по профилю | выполнено | вход: `auth/router.py (login)`, `test_tz_compliance.py::test_login_failures_rate_limited`; создание программ: `core/security.py (check_program_rate)` — `programs_per_hour` 30 в час на пользователя, для роли `api` — `api_programs_per_hour` (оба в настройках профиля «Лимиты»), 429 с `message_ru`, `test_spec_tokens.py::test_program_creation_limit_per_user`; анонимный автопрогон 12 в час с адреса; 4 параллельных задания | |
 | T-19 | Загрузка файлов: сигнатура, 20 МБ, распаковка до 100 МБ, макросы не исполняются, PDF ограничен | выполнено | `kb/files.py:29` и `_parse_docx`; PDF до 200 страниц | |
 | T-20 | Секреты только в окружении, ключ и тексты запросов не в журнале | выполнено | `.env.example`, `llm/client.py` (лог без текста запроса), шифрование секретов настроек | |
 | T-21 | Спецификации EARS и ADR | частично | `specs/*.md` в EARS, трассировка `scripts/spec_trace.py` | каталога ADR (`docs/decisions/`) нет |
 | T-22 | ruff, mypy strict, pytest с покрытием не ниже 70 %, hypothesis для солвера | частично | ruff чист, покрытие 90 %, `test_tz_compliance.py::test_solver_property_all_levels` | mypy не настроен; порог в `.coveragerc` 60 %, а не 70 % (фактически 90 %) |
 | T-23 | Фронтенд: ESLint, сборка TS, vitest | выполнено | `frontend/eslint.config.js` (правила TS и хуков React, 0 предупреждений), `frontend/src/__tests__/api.test.ts` (vitest, jsdom), `npm run check` = lint + test + build | |
 | T-24 | autorun.py со сверкой чек-листов, отчётом времени и токенов | выполнено | `scripts/autorun.py` | |
-| T-25 | smoke.py, e2e (Playwright), export_openapi.py --check | выполнено | `scripts/smoke.sh` (основной сценарий и выгрузки), `scripts/e2e_regression.py` (API по всем ролям и 5 кейсам, 1381 проверка), `e2e/ui_roles.spec.cjs` (Playwright, 89 проверок по ролям), `scripts/export_openapi.py --check`, `test_reproducibility.py::test_openapi_schema_matches_code` | smoke написан на bash, а не Python |
+| T-25 | smoke.py, e2e (Playwright), export_openapi.py --check | выполнено | `scripts/smoke.sh` (основной сценарий и выгрузки), `scripts/e2e_regression.py` (API по всем ролям и 5 кейсам, 1381 проверка), `e2e/ui_roles.spec.cjs` (Playwright, 90 проверок по ролям), `scripts/export_openapi.py --check`, `test_reproducibility.py::test_openapi_schema_matches_code` | smoke написан на bash, а не Python |
 | T-26 | CI на каждый push или `make check` | выполнено | `.gitea/workflows/ci.yml` (ruff, pytest с порогом покрытия, трассировка SDD, OpenAPI, ESLint, vitest, сборка), `Makefile` (`make check`, `make e2e`) | |
 
 Запись ADR учтена в T-21. Статус «не выполнено» в разделе 4.11 у трёх строк: T-23 (ESLint и vitest), T-25 (smoke, e2e, `export_openapi`) и T-26 (CI).
@@ -609,6 +609,11 @@
 | 6 | Эксперт не получал уведомление, когда принятый модуль менялся и возвращался на вычитку (US-15) | `programs/router.py:514-529` (`edits`): уведомление назначенному эксперту | `test_tz_compliance.py::test_changed_accepted_module_returns_to_review_and_notifies_expert`, SPEC-FLOW-37 |
 | 7 | Нет API-теста цепочки «замечание эксперта, предложение агента, подтверждение экспертом» (FR-41, FR-47, FR-48) | поведение верное, добавлен тест | `test_tz_compliance.py::test_expert_comment_proposal_needs_expert_confirmation`, SPEC-FLOW-36 |
 | 8 | Нет property-теста солвера на всех уровнях для 16…500 ч (ТЗ 4.11) | добавлен тест hypothesis: суммы, детерминизм, нули стажировки | `test_tz_compliance.py::test_solver_property_all_levels`, SPEC-SOLVER-04…07 |
+| 9 | Токен 12 ч без токена обновления (T-17) | `core/security.py`: токен доступа 30 мин (`typ=access`) и токен обновления 30 дней (`typ=refresh`), `POST /auth/refresh`; старые клиенты с одним `access_token` работают; интерфейс при 401 один раз обменивает токен обновления (`frontend/src/api.ts`) | `test_spec_tokens.py`, SPEC-AUTH-25, SPEC-AUTH-26, SPEC-UI-08 |
+| 10 | Нет выдачи и отзыва токенов API (Р-04, US-22) | `auth/tokens.py`, таблица `api_tokens` (только SHA-256), `/admin/api-tokens` (POST, GET, DELETE), вкладка «Токены API» | `test_spec_tokens.py`, SPEC-AUTH-27, SPEC-AUTH-28, SPEC-UI-21 |
+| 11 | Нет лимита 30 программ в час на пользователя и лимита роли api (T-18) | `core/security.py (check_program_rate)` в `POST /programs`, `/programs/upload`, `/adapt`; настройки `programs_per_hour`, `api_programs_per_hour` | `test_spec_tokens.py::test_program_creation_limit_per_user`, SPEC-AUTH-29 |
+| 12 | Нет `SANDBOX_TIMEOUT_S`, `SANDBOX_MEMORY_MB`, `LLM_MODEL_RERANK`, `REDIS_URL` (T-15) | `core/config.py`, песочница читает лимиты из настроек; реранкер и Redis помечены как зарезервированные | `test_spec_tokens.py::test_env_settings_table_26`, SPEC-API-29, SPEC-SANDBOX-11 |
+| 13 | В каталогах навыков нет `schema_out.json`, на который ссылаются SKILL.md (К-17) | `skills/outputs.py`, `scripts/export_skill_schemas.py --check`, 11 файлов `schema_out.json` | `test_spec_skill_schemas.py`, SPEC-SKILLS-16 |
 
 ## Оставшиеся разрывы
 
@@ -617,8 +622,8 @@
 1. **Живой прогон на моделях Cloud.ru** (FR-19, FR-31, NFR-01, NFR-02, NFR-14, Q-26, ПР-01, ПР-02, ПР-04): нужен прогон `scripts/autorun.py --url` на стенде с ключом, 5 кейсов и 10 синтетических запросов по 3 раза, с сохранением логов времени и токенов и протоколом испытаний.
 2. **Раздельные часы очной и дистанционной работы** (чек-лист 2.2): нужно правило распределения часов по формам (например, ЛК и СРС дистанционно, ПР очно) в солвере, разделе 1.8 и учебном плане. Это изменение модели данных и солвера, а не правка текста.
 3. **Инфраструктура стека 4.11**: PostgreSQL с pgvector и Alembic, Redis и arq, nginx, bge-m3 и реранкер, песочница с Landlock и seccomp. Текущая реализация (SQLite, встроенная очередь, FastAPI отдаёт SPA, эмбеддинги шлюза, rlimit и контейнер только для чтения) соответствует варианту ТЗ «без Docker» и ограничениям шлюза хакатона.
-4. **Токены**: JWT 30 минут с токеном обновления на 30 дней, выдача и отзыв токенов API администратором, лимит 30 программ в час на пользователя и лимит токена `api` по профилю.
-5. **Навыки как переносимые единицы** (К-17, Н-11, Н-12, NFR-16): `schema_out.json` и тесты внутри каталога навыка, вызов навыков оркестратором по каталогу, а не прямым импортом.
+4. ~~**Токены**~~: закрыто — JWT 30 минут с токеном обновления на 30 дней (T-17), выдача и отзыв токенов API администратором (Р-04, US-22), лимит 30 программ в час на пользователя и лимит роли `api` в профиле (T-18).
+5. **Навыки как переносимые единицы** (Н-11, Н-12, NFR-16): `schema_out.json` добавлены и сверяются с моделями (К-17 закрыт); остались тесты внутри каталога навыка и вызов навыков оркестратором по каталогу, а не прямым импортом.
 6. **Инструменты разработки**: mypy strict для solver, validation, export; ESLint и vitest; `scripts/smoke.py`, `scripts/export_openapi.py --check` и `docs/openapi.json`; CI или `make check`; каталог ADR `docs/decisions/`; порог покрытия 70 % в `.coveragerc`.
 7. **Метрики пилота** (Q-07, Q-10, Q-13, Q-14, Q-16, Q-19, Q-20, Q-22, Q-23, Q-24): требуют данных экспертов и слушателей, таймеров и золотого набора для калибровки судьи.
 8. **Материалы сдачи** (П-03): ТЗ, макеты, `МетодАгент_расчёты.xlsx` и протокол испытаний в репозиторий не положены.

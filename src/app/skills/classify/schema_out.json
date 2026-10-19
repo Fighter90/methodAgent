@@ -1,0 +1,168 @@
+{
+  "$defs": {
+    "ProfStandard": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "confirmed": {
+          "default": true,
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "order": {
+          "title": "Order",
+          "type": "string"
+        },
+        "tf": {
+          "items": {
+            "$ref": "#/$defs/TrudFunction"
+          },
+          "title": "Tf",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "title",
+        "order"
+      ],
+      "title": "ProfStandard",
+      "type": "object"
+    },
+    "ProgramType": {
+      "enum": [
+        "dpp_pk",
+        "dpp_pk_internship",
+        "doop"
+      ],
+      "title": "ProgramType",
+      "type": "string"
+    },
+    "Source": {
+      "properties": {
+        "bibl": {
+          "title": "Bibl",
+          "type": "string"
+        },
+        "checked_at": {
+          "default": "",
+          "title": "Checked At",
+          "type": "string"
+        },
+        "confirmed": {
+          "default": false,
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "book",
+            "doc",
+            "law",
+            "ps",
+            "url"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "bibl"
+      ],
+      "title": "Source",
+      "type": "object"
+    },
+    "TrudFunction": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "title"
+      ],
+      "title": "TrudFunction",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "confidence": {
+      "title": "Confidence",
+      "type": "number"
+    },
+    "issued_document": {
+      "title": "Issued Document",
+      "type": "string"
+    },
+    "message": {
+      "title": "Message",
+      "type": "string"
+    },
+    "norm_base": {
+      "items": {
+        "$ref": "#/$defs/Source"
+      },
+      "title": "Norm Base",
+      "type": "array"
+    },
+    "profstandard": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProfStandard"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "program_type": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProgramType"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "template": {
+      "title": "Template",
+      "type": "string"
+    }
+  },
+  "required": [
+    "program_type",
+    "template",
+    "issued_document",
+    "norm_base",
+    "profstandard",
+    "confidence",
+    "message"
+  ],
+  "title": "ClassifyResult",
+  "type": "object"
+}

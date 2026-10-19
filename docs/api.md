@@ -17,9 +17,11 @@
 
 ### 2.1. Токен
 
-- Токен выдают `POST /auth/login`, `POST /auth/register` и `POST /auth/switch-role`. Ответ: `{"access_token", "token_type": "bearer", "user": {...профиль, "role"}}`.
-- Токен — JWT (`HS256` по умолчанию, настройка `JWT_ALGORITHM`), подписан `SECRET_KEY`, поля: `sub` (id пользователя), `role` (активная роль), `exp`.
-- Срок жизни — `ACCESS_TOKEN_EXPIRE_MINUTES`, по умолчанию 720 минут (12 часов); администратор может изменить его в настройках (15 минут — 30 суток).
+- Токены выдают `POST /auth/login`, `POST /auth/register` и `POST /auth/switch-role`. Ответ: `{"access_token", "refresh_token", "token_type": "bearer", "expires_in", "user": {...профиль, "role"}}`. Клиенты, которые читают только `access_token`, работают как раньше.
+- Оба токена — JWT (`HS256` по умолчанию, настройка `JWT_ALGORITHM`), подписаны `SECRET_KEY`, поля: `sub` (id пользователя), `role` (активная роль), `typ` (`access` или `refresh`), `exp`. Токен без `typ`, выпущенный до обновления, считается токеном доступа.
+- Токен доступа живёт `ACCESS_TOKEN_EXPIRE_MINUTES`, по умолчанию 30 минут (ТЗ, 4.11; `expires_in` — то же в секундах); администратор может изменить срок в настройках (15 минут — 30 суток).
+- Токен обновления живёт `REFRESH_TOKEN_EXPIRE_DAYS`, по умолчанию 30 дней, и меняется на новую пару в `POST /auth/refresh`. Токеном обновления нельзя вызвать метод API (401), токеном доступа нельзя обновить сессию (401). Токены обновления не хранятся на сервере: старый действует до своего срока; отключение пользователя или смена `SECRET_KEY` делает недействительными все его токены.
+- Токены API для интеграций выдаёт администратор (`POST /admin/api-tokens`, раздел 6): строка `ma_…` со сроком до 365 дней, передаётся так же в `Authorization: Bearer`. Отозванный или истёкший токен получает 401.
 - Если `SECRET_KEY` короче 16 символов или содержит `change-me`, при старте генерируется случайный ключ и сохраняется в `data_dir/.secret_key`.
 
 ### 2.2. Заголовки
@@ -55,7 +57,7 @@
 | 404 | `NOT_FOUND` | `NotFound` | Программа, версия, задание, пользователь, навык или документ не найдены |
 | 409 | `STATE_CONFLICT` | `Conflict` | Действие недоступно в текущем состоянии программы; частные коды `LOGIN_TAKEN`, `EMAIL_TAKEN`, `LAST_ADMIN` |
 | 422 | `VALIDATION_ERROR` | `RequestValidationError` | Тело или параметры не соответствуют схеме; `details.errors` — список `{loc, msg}` |
-| 429 | `RATE_LIMIT` | `RateLimited` | Лимит автопрогонов без токена, регистраций (10 в час с IP) или параллельных заданий (`MAX_PARALLEL_JOBS`, по умолчанию 4) |
+| 429 | `RATE_LIMIT` | `RateLimited` | Лимит автопрогонов без токена, неудачных входов (5 в минуту с IP), регистраций (10 в час с IP), новых программ (`PROGRAMS_PER_HOUR`, по умолчанию 30 в час на пользователя; для роли `api` — `API_PROGRAMS_PER_HOUR`) или параллельных заданий (`MAX_PARALLEL_JOBS`, по умолчанию 4) |
 | 500 | `INTERNAL_ERROR` | любое необработанное исключение | Внутренние детали не раскрываются |
 
 ## 4. Обозначения ролей
@@ -66,7 +68,7 @@
 
 | Метод и путь | Кто | Тело / параметры | Ответ | Ошибки |
 |---|---|---|---|---|
-| `POST /auth/login` | все (без токена) | `login` (логин или почта), `user_id` (совместимость, напр. `u-madina`), `password` (по умолчанию `demo`), `role` (необязательно) | сессия: `access_token`, `token_type`, `user` | 401: неверный логин/пароль, учётка отключена, демо-учётки отключены, нет такой роли |
+| `POST /auth/login` | все (без токена) | `login` (логин или почта), `user_id` (совместимость, напр. `u-madina`), `password` (по умолчанию `demo`), `role` (необязательно) | сессия: `access_token`, `refresh_token`, `token_type`, `expires_in`, `user` | 401: неверный логин/пароль, учётка отключена, демо-учётки отключены, нет такой роли |
 | `POST /auth/register` | все (без токена) | `name` (2–120), `login` (3–32), `email`, `password` (8+), `consent` | 201, сессия с ролью по умолчанию | 403 `REGISTRATION_CLOSED`, 400 `CONSENT_REQUIRED`, 400 `BAD_LOGIN`/`BAD_EMAIL`/`WEAK_PASSWORD`, 409 `LOGIN_TAKEN`/`EMAIL_TAKEN`, 429 |
 | `GET /auth/config` | все | — | `demo_accounts` (логин, имя, роль, должность), `demo_password`, `registration_enabled`, `registration_default_role`, `sso` (`enabled`, `provider`, `display_name`, `configured`, `available: false`) | — |
 | `GET /auth/sso/start` | все | — | всегда ошибка | 400 `SSO_NOT_AVAILABLE` |
@@ -75,6 +77,7 @@
 | `PUT /auth/me` | вошедший | `name`, `email`, `title` (все необязательные) | обновлённый профиль | 403 для демо-учётки, 400/409 при проверке почты |
 | `PUT /auth/me/password` | вошедший | `current`, `new` (8+) | `{"status": "ok"}` | 403 для демо-учётки, 400 `WRONG_PASSWORD`, 400 `WEAK_PASSWORD` |
 | `POST /auth/switch-role` | вошедший | `role` | новая сессия с другой ролью | 403, если роли нет у пользователя |
+| `POST /auth/refresh` | все (без токена) | `refresh_token` | новая сессия той же роли (новые `access_token` и `refresh_token`) | 401: токен обновления недействителен или истёк, передан токен доступа, учётка отключена или лишилась роли |
 
 Пример входа:
 
@@ -82,7 +85,10 @@
 curl -s -X POST https://<host>/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"login": "madina", "password": "demo"}'
-# {"access_token": "eyJ...", "token_type": "bearer", "user": {"id": "u-madina", ..., "role": "methodist"}}
+# {"access_token": "eyJ...", "refresh_token": "eyJ...", "token_type": "bearer", "expires_in": 1800, "user": {"id": "u-madina", ..., "role": "methodist"}}
+
+# через 30 минут — новая пара без пароля
+curl -s -X POST https://<host>/api/v1/auth/refresh -H 'Content-Type: application/json' -d '{"refresh_token": "eyJ..."}'
 ```
 
 ## 6. Администрирование (`/admin`)
@@ -94,11 +100,14 @@ curl -s -X POST https://<host>/api/v1/auth/login \
 | `GET /admin/users` | — | список профилей пользователей | 403 |
 | `POST /admin/users` | `login`, `name`, `password` (8+), `roles` (по умолчанию `["expert"]`), `email`, `title` | 201, профиль | 400 (логин, почта, пароль, роли), 409 `LOGIN_TAKEN`/`EMAIL_TAKEN` |
 | `PATCH /admin/users/{user_id}` | любые из `login`, `name`, `email`, `title`, `roles`, `active`, `password` | профиль | 404, 400, 409 `LAST_ADMIN` (нельзя снять роль или отключить последнего активного администратора) |
+| `GET /admin/api-tokens` | — | токены API без секретов: `id`, `name`, `user_id`, `user_name`, `role`, `prefix` (начало токена), `created_by`, `created_at`, `expires_at`, `revoked_at`, `active` | 403 |
+| `POST /admin/api-tokens` | `user_id` (по умолчанию `u-api`), `name`, `role` (из ролей владельца; по умолчанию `api`, если есть), `ttl_days` (1–365, по умолчанию `API_TOKEN_DEFAULT_DAYS` = 90) | 201, описание токена и поле `token` — значение показывается только в этом ответе, в базе хранится SHA-256 | 404 (пользователь), 400 (нет такой роли, учётка отключена), 422 |
+| `DELETE /admin/api-tokens/{token_id}` | — | описание токена с `revoked_at`; следующие запросы с ним получают 401; повторный отзыв ничего не меняет | 404 |
 | `GET /admin/settings` | — | `groups` (группы настроек), `fields` (описание полей, секреты — маской) | 403 |
 | `PUT /admin/settings` | `values` (ключ → значение), `clear` (ключи, вернуть значение окружения) | `changed`, `groups`, `fields` | 400 |
 | `GET /admin/skills` | — | навыки: `name`, `description`, `model_role`, `instruction`, редактируемые параметры, `overridden`, `defaults` | 403 |
 | `PUT /admin/skills/{name}` | `temperature`, `max_tokens`, `timeout_s`, `retries`, `instruction` (не короче 20 символов), `reset` | обновлённый навык | 404, 400 (выход за допустимый диапазон) |
-| `GET /admin/journal` | — | события организации: регистрации, смены паролей, пользователи, настройки, навыки, профиль, реестры | 403 |
+| `GET /admin/journal` | — | события организации: регистрации, смены паролей, пользователи, токены API (`api_token_issue`, `api_token_revoke`, без значения токена), настройки, навыки, профиль, реестры | 403 |
 
 ## 7. Программы (`/programs`)
 
@@ -106,7 +115,7 @@ curl -s -X POST https://<host>/api/v1/auth/login \
 
 | Метод и путь | Кто | Тело / параметры | Ответ | Ошибки |
 |---|---|---|---|---|
-| `POST /programs` | methodist, api (без токена — только `mode=auto`) | query `mode`: `interactive` (по умолчанию) или `auto`. Тело: `request` (5–5000 символов), `attachments` (до 5: `name`, `content_base64`), `norm_mode` (`gos`/`org`), `wait` (по умолчанию `true`), `answers` (ответы на вопросы заранее) | см. ниже | 400 (base64, число и размер файлов, формат), 422, 429 |
+| `POST /programs` | methodist, api (без токена — только `mode=auto`) | query `mode`: `interactive` (по умолчанию) или `auto`. Тело: `request` (5–5000 символов), `attachments` (до 5: `name`, `content_base64`), `norm_mode` (`gos`/`org`), `wait` (по умолчанию `true`), `answers` (ответы на вопросы заранее) | см. ниже | 400 (base64, число и размер файлов, формат), 422, 429 (больше `PROGRAMS_PER_HOUR` новых программ в час на пользователя — то же для `/programs/upload` и `/adapt`; без токена — `ANON_RUNS_PER_HOUR` с адреса) |
 | `POST /programs/upload` | methodist, api | `multipart/form-data`: `text`, `norm_mode`, `files` | `program_id`, `status` (`questions` или `skeleton_building` с `job_id`), `program` | 400, 422 |
 | `GET /programs` | любая, кроме admin | query `status` (через запятую), `since`, `until` (`ГГГГ-ММ-ДД`) | список программ. api видит только свои; expert — только программы с назначенными ему модулями | 403 для admin, 422 |
 | `GET /programs/{id}` | любая, кроме admin | — | состояние программы + `readiness`, `totals`, `program` (комплект по схеме; у эксперта `null`), для methodist и head — `quality`. Эксперт получает только назначенные модули, их элементы комплекта и комментарии | 403 (admin; эксперт без модулей; api к чужой), 401 (анонимный к чужой), 404 |

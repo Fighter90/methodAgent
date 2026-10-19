@@ -196,16 +196,24 @@ async def search(query: str, k: int = 5) -> list[dict[str, Any]]:
             q = np.asarray(got[0], dtype=np.float32)
             qvec = q / (np.linalg.norm(q) or 1.0)
     qw = _words(query)
-    scored = []
+    sims_by_doc = {}
     for d in docs:
         m = mats.get(d['id'])
-        sims = (np.asarray(m) @ qvec) if qvec is not None and m is not None and m.shape[1] == qvec.shape[0] else None
+        if qvec is not None and m is not None and m.shape[1] == qvec.shape[0]:
+            sims_by_doc[d['id']] = np.asarray(m) @ qvec
+    # Одна шкала, пока часть документов без векторов: доля общих слов (до 1,0) не должна обгонять
+    # косинус (обычно 0,3–0,6), поэтому фрагмент только по словам получает не больше половины лучшего косинуса
+    best_cos = max((float(v.max()) for v in sims_by_doc.values() if len(v)), default=0.0)
+    lex_scale = 0.5 * best_cos if best_cos > 0 else 1.0
+    scored = []
+    for d in docs:
+        sims = sims_by_doc.get(d['id'])
         for c in d['chunks']:
             if sims is not None and c['i'] < len(sims):
                 score = float(sims[c['i']])
             else:
                 cw = _words(c['text'])
-                score = len(qw & cw) / (len(qw) or 1)
+                score = lex_scale * len(qw & cw) / (len(qw) or 1)
             scored.append((score, d, c))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [

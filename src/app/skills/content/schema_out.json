@@ -1,0 +1,334 @@
+{
+  "$defs": {
+    "Criterion": {
+      "properties": {
+        "points": {
+          "title": "Points",
+          "type": "integer"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "points"
+      ],
+      "title": "Criterion",
+      "type": "object"
+    },
+    "Lecture": {
+      "properties": {
+        "code_examples": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Code Examples",
+          "type": "array"
+        },
+        "duration_min": {
+          "default": 90,
+          "title": "Duration Min",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "module_id": {
+          "title": "Module Id",
+          "type": "string"
+        },
+        "plan": {
+          "items": {
+            "type": "object"
+          },
+          "title": "Plan",
+          "type": "array"
+        },
+        "slides": {
+          "items": {
+            "$ref": "#/$defs/Slide"
+          },
+          "title": "Slides",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "topic_id": {
+          "title": "Topic Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "topic_id",
+        "module_id",
+        "title"
+      ],
+      "title": "Lecture",
+      "type": "object"
+    },
+    "ModuleProgram": {
+      "description": "Рабочая программа модуля.",
+      "properties": {
+        "annotation": {
+          "default": "",
+          "title": "Annotation",
+          "type": "string"
+        },
+        "content": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Content",
+          "type": "array"
+        },
+        "control_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Control Questions",
+          "type": "array"
+        },
+        "module_id": {
+          "title": "Module Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "module_id"
+      ],
+      "title": "ModuleProgram",
+      "type": "object"
+    },
+    "Question_": {
+      "description": "Вопрос теста с ключом и привязкой к РО.",
+      "properties": {
+        "assessment_id": {
+          "title": "Assessment Id",
+          "type": "string"
+        },
+        "difficulty": {
+          "default": 2,
+          "title": "Difficulty",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
+          "type": "integer"
+        },
+        "lo_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Lo Ids",
+          "type": "array"
+        },
+        "module_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Module Id"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "stem": {
+          "title": "Stem",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "assessment_id",
+        "stem",
+        "options",
+        "key"
+      ],
+      "title": "Question_",
+      "type": "object"
+    },
+    "Slide": {
+      "properties": {
+        "bullets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Bullets",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "n",
+        "title"
+      ],
+      "title": "Slide",
+      "type": "object"
+    },
+    "Task": {
+      "properties": {
+        "assessment_id": {
+          "title": "Assessment Id",
+          "type": "string"
+        },
+        "criteria": {
+          "items": {
+            "$ref": "#/$defs/Criterion"
+          },
+          "title": "Criteria",
+          "type": "array"
+        },
+        "expected_result": {
+          "default": "",
+          "title": "Expected Result",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lo_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Lo Ids",
+          "type": "array"
+        },
+        "module_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Module Id"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "topic_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic Id"
+        }
+      },
+      "required": [
+        "id",
+        "assessment_id",
+        "title",
+        "statement"
+      ],
+      "title": "Task",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "interview": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Interview",
+      "type": "array"
+    },
+    "lectures": {
+      "items": {
+        "$ref": "#/$defs/Lecture"
+      },
+      "title": "Lectures",
+      "type": "array"
+    },
+    "program": {
+      "$ref": "#/$defs/ModuleProgram"
+    },
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/Question_"
+      },
+      "title": "Questions",
+      "type": "array"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "tasks": {
+      "items": {
+        "$ref": "#/$defs/Task"
+      },
+      "title": "Tasks",
+      "type": "array"
+    }
+  },
+  "required": [
+    "program",
+    "questions",
+    "tasks",
+    "lectures",
+    "sources",
+    "source"
+  ],
+  "title": "ModuleContent",
+  "type": "object"
+}

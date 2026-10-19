@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, getSession, login, ROLE_CAN, ROLE_LABEL, setSession, STATUS_LABEL, waitJob } from '../api'
+import { api, ApiError, getSession, login, refreshSession, ROLE_CAN, ROLE_LABEL, setSession, STATUS_LABEL, waitJob } from '../api'
 
 const user = { id: 'u1', name: 'Методист', role: 'methodist' as const, title: '' }
 
@@ -67,11 +67,72 @@ describe('api()', () => {
   })
 })
 
+describe('токен обновления', () => {
+  it('при 401 один раз обменивает refresh_token и повторяет запрос с новым токеном', async () => {
+    setSession({ token: 'old', refresh: 'r1', user })
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ message_ru: 'Токен недействителен или истёк' }, 401))
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'new', refresh_token: 'r2', user }))
+      .mockResolvedValueOnce(jsonResponse({ ok: 1 }))
+    expect(await api('/programs')).toEqual({ ok: 1 })
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/auth/refresh')
+    expect(JSON.parse(fetchMock.mock.calls[1][1]!.body as string)).toEqual({ refresh_token: 'r1' })
+    expect((fetchMock.mock.calls[2][1]!.headers as Record<string, string>)['X-MA-Token']).toBe('new')
+    expect(getSession()).toMatchObject({ token: 'new', refresh: 'r2' })
+  })
+
+  it('если обмен не удался — сессия сбрасывается и переход на вход', async () => {
+    setSession({ token: 'old', refresh: 'bad', user })
+    const assign = vi.fn()
+    vi.stubGlobal('location', { pathname: '/app', assign })
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ message_ru: 'истёк' }, 401))
+      .mockResolvedValueOnce(jsonResponse({ message_ru: 'Нужен токен обновления' }, 401))
+    await expect(api('/me')).rejects.toMatchObject({ status: 401 })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(getSession()).toBeNull()
+    expect(assign).toHaveBeenCalledWith('/auth?expired=1')
+    vi.unstubAllGlobals()
+  })
+
+  it('повторный 401 после обмена не зацикливается', async () => {
+    setSession({ token: 'old', refresh: 'r1', user })
+    vi.stubGlobal('location', { pathname: '/app', assign: vi.fn() })
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({}, 401))
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'new', refresh_token: 'r2', user }))
+      .mockResolvedValueOnce(jsonResponse({}, 401))
+    await expect(api('/me')).rejects.toMatchObject({ status: 401 })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(getSession()).toBeNull()
+    vi.unstubAllGlobals()
+  })
+
+  it('неверный пароль при входе не запускает обмен токена', async () => {
+    setSession({ token: 'old', refresh: 'r1', user })
+    vi.stubGlobal('location', { pathname: '/auth', assign: vi.fn() })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ message_ru: 'Неверный логин или пароль' }, 401))
+    await expect(login('m', 'bad')).rejects.toThrow('Неверный логин или пароль')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
+  it('без refresh_token обмен не выполняется, параллельные вызовы делят один запрос', async () => {
+    setSession({ token: 't', user })
+    expect(await refreshSession()).toBe(false)
+    setSession({ token: 't', refresh: 'r1', user })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ access_token: 'n', refresh_token: 'r2', user }))
+    const [a, b] = await Promise.all([refreshSession(), refreshSession()])
+    expect(a && b).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('login()', () => {
-  it('сохраняет токен и пользователя', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ access_token: 'a', user }))
+  it('сохраняет токен доступа, токен обновления и пользователя', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ access_token: 'a', refresh_token: 'r', user }))
     expect(await login('m', 'p')).toEqual(user)
-    expect(getSession()?.token).toBe('a')
+    expect(getSession()).toMatchObject({ token: 'a', refresh: 'r' })
   })
 
   it('API-клиент с ролью методиста переключается в методиста', async () => {

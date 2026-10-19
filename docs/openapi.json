@@ -86,6 +86,52 @@
         "title": "Answers",
         "type": "object"
       },
+      "ApiTokenIn": {
+        "properties": {
+          "name": {
+            "default": "",
+            "description": "Назначение: «Автопрогон жюри», «LMS колледжа»",
+            "maxLength": 120,
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Роль токена из ролей владельца; по умолчанию api, если она есть",
+            "title": "Role"
+          },
+          "ttl_days": {
+            "anyOf": [
+              {
+                "maximum": 365.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Срок действия, дней (по умолчанию api_token_default_days)",
+            "title": "Ttl Days"
+          },
+          "user_id": {
+            "default": "u-api",
+            "description": "Владелец токена; по умолчанию служебная учётка API-клиента",
+            "maxLength": 64,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "title": "ApiTokenIn",
+        "type": "object"
+      },
       "ApproveIn": {
         "properties": {
           "comment": {
@@ -495,6 +541,21 @@
           }
         },
         "title": "ReadIn",
+        "type": "object"
+      },
+      "RefreshIn": {
+        "properties": {
+          "refresh_token": {
+            "maxLength": 4000,
+            "minLength": 10,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshIn",
         "type": "object"
       },
       "RegisterIn": {
@@ -1075,6 +1136,224 @@
         "summary": "Актуализация старой программы из файла (.docx, .pdf, .txt) без создания черновика",
         "tags": [
           "extras"
+        ]
+      }
+    },
+    "/api/v1/admin/api-tokens": {
+      "get": {
+        "operationId": "list_api_tokens_api_v1_admin_api_tokens_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-ma-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ma-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Response List Api Tokens Api V1 Admin Api Tokens Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Токены API: владелец, срок, отозван ли (без секретов)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "issue_api_token_api_v1_admin_api_tokens_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-ma-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ma-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Issue Api Token Api V1 Admin Api Tokens Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Выдать токен API (администратор); значение токена показывается один раз",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/api-tokens/{token_id}": {
+      "delete": {
+        "operationId": "revoke_api_token_api_v1_admin_api_tokens__token_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "title": "Token Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-ma-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ma-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Revoke Api Token Api V1 Admin Api Tokens  Token Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Отозвать токен API (администратор): дальше запросы с ним получают 401",
+        "tags": [
+          "admin"
         ]
       }
     },
@@ -1947,6 +2226,48 @@
           }
         },
         "summary": "Сменить пароль",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Refresh Api V1 Auth Refresh Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Новая пара токенов по токену обновления (токен доступа сюда не подходит)",
         "tags": [
           "auth"
         ]

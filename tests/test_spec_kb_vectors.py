@@ -40,3 +40,30 @@ def test_vectors_in_npy_migration_search_and_reindex(tmp_path, monkeypatch) -> N
     orgdocs.delete_document('kb-002')
     assert not (kb / 'vectors' / 'kb-002.npy').exists()
     get_settings.cache_clear()
+
+
+def test_mixed_index_keeps_semantic_hits_on_top(tmp_path, monkeypatch) -> None:
+    """SPEC-KB-18: пока часть документов без векторов, фрагмент, найденный только по словам, не обгоняет лучший косинус: его оценка не больше половины лучшего косинуса."""
+    from app.core.config import get_settings
+    from app.kb import orgdocs
+
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    get_settings.cache_clear()
+    orgdocs._vec_cache.clear()
+    kb = tmp_path / 'kb'
+    kb.mkdir(parents=True)
+    old = {'docs': [
+        {'id': 'kb-001', 'name': 'sem.txt', 'kind': 'regulation', 'indexed': 'embeddings',
+         'chunks': [{'i': 0, 'text': 'организация практики обучающихся', 'vec': [0.4, 0.9165, 0.0]}]},
+        {'id': 'kb-002', 'name': 'lex.txt', 'kind': 'other', 'indexed': 'keywords',
+         'chunks': [{'i': 0, 'text': 'практическая подготовка', 'vec': None}]},
+    ]}
+    (kb / 'index.json').write_text(json.dumps(old, ensure_ascii=False), encoding='utf-8')
+
+    async def fake_embed(texts):
+        return [[1.0, 0.0, 0.0] for _ in texts]
+
+    monkeypatch.setattr(orgdocs, '_embed', fake_embed)
+    hits = asyncio.run(orgdocs.search('практическая подготовка', k=2))
+    assert [h['doc_id'] for h in hits] == ['kb-001', 'kb-002']
+    assert hits[1]['score'] <= hits[0]['score'] / 2 + 1e-6

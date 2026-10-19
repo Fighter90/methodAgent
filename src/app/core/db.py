@@ -104,6 +104,23 @@ class UserRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ApiTokenRow(Base):
+    """Токены API интеграций (ТЗ, 4.1): выдаёт и отзывает администратор; хранится только SHA-256 токена."""
+
+    __tablename__ = 'api_tokens'
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), default='')
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    prefix: Mapped[str] = mapped_column(String(16), default='')  # первые символы токена — чтобы узнать его в списке
+    created_by: Mapped[str] = mapped_column(String(64), default='')
+    created_at: Mapped[str] = mapped_column(String(32), default=now_iso)  # ISO 8601, UTC
+    expires_at: Mapped[str] = mapped_column(String(32))
+    revoked_at: Mapped[str] = mapped_column(String(32), default='')
+
+
 class SettingRow(Base):
     """Настройки, которые администратор меняет в интерфейсе; секреты хранятся зашифрованными."""
 

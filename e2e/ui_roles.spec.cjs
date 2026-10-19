@@ -206,7 +206,7 @@ async function run() {
     await expectPath(page, '/app/admin', 'admin: после входа — Администрирование (/app/admin)')
     await screen(page, '/app/admin', 'admin-users', 'Администрирование', async () => {
       check('admin: в меню нет «Программы»', await page.locator('header nav').getByRole('link', { name: 'Программы', exact: true }).count() === 0)
-      for (const [tab, name] of [['Настройки агента', 'settings'], ['Навыки агента', 'skills'], ['Журнал', 'journal'], ['Пользователи', 'users']]) {
+      for (const [tab, name] of [['Токены API', 'tokens'], ['Настройки агента', 'settings'], ['Навыки агента', 'skills'], ['Журнал', 'journal'], ['Пользователи', 'users']]) {
         page.errors.length = 0
         await page.getByRole('tab', { name: new RegExp(tab) }).click()
         await page.waitForLoadState('networkidle')

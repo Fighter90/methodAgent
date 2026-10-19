@@ -1,0 +1,1976 @@
+{
+  "$defs": {
+    "Approval": {
+      "properties": {
+        "actor": {
+          "title": "Actor",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "comment": {
+          "default": "",
+          "title": "Comment",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "approve",
+            "return"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "module_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Module Id"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "stage": {
+          "enum": [
+            "skeleton",
+            "module",
+            "program"
+          ],
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "actor",
+        "decision",
+        "at"
+      ],
+      "title": "Approval",
+      "type": "object"
+    },
+    "Assessment": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "test",
+            "seminar",
+            "project",
+            "final",
+            "interview"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "module_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Module Id"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title"
+      ],
+      "title": "Assessment",
+      "type": "object"
+    },
+    "Assumption": {
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value"
+        }
+      },
+      "required": [
+        "field",
+        "value",
+        "source"
+      ],
+      "title": "Assumption",
+      "type": "object"
+    },
+    "Calendar": {
+      "properties": {
+        "chosen_option": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chosen Option"
+        },
+        "conflict": {
+          "default": "",
+          "title": "Conflict",
+          "type": "string"
+        },
+        "days_per_week": {
+          "default": 5,
+          "title": "Days Per Week",
+          "type": "integer"
+        },
+        "hours_per_day": {
+          "default": 0,
+          "title": "Hours Per Day",
+          "type": "integer"
+        },
+        "hours_per_week": {
+          "default": 0,
+          "title": "Hours Per Week",
+          "type": "integer"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/CalendarOption"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "requested_weeks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested Weeks"
+        },
+        "schedule": {
+          "items": {
+            "$ref": "#/$defs/CalendarWeek"
+          },
+          "title": "Schedule",
+          "type": "array"
+        },
+        "session_hours": {
+          "default": 0,
+          "title": "Session Hours",
+          "type": "integer"
+        },
+        "sessions": {
+          "default": 0,
+          "title": "Sessions",
+          "type": "integer"
+        },
+        "weeks": {
+          "default": 0,
+          "title": "Weeks",
+          "type": "integer"
+        },
+        "work_days": {
+          "default": 0,
+          "title": "Work Days",
+          "type": "integer"
+        }
+      },
+      "title": "Calendar",
+      "type": "object"
+    },
+    "CalendarOption": {
+      "properties": {
+        "days_per_week": {
+          "title": "Days Per Week",
+          "type": "integer"
+        },
+        "hours_per_day": {
+          "title": "Hours Per Day",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "weeks": {
+          "title": "Weeks",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "weeks",
+        "hours_per_day",
+        "days_per_week"
+      ],
+      "title": "CalendarOption",
+      "type": "object"
+    },
+    "CalendarWeek": {
+      "properties": {
+        "days": {
+          "title": "Days",
+          "type": "integer"
+        },
+        "hours": {
+          "title": "Hours",
+          "type": "integer"
+        },
+        "ia": {
+          "default": 0,
+          "title": "Ia",
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "lb": {
+          "default": 0,
+          "title": "Lb",
+          "type": "integer"
+        },
+        "lk": {
+          "default": 0,
+          "title": "Lk",
+          "type": "integer"
+        },
+        "pr": {
+          "default": 0,
+          "title": "Pr",
+          "type": "integer"
+        },
+        "srs": {
+          "default": 0,
+          "title": "Srs",
+          "type": "integer"
+        },
+        "week": {
+          "title": "Week",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "week",
+        "hours",
+        "days"
+      ],
+      "title": "CalendarWeek",
+      "type": "object"
+    },
+    "Comment": {
+      "properties": {
+        "affected": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected",
+          "type": "array"
+        },
+        "agent_proposal": {
+          "default": "",
+          "title": "Agent Proposal",
+          "type": "string"
+        },
+        "answer": {
+          "default": "",
+          "title": "Answer",
+          "type": "string"
+        },
+        "at": {
+          "default": "",
+          "title": "At",
+          "type": "string"
+        },
+        "author": {
+          "title": "Author",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "module_id": {
+          "title": "Module Id",
+          "type": "string"
+        },
+        "new_text": {
+          "default": "",
+          "title": "New Text",
+          "type": "string"
+        },
+        "node_id": {
+          "default": "",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "answered",
+            "proposed",
+            "applied"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "module_id",
+        "author",
+        "text"
+      ],
+      "title": "Comment",
+      "type": "object"
+    },
+    "Competency": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "indicators": {
+          "items": {
+            "$ref": "#/$defs/Indicator"
+          },
+          "title": "Indicators",
+          "type": "array"
+        },
+        "ps_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ps Code"
+        },
+        "tf_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tf Codes",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "title"
+      ],
+      "title": "Competency",
+      "type": "object"
+    },
+    "Criterion": {
+      "properties": {
+        "points": {
+          "title": "Points",
+          "type": "integer"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "points"
+      ],
+      "title": "Criterion",
+      "type": "object"
+    },
+    "Decision": {
+      "properties": {
+        "actor": {
+          "title": "Actor",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "accept",
+            "keep"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "node": {
+          "default": "",
+          "title": "Node",
+          "type": "string"
+        },
+        "proposal": {
+          "default": "",
+          "title": "Proposal",
+          "type": "string"
+        },
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "decision",
+        "actor",
+        "at"
+      ],
+      "title": "Decision",
+      "type": "object"
+    },
+    "FinalAssessment": {
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "form": {
+          "default": "",
+          "title": "Form",
+          "type": "string"
+        },
+        "hours": {
+          "default": 0,
+          "title": "Hours",
+          "type": "integer"
+        }
+      },
+      "title": "FinalAssessment",
+      "type": "object"
+    },
+    "Hours": {
+      "properties": {
+        "lb": {
+          "default": 0,
+          "title": "Lb",
+          "type": "integer"
+        },
+        "lk": {
+          "default": 0,
+          "title": "Lk",
+          "type": "integer"
+        },
+        "pr": {
+          "default": 0,
+          "title": "Pr",
+          "type": "integer"
+        },
+        "srs": {
+          "default": 0,
+          "title": "Srs",
+          "type": "integer"
+        },
+        "total": {
+          "default": 0,
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "title": "Hours",
+      "type": "object"
+    },
+    "Indicator": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "know",
+            "can",
+            "own"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "outcomes": {
+          "items": {
+            "$ref": "#/$defs/LearningOutcome"
+          },
+          "title": "Outcomes",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "text"
+      ],
+      "title": "Indicator",
+      "type": "object"
+    },
+    "Kit": {
+      "properties": {
+        "assessments": {
+          "items": {
+            "$ref": "#/$defs/Assessment"
+          },
+          "title": "Assessments",
+          "type": "array"
+        },
+        "drafts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Drafts",
+          "type": "array"
+        },
+        "final_assessment": {
+          "title": "Final Assessment",
+          "type": "object"
+        },
+        "judge": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Judge",
+          "type": "object"
+        },
+        "lectures": {
+          "items": {
+            "$ref": "#/$defs/Lecture"
+          },
+          "title": "Lectures",
+          "type": "array"
+        },
+        "module_programs": {
+          "items": {
+            "$ref": "#/$defs/ModuleProgram"
+          },
+          "title": "Module Programs",
+          "type": "array"
+        },
+        "questions": {
+          "items": {
+            "$ref": "#/$defs/Question_"
+          },
+          "title": "Questions",
+          "type": "array"
+        },
+        "report_requirements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Report Requirements",
+          "type": "array"
+        },
+        "sections": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Sections",
+          "type": "object"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/Task"
+          },
+          "title": "Tasks",
+          "type": "array"
+        }
+      },
+      "title": "Kit",
+      "type": "object"
+    },
+    "LearningOutcome": {
+      "properties": {
+        "bloom_level": {
+          "default": 2,
+          "title": "Bloom Level",
+          "type": "integer"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "verb": {
+          "default": "",
+          "title": "Verb",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "text"
+      ],
+      "title": "LearningOutcome",
+      "type": "object"
+    },
+    "Lecture": {
+      "properties": {
+        "code_examples": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Code Examples",
+          "type": "array"
+        },
+        "duration_min": {
+          "default": 90,
+          "title": "Duration Min",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "module_id": {
+          "title": "Module Id",
+          "type": "string"
+        },
+        "plan": {
+          "items": {
+            "type": "object"
+          },
+          "title": "Plan",
+          "type": "array"
+        },
+        "slides": {
+          "items": {
+            "$ref": "#/$defs/Slide"
+          },
+          "title": "Slides",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "topic_id": {
+          "title": "Topic Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "topic_id",
+        "module_id",
+        "title"
+      ],
+      "title": "Lecture",
+      "type": "object"
+    },
+    "Materials": {
+      "description": "Что запрошено в комплекте явно (V-09).",
+      "properties": {
+        "slides_lessons": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Slides Lessons",
+          "type": "array"
+        },
+        "slides_modules": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Slides Modules",
+          "type": "array"
+        },
+        "slides_topic_hint": {
+          "default": "",
+          "title": "Slides Topic Hint",
+          "type": "string"
+        },
+        "test_questions": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Test Questions"
+        }
+      },
+      "title": "Materials",
+      "type": "object"
+    },
+    "Module": {
+      "properties": {
+        "accepted_items": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accepted Items",
+          "type": "array"
+        },
+        "control": {
+          "default": "Тест",
+          "title": "Control",
+          "type": "string"
+        },
+        "expert_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expert Id"
+        },
+        "hours": {
+          "$ref": "#/$defs/Hours"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lb_hours": {
+          "default": 0,
+          "title": "Lb Hours",
+          "type": "integer"
+        },
+        "lk_share": {
+          "default": 0.33,
+          "title": "Lk Share",
+          "type": "number"
+        },
+        "manual_topics": {
+          "default": false,
+          "title": "Manual Topics",
+          "type": "boolean"
+        },
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "review_status": {
+          "default": "not_started",
+          "title": "Review Status",
+          "type": "string"
+        },
+        "srs_share": {
+          "default": 0.2,
+          "title": "Srs Share",
+          "type": "number"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "topics": {
+          "items": {
+            "$ref": "#/$defs/Topic"
+          },
+          "title": "Topics",
+          "type": "array"
+        },
+        "weight": {
+          "default": 0.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "n",
+        "title"
+      ],
+      "title": "Module",
+      "type": "object"
+    },
+    "ModuleProgram": {
+      "description": "Рабочая программа модуля.",
+      "properties": {
+        "annotation": {
+          "default": "",
+          "title": "Annotation",
+          "type": "string"
+        },
+        "content": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Content",
+          "type": "array"
+        },
+        "control_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Control Questions",
+          "type": "array"
+        },
+        "module_id": {
+          "title": "Module Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "module_id"
+      ],
+      "title": "ModuleProgram",
+      "type": "object"
+    },
+    "Params": {
+      "description": "Распознанные параметры запроса (навык intake).",
+      "properties": {
+        "audience": {
+          "default": "",
+          "title": "Audience",
+          "type": "string"
+        },
+        "constraints": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Constraints",
+          "type": "array"
+        },
+        "customer_expectation": {
+          "default": "",
+          "title": "Customer Expectation",
+          "type": "string"
+        },
+        "days_per_week": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Days Per Week"
+        },
+        "direction": {
+          "default": "",
+          "title": "Direction",
+          "type": "string"
+        },
+        "distance": {
+          "default": false,
+          "title": "Distance",
+          "type": "boolean"
+        },
+        "duration_weeks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Weeks"
+        },
+        "entry_level": {
+          "default": "",
+          "title": "Entry Level",
+          "type": "string"
+        },
+        "final_assessment_form": {
+          "default": "",
+          "title": "Final Assessment Form",
+          "type": "string"
+        },
+        "final_assessment_hours": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Final Assessment Hours"
+        },
+        "form": {
+          "default": "",
+          "title": "Form",
+          "type": "string"
+        },
+        "materials": {
+          "$ref": "#/$defs/Materials"
+        },
+        "max_hours_per_day": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Hours Per Day"
+        },
+        "min_practice_hours": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Practice Hours"
+        },
+        "min_practice_share": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Practice Share"
+        },
+        "no_classroom": {
+          "default": false,
+          "title": "No Classroom",
+          "type": "boolean"
+        },
+        "program_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProgramType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ps_hint": {
+          "default": "",
+          "title": "Ps Hint",
+          "type": "string"
+        },
+        "reference_structure_only": {
+          "default": true,
+          "title": "Reference Structure Only",
+          "type": "boolean"
+        },
+        "reference_used": {
+          "default": false,
+          "title": "Reference Used",
+          "type": "boolean"
+        },
+        "required_topics": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Topics",
+          "type": "array"
+        },
+        "session_hours": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Hours"
+        },
+        "sessions_per_week": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sessions Per Week"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "volume_h": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Volume H"
+        }
+      },
+      "title": "Params",
+      "type": "object"
+    },
+    "ProfStandard": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "confirmed": {
+          "default": true,
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "order": {
+          "title": "Order",
+          "type": "string"
+        },
+        "tf": {
+          "items": {
+            "$ref": "#/$defs/TrudFunction"
+          },
+          "title": "Tf",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "title",
+        "order"
+      ],
+      "title": "ProfStandard",
+      "type": "object"
+    },
+    "ProgramType": {
+      "enum": [
+        "dpp_pk",
+        "dpp_pk_internship",
+        "doop"
+      ],
+      "title": "ProgramType",
+      "type": "string"
+    },
+    "Question": {
+      "properties": {
+        "allow_custom": {
+          "default": true,
+          "title": "Allow Custom",
+          "type": "boolean"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Answer"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "field",
+        "text"
+      ],
+      "title": "Question",
+      "type": "object"
+    },
+    "Question_": {
+      "description": "Вопрос теста с ключом и привязкой к РО.",
+      "properties": {
+        "assessment_id": {
+          "title": "Assessment Id",
+          "type": "string"
+        },
+        "difficulty": {
+          "default": 2,
+          "title": "Difficulty",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
+          "type": "integer"
+        },
+        "lo_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Lo Ids",
+          "type": "array"
+        },
+        "module_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Module Id"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "stem": {
+          "title": "Stem",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "assessment_id",
+        "stem",
+        "options",
+        "key"
+      ],
+      "title": "Question_",
+      "type": "object"
+    },
+    "ReferenceInfo": {
+      "properties": {
+        "chars": {
+          "default": 0,
+          "title": "Chars",
+          "type": "integer"
+        },
+        "hours_issues": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Hours Issues",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "structure": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Structure",
+          "type": "array"
+        },
+        "text_sample": {
+          "default": "",
+          "title": "Text Sample",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ReferenceInfo",
+      "type": "object"
+    },
+    "Report": {
+      "properties": {
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "assumptions": {
+          "items": {
+            "type": "object"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "blocking_passed": {
+          "default": 0,
+          "title": "Blocking Passed",
+          "type": "integer"
+        },
+        "blocking_total": {
+          "default": 10,
+          "title": "Blocking Total",
+          "type": "integer"
+        },
+        "coverage": {
+          "items": {
+            "type": "object"
+          },
+          "title": "Coverage",
+          "type": "array"
+        },
+        "proposals": {
+          "items": {
+            "type": "object"
+          },
+          "title": "Proposals",
+          "type": "array"
+        },
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/RuleResult"
+          },
+          "title": "Rules",
+          "type": "array"
+        },
+        "stage": {
+          "default": "skeleton",
+          "enum": [
+            "skeleton",
+            "kit"
+          ],
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "title": "Report",
+      "type": "object"
+    },
+    "RuleResult": {
+      "properties": {
+        "check": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Check"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "code",
+            "llm"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "owner": {
+          "default": "методист",
+          "title": "Owner",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "warn",
+            "fail",
+            "skip"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "check",
+        "kind",
+        "status"
+      ],
+      "title": "RuleResult",
+      "type": "object"
+    },
+    "Slide": {
+      "properties": {
+        "bullets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Bullets",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "n": {
+          "title": "N",
+          "type": "integer"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "n",
+        "title"
+      ],
+      "title": "Slide",
+      "type": "object"
+    },
+    "Source": {
+      "properties": {
+        "bibl": {
+          "title": "Bibl",
+          "type": "string"
+        },
+        "checked_at": {
+          "default": "",
+          "title": "Checked At",
+          "type": "string"
+        },
+        "confirmed": {
+          "default": false,
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "book",
+            "doc",
+            "law",
+            "ps",
+            "url"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "bibl"
+      ],
+      "title": "Source",
+      "type": "object"
+    },
+    "Status": {
+      "enum": [
+        "draft",
+        "questions",
+        "skeleton",
+        "skeleton_approved",
+        "generating",
+        "kit_ready",
+        "on_review",
+        "on_approval",
+        "approved",
+        "returned",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "StepError": {
+      "description": "Отказ шага конвейера: что упало, где и какая резервная генерация его заменила.",
+      "properties": {
+        "at": {
+          "default": "",
+          "title": "At",
+          "type": "string"
+        },
+        "error": {
+          "title": "Error",
+          "type": "string"
+        },
+        "fallback": {
+          "default": "",
+          "title": "Fallback",
+          "type": "string"
+        },
+        "module": {
+          "default": "",
+          "title": "Module",
+          "type": "string"
+        },
+        "skill": {
+          "default": "",
+          "title": "Skill",
+          "type": "string"
+        },
+        "step": {
+          "title": "Step",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "error"
+      ],
+      "title": "StepError",
+      "type": "object"
+    },
+    "Task": {
+      "properties": {
+        "assessment_id": {
+          "title": "Assessment Id",
+          "type": "string"
+        },
+        "criteria": {
+          "items": {
+            "$ref": "#/$defs/Criterion"
+          },
+          "title": "Criteria",
+          "type": "array"
+        },
+        "expected_result": {
+          "default": "",
+          "title": "Expected Result",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lo_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Lo Ids",
+          "type": "array"
+        },
+        "module_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Module Id"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "topic_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic Id"
+        }
+      },
+      "required": [
+        "id",
+        "assessment_id",
+        "title",
+        "statement"
+      ],
+      "title": "Task",
+      "type": "object"
+    },
+    "Topic": {
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "hours": {
+          "$ref": "#/$defs/Hours"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lo_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Lo Ids",
+          "type": "array"
+        },
+        "n": {
+          "title": "N",
+          "type": "string"
+        },
+        "prerequisites": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prerequisites",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "weight": {
+          "default": 1.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "n",
+        "title"
+      ],
+      "title": "Topic",
+      "type": "object"
+    },
+    "TrudFunction": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "title"
+      ],
+      "title": "TrudFunction",
+      "type": "object"
+    },
+    "Usage": {
+      "properties": {
+        "by_skill": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "title": "By Skill",
+          "type": "object"
+        },
+        "calls": {
+          "default": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "cost_rub": {
+          "default": 0.0,
+          "title": "Cost Rub",
+          "type": "number"
+        },
+        "tokens_in": {
+          "default": 0,
+          "title": "Tokens In",
+          "type": "integer"
+        },
+        "tokens_out": {
+          "default": 0,
+          "title": "Tokens Out",
+          "type": "integer"
+        }
+      },
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Состояние программы целиком. Хранится в JSON, версия растёт с каждой правкой.",
+  "properties": {
+    "agent_notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Agent Notes",
+      "type": "array"
+    },
+    "approvals": {
+      "items": {
+        "$ref": "#/$defs/Approval"
+      },
+      "title": "Approvals",
+      "type": "array"
+    },
+    "assumptions": {
+      "items": {
+        "$ref": "#/$defs/Assumption"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "calendar": {
+      "$ref": "#/$defs/Calendar"
+    },
+    "comments": {
+      "items": {
+        "$ref": "#/$defs/Comment"
+      },
+      "title": "Comments",
+      "type": "array"
+    },
+    "competencies": {
+      "items": {
+        "$ref": "#/$defs/Competency"
+      },
+      "title": "Competencies",
+      "type": "array"
+    },
+    "created_at": {
+      "default": "",
+      "title": "Created At",
+      "type": "string"
+    },
+    "decisions": {
+      "items": {
+        "$ref": "#/$defs/Decision"
+      },
+      "title": "Decisions",
+      "type": "array"
+    },
+    "final_assessment": {
+      "$ref": "#/$defs/FinalAssessment"
+    },
+    "goal": {
+      "default": "",
+      "title": "Goal",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "issued_document": {
+      "default": "",
+      "title": "Issued Document",
+      "type": "string"
+    },
+    "kit": {
+      "$ref": "#/$defs/Kit"
+    },
+    "min_practice_hours": {
+      "default": 0,
+      "title": "Min Practice Hours",
+      "type": "integer"
+    },
+    "mode": {
+      "default": "interactive",
+      "enum": [
+        "interactive",
+        "auto"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "modules": {
+      "items": {
+        "$ref": "#/$defs/Module"
+      },
+      "title": "Modules",
+      "type": "array"
+    },
+    "norm_base": {
+      "items": {
+        "$ref": "#/$defs/Source"
+      },
+      "title": "Norm Base",
+      "type": "array"
+    },
+    "norm_fragments": {
+      "items": {
+        "type": "object"
+      },
+      "title": "Norm Fragments",
+      "type": "array"
+    },
+    "norm_mode": {
+      "default": "gos",
+      "enum": [
+        "gos",
+        "org"
+      ],
+      "title": "Norm Mode",
+      "type": "string"
+    },
+    "org_fragments": {
+      "items": {
+        "type": "object"
+      },
+      "title": "Org Fragments",
+      "type": "array"
+    },
+    "org_id": {
+      "default": "acr",
+      "title": "Org Id",
+      "type": "string"
+    },
+    "params": {
+      "$ref": "#/$defs/Params"
+    },
+    "profstandard": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProfStandard"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "progress": {
+      "title": "Progress",
+      "type": "object"
+    },
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/Question"
+      },
+      "title": "Questions",
+      "type": "array"
+    },
+    "references": {
+      "items": {
+        "$ref": "#/$defs/ReferenceInfo"
+      },
+      "title": "References",
+      "type": "array"
+    },
+    "report": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Report"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "request": {
+      "title": "Request",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/Source"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "status": {
+      "$ref": "#/$defs/Status",
+      "default": "draft"
+    },
+    "step_errors": {
+      "items": {
+        "$ref": "#/$defs/StepError"
+      },
+      "title": "Step Errors",
+      "type": "array"
+    },
+    "template": {
+      "default": "",
+      "title": "Template",
+      "type": "string"
+    },
+    "timing_s": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Timing S",
+      "type": "object"
+    },
+    "title": {
+      "default": "",
+      "title": "Title",
+      "type": "string"
+    },
+    "type": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProgramType"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "updated_at": {
+      "default": "",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "usage": {
+      "$ref": "#/$defs/Usage"
+    },
+    "version": {
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "volume_h": {
+      "default": 0,
+      "title": "Volume H",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "request"
+  ],
+  "title": "ProgramDoc",
+  "type": "object"
+}

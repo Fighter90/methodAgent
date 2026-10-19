@@ -15,7 +15,13 @@ from app.agent import workflow as wf
 from app.core.config import get_settings
 from app.core.db import now_iso
 from app.core.errors import BadRequest, Conflict, ForbiddenRole, NotFound, Unauthorized
-from app.core.security import Principal, current_principal, require, users
+from app.core.security import (
+    Principal,
+    check_program_rate,
+    current_principal,
+    require,
+    users,
+)
 from app.export import service as export
 from app.kb.files import parse_reference
 from app.programs import service as svc
@@ -221,6 +227,7 @@ async def create_program(
     mode: Literal['interactive', 'auto'] = Query('interactive'),
     p: Principal = Depends(require('methodist', 'api')),
 ) -> dict[str, Any]:
+    check_program_rate(p)
     files = []
     for a in body.attachments:
         try:
@@ -264,6 +271,7 @@ async def create_program_upload(
     files: list[UploadFile] = File(default_factory=list),
     p: Principal = Depends(require('methodist', 'api')),
 ) -> dict[str, Any]:
+    check_program_rate(p)
     raw = [(f.filename or 'file', await f.read()) for f in files if f.filename]
     doc = await _new_doc(text, raw, 'interactive', norm_mode if norm_mode in ('gos', 'org') else 'gos', p.user_id)
     if doc.questions:

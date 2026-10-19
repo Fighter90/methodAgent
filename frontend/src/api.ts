@@ -4,7 +4,10 @@ export interface User { id: string; name: string; role: Role; title: string; log
 
 const KEY = 'ma.session'
 
-export function getSession(): { token: string; user: User } | null {
+/* token — токен доступа (30 мин), refresh — токен обновления (30 дней) для продления входа без пароля */
+export interface Session { token: string; refresh?: string; user: User }
+
+export function getSession(): Session | null {
   try {
     const raw = localStorage.getItem(KEY)
     return raw ? JSON.parse(raw) : null
@@ -13,7 +16,7 @@ export function getSession(): { token: string; user: User } | null {
   }
 }
 
-export function setSession(s: { token: string; user: User } | null) {
+export function setSession(s: Session | null) {
   try {
     if (s) localStorage.setItem(KEY, JSON.stringify(s))
     else localStorage.removeItem(KEY)
@@ -32,7 +35,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T = any>(path: string, opts: RequestInit & { json?: unknown } = {}): Promise<T> {
+export async function api<T = any>(path: string, opts: RequestInit & { json?: unknown } = {}, retried = false): Promise<T> {
   const headers: Record<string, string> = { ...(opts.headers as Record<string, string>) }
   const s = getSession()
   // свой заголовок, а не Authorization: прокси хаба перехватывает запросы с Authorization
@@ -56,6 +59,8 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
       throw new ApiError(0, safe ? NETWORK_MSG : 'Запрос не дошёл до сервера. Повторите действие через несколько секунд.')
     }
   }
+  // токен доступа живёт 30 минут: один раз продлеваем вход токеном обновления и повторяем запрос
+  if (res.status === 401 && s && !retried && !NO_REFRESH.test(path) && (await refreshSession())) return api<T>(path, opts, true)
   if (!res.ok) {
     let msg = `Ошибка ${res.status}`
     let details: unknown
@@ -67,7 +72,7 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
       /* не JSON */
     }
     if (res.status === 401 && s) {
-      // токен истёк или выпущен до смены ключа: на страницу входа, а не баннер о связи
+      // токен обновления истёк или выпущен до смены ключа: на страницу входа, а не баннер о связи
       setSession(null)
       if (!location.pathname.startsWith('/auth')) location.assign('/auth?expired=1')
     }
@@ -75,6 +80,32 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
   }
   const ct = res.headers.get('content-type') || ''
   return (ct.includes('json') ? res.json() : res.text()) as Promise<T>
+}
+
+// неверный пароль при входе — не повод продлевать сессию
+const NO_REFRESH = /^\/auth\/(login|register|refresh)\b/
+let refreshing: Promise<boolean> | null = null
+
+/* Обмен токена обновления на новую пару (POST /auth/refresh); параллельные 401 ждут один и тот же обмен */
+export function refreshSession(): Promise<boolean> {
+  const s = getSession()
+  if (!s?.refresh) return Promise.resolve(false)
+  refreshing ||= (async () => {
+    try {
+      const r = await fetch('/api/v1/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: s.refresh }) })
+      if (!r.ok) return false
+      const j = await r.json()
+      // сессию могли сбросить (выход) пока шёл обмен — тогда не восстанавливаем
+      if (!getSession()) return false
+      setSession({ token: j.access_token, refresh: j.refresh_token, user: { ...s.user, ...j.user } })
+      return true
+    } catch {
+      return false
+    } finally {
+      refreshing = null
+    }
+  })()
+  return refreshing
 }
 
 export const NETWORK_MSG = 'Сервер временно недоступен, повторяю подключение…'
@@ -120,23 +151,26 @@ function watchServer() {
   setTimeout(tick, 3000)
 }
 
+/* refresh_token может отсутствовать у старого сервера — тогда вход не продлевается */
+interface TokenPair { access_token: string; refresh_token?: string; user: User }
+
 export async function login(login: string, password: string) {
-  const r = await api<{ access_token: string; user: User }>('/auth/login', { method: 'POST', json: { login, password } })
-  setSession({ token: r.access_token, user: r.user })
+  const r = await api<TokenPair>('/auth/login', { method: 'POST', json: { login, password } })
+  setSession({ token: r.access_token, refresh: r.refresh_token, user: r.user })
   // у API-клиента в интерфейсе нет своих экранов: работает как методист, токен с ролью api остаётся для автопрогона
   if (r.user.role === 'api' && (r.user.roles || []).includes('methodist')) return switchRole('methodist')
   return r.user
 }
 
 export async function register(body: { name: string; login: string; email: string; password: string; consent: boolean }) {
-  const r = await api<{ access_token: string; user: User }>('/auth/register', { method: 'POST', json: body })
-  setSession({ token: r.access_token, user: r.user })
+  const r = await api<TokenPair>('/auth/register', { method: 'POST', json: body })
+  setSession({ token: r.access_token, refresh: r.refresh_token, user: r.user })
   return r.user
 }
 
 export async function switchRole(role: string) {
-  const r = await api<{ access_token: string; user: User }>('/auth/switch-role', { method: 'POST', json: { role } })
-  setSession({ token: r.access_token, user: r.user })
+  const r = await api<TokenPair>('/auth/switch-role', { method: 'POST', json: { role } })
+  setSession({ token: r.access_token, refresh: r.refresh_token, user: r.user })
   return r.user
 }
 
@@ -159,8 +193,12 @@ export async function waitJob(jobId: string, onProgress?: (p: any) => void): Pro
 }
 
 export async function download(programId: string, fmt: string) {
-  const s = getSession()
-  const res = await fetch(`/api/v1/programs/${programId}/export/${fmt}`, { headers: s ? { 'X-MA-Token': s.token } : {} })
+  const get = () => {
+    const s = getSession()
+    return fetch(`/api/v1/programs/${programId}/export/${fmt}`, { headers: s ? { 'X-MA-Token': s.token } : {} })
+  }
+  let res = await get()
+  if (res.status === 401 && (await refreshSession())) res = await get()
   if (!res.ok) throw new ApiError(res.status, 'Не удалось выгрузить файл')
   const cd = res.headers.get('content-disposition') || ''
   const m = /filename\*=UTF-8''([^;]+)/.exec(cd)

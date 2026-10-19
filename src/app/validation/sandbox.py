@@ -10,17 +10,15 @@ import tempfile
 import time
 from typing import Any
 
+from app.core.config import get_settings
 from app.programs.schemas import ProgramDoc
 
-_TIMEOUT_S = 10
-_MEMORY_MB = 512
 
-
-def _limits() -> None:  # pragma: no cover — выполняется в дочернем процессе
+def _limits(timeout_s: int, memory_mb: int) -> None:  # pragma: no cover — выполняется в дочернем процессе
     import resource
 
-    resource.setrlimit(resource.RLIMIT_CPU, (_TIMEOUT_S, _TIMEOUT_S))
-    mem = _MEMORY_MB * 1024 * 1024
+    resource.setrlimit(resource.RLIMIT_CPU, (timeout_s, timeout_s))
+    mem = memory_mb * 1024 * 1024
     resource.setrlimit(resource.RLIMIT_AS, (mem, mem))
     resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
 
@@ -57,19 +55,21 @@ def run_detailed(code: str) -> dict[str, Any]:
             res |= {'ok': False, 'error': f'Синтаксическая ошибка: {exc.msg} (строка {exc.lineno})'}
         res['seconds'] = round(time.monotonic() - started, 3)
         return res
+    s = get_settings()
+    timeout_s, memory_mb = s.sandbox_timeout_s, s.sandbox_memory_mb  # SANDBOX_TIMEOUT_S, SANDBOX_MEMORY_MB
     with tempfile.TemporaryDirectory() as tmp:
         try:
             proc = subprocess.run(
                 [sys.executable, '-I', '-c', code],
                 cwd=tmp,
                 capture_output=True,
-                timeout=_TIMEOUT_S,
+                timeout=timeout_s,
                 env={'PATH': '/usr/bin:/bin', 'HTTP_PROXY': 'http://0.0.0.0:9', 'HTTPS_PROXY': 'http://0.0.0.0:9'},
-                preexec_fn=_limits if os.name == 'posix' else None,
+                preexec_fn=(lambda: _limits(timeout_s, memory_mb)) if os.name == 'posix' else None,
                 input=b'5\n5\n5\n',
             )
         except subprocess.TimeoutExpired:
-            return res | {'ok': False, 'error': 'Пример выполняется дольше 10 с', 'seconds': float(_TIMEOUT_S)}
+            return res | {'ok': False, 'error': f'Пример выполняется дольше {timeout_s} с', 'seconds': float(timeout_s)}
         res['stdout'] = proc.stdout.decode('utf-8', 'ignore')[:800]
         if proc.returncode != 0:
             last = proc.stderr.decode('utf-8', 'ignore').strip().splitlines()[-1:] or ['ошибка']

@@ -5,7 +5,7 @@
 ## Загрузка навыков (`base.py`)
 
 - `SkillSpec` — неизменяемая запись: `name`, `description`, `model_role`, `temperature` (по умолчанию 0.2), `max_tokens` (2000), `timeout_s` (60), `retries` (2), `instruction` (тело `SKILL.md` после заголовка), `path`.
-- `_parse(path)` делит файл по `---` на заголовок и тело и читает заголовок `yaml.safe_load`. Поля `input`/`output` в заголовке есть, но кодом не читаются; файлов `schema_out.json` в каталогах нет.
+- `_parse(path)` делит файл по `---` на заголовок и тело и читает заголовок `yaml.safe_load`. Поля `input`/`output` в заголовке кодом не читаются, но оба файла лежат в каталоге навыка.
 - `original_skills()` — все `skills/*/SKILL.md` в алфавитном порядке.
 - `load_skills()` (кэш `lru_cache`) — исходные навыки с переопределениями администратора поверх. Переопределения хранятся в `data_dir/skills_overrides.json`; применяются только поля из `EDITABLE` и `instruction`:
 
@@ -24,6 +24,8 @@
 Параметры `timeout_s` и `retries` используются слоем моделей: бюджет времени вызова навыка равен `timeout_s × (retries + 1)` (см. [llm.md](llm.md)). Навыки, вызывающие модель, берут `instruction`, `temperature` и `max_tokens` из спецификации.
 
 Все `schema_in.json` сейчас одинаковы и минимальны: `{"$schema": ".../2020-12/schema", "type": "object"}`. Фактический вход определяется сигнатурами функций `run.py`, а выход модели проверяется Pydantic-моделями в коде.
+
+`schema_out.json` генерируется из типа результата навыка (`src/app/skills/outputs.py`, `TypeAdapter(...).json_schema()`): `intake` — `Params`, `classify` — `ClassifyResult`, `clarify` — список `Question`, `skeleton` — `SkeletonDraft`, `hours_solver` — `SolverResult`, `content` — `ModuleContent`, `validate` — `Report`, `repair` — список строк (что исправлено), `review_assist` — `Proposal`, `export` — `ExportFile` (метаданные выгружаемого файла), `workflow` — `ProgramDoc`. После изменения модели файлы обновляет `python scripts/export_skill_schemas.py`; `--check` и тест `tests/test_spec_skill_schemas.py` (SPEC-SKILLS-16) ловят расхождение. Оркестратор по-прежнему вызывает навыки прямым импортом, а не по каталогу (см. Н-11 в `docs/tz-compliance.md`).
 
 ## Сводная таблица
 

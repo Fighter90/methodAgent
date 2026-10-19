@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from app.auth import service
+from app.auth import service, tokens
 from app.core import runtime
 from app.core.config import get_settings
 from app.core.errors import (
@@ -26,6 +26,8 @@ from app.core.security import (
     by_login,
     create_token,
     current_principal,
+    decode_token,
+    principal_for,
     require,
     users,
     verify_password,
@@ -43,8 +45,10 @@ def _signed_in(p: Principal = Depends(current_principal)) -> Principal:
 
 
 def _session(user_id: str, role: str) -> dict[str, Any]:
+    """Токен доступа (30 мин) и токен обновления (30 дней); старые клиенты читают только access_token."""
     u = users()[user_id]
-    return {'access_token': create_token(u.id, role), 'token_type': 'bearer', 'user': {**u.public(), 'role': role}}
+    return {'access_token': create_token(u.id, role), 'refresh_token': create_token(u.id, role, 'refresh'), 'token_type': 'bearer',
+            'expires_in': get_settings().access_token_expire_minutes * 60, 'user': {**u.public(), 'role': role}}
 
 
 class LoginIn(BaseModel):
@@ -110,6 +114,17 @@ async def register(body: RegisterIn, request: Request) -> dict[str, Any]:
     u = await service.create_user(body.login, body.name, body.password, [role], body.email)
     await svc.log_event('org', u.id, 'register', f'Регистрация: {u.name} ({u.login}), роль {role}', version=0)
     return _session(u.id, role)
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str = Field(min_length=10, max_length=4000)
+
+
+@auth.post('/refresh', summary='Новая пара токенов по токену обновления (токен доступа сюда не подходит)')
+async def refresh(body: RefreshIn) -> dict[str, Any]:
+    payload = decode_token(body.refresh_token, 'refresh')
+    p = principal_for(payload.get('sub', ''), payload.get('role', ''))
+    return _session(p.user_id, p.role)
 
 
 @auth.get('/config', summary='Что показывать на форме входа: демо-учётки, регистрация, SSO')
@@ -227,6 +242,32 @@ async def patch_user(user_id: str, body: UserPatch, p: Principal = Depends(requi
     shown = ', '.join(sorted(k if k != 'password' else 'пароль' for k in changes))
     await svc.log_event('org', p.user_id, 'user_update', f'{u.name} ({u.login}): {shown}', version=0)
     return u.public()
+
+
+class ApiTokenIn(BaseModel):
+    user_id: str = Field('u-api', max_length=64, description='Владелец токена; по умолчанию служебная учётка API-клиента')
+    name: str = Field('', max_length=120, description='Назначение: «Автопрогон жюри», «LMS колледжа»')
+    role: str | None = Field(None, description='Роль токена из ролей владельца; по умолчанию api, если она есть')
+    ttl_days: int | None = Field(None, ge=1, le=365, description='Срок действия, дней (по умолчанию api_token_default_days)')
+
+
+@admin.get('/api-tokens', summary='Токены API: владелец, срок, отозван ли (без секретов)')
+async def list_api_tokens(p: Principal = Depends(require('admin'))) -> list[dict[str, Any]]:
+    return await tokens.list_tokens()
+
+
+@admin.post('/api-tokens', status_code=201, summary='Выдать токен API (администратор); значение токена показывается один раз')
+async def issue_api_token(body: ApiTokenIn, p: Principal = Depends(require('admin'))) -> dict[str, Any]:
+    t = await tokens.issue(body.user_id, body.name, body.role, body.ttl_days or get_settings().api_token_default_days, p.user_id)
+    await svc.log_event('org', p.user_id, 'api_token_issue', f'Выдан токен API «{t["name"]}» ({t["prefix"]}…) для {t["user_name"]}, роль {t["role"]}, до {t["expires_at"][:10]}', version=0)
+    return t
+
+
+@admin.delete('/api-tokens/{token_id}', summary='Отозвать токен API (администратор): дальше запросы с ним получают 401')
+async def revoke_api_token(token_id: str, p: Principal = Depends(require('admin'))) -> dict[str, Any]:
+    t = await tokens.revoke(token_id)
+    await svc.log_event('org', p.user_id, 'api_token_revoke', f'Отозван токен API «{t["name"]}» ({t["prefix"]}…)', version=0)
+    return t
 
 
 @admin.get('/settings', summary='Настройки агента: ключи (маской), модели, лимиты, вход, SSO, почта')

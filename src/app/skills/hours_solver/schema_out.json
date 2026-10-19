@@ -1,0 +1,116 @@
+{
+  "$defs": {
+    "HoursRow": {
+      "properties": {
+        "lb": {
+          "default": 0,
+          "title": "Lb",
+          "type": "integer"
+        },
+        "lk": {
+          "default": 0,
+          "title": "Lk",
+          "type": "integer"
+        },
+        "pr": {
+          "default": 0,
+          "title": "Pr",
+          "type": "integer"
+        },
+        "srs": {
+          "default": 0,
+          "title": "Srs",
+          "type": "integer"
+        },
+        "total": {
+          "default": 0,
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "title": "HoursRow",
+      "type": "object"
+    },
+    "ModuleOut": {
+      "properties": {
+        "hours": {
+          "$ref": "#/$defs/HoursRow"
+        },
+        "quota": {
+          "title": "Quota",
+          "type": "number"
+        },
+        "remainder": {
+          "title": "Remainder",
+          "type": "number"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "topics": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/HoursRow"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Topics",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "hours",
+        "topics",
+        "quota",
+        "remainder"
+      ],
+      "title": "ModuleOut",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "final_hours": {
+      "title": "Final Hours",
+      "type": "integer"
+    },
+    "modules": {
+      "items": {
+        "$ref": "#/$defs/ModuleOut"
+      },
+      "title": "Modules",
+      "type": "array"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "totals": {
+      "$ref": "#/$defs/HoursRow"
+    },
+    "volume": {
+      "title": "Volume",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "modules",
+    "totals",
+    "final_hours",
+    "volume"
+  ],
+  "title": "SolverResult",
+  "type": "object"
+}

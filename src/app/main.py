@@ -36,6 +36,9 @@ async def lifespan(_: FastAPI):
 
     await load_users()
     await runtime.load()
+    from app.core import security
+
+    security._program_runs.clear()  # лимит программ в час считается в памяти процесса
     from app.programs.router import resume_jobs
 
     if resumed := await resume_jobs():

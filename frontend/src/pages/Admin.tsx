@@ -1,27 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Bot, History, KeyRound, Plus, RotateCcw, Save, Settings2, Users } from 'lucide-react'
+import { Ban, Bot, Copy, History, Key, KeyRound, Plus, RotateCcw, Save, Settings2, Users } from 'lucide-react'
 import { api, ROLE_LABEL } from '../api'
 import { Spinner, useToast } from '../components/ui'
 
 const ROLES = ['methodist', 'expert', 'head', 'admin'] as const
 const SOURCE: Record<string, string> = { demo: 'демо', local: 'учётная запись', sso: 'SSO' }
-type Tab = 'users' | 'settings' | 'skills' | 'journal'
+type Tab = 'users' | 'tokens' | 'settings' | 'skills' | 'journal'
 
-/* Администрирование: пользователи и роли, ключи и настройки агента, навыки, журнал */
+/* Администрирование: пользователи и роли, токены API, ключи и настройки агента, навыки, журнал */
 export default function Admin() {
   const [tab, setTab] = useState<Tab>('users')
-  const tabs: [Tab, string, any][] = [['users', 'Пользователи', Users], ['settings', 'Настройки агента', KeyRound], ['skills', 'Навыки агента', Bot], ['journal', 'Журнал', History]]
+  const tabs: [Tab, string, any][] = [['users', 'Пользователи', Users], ['tokens', 'Токены API', Key], ['settings', 'Настройки агента', KeyRound], ['skills', 'Навыки агента', Bot], ['journal', 'Журнал', History]]
   return (
     <div className="col" style={{ gap: 16 }}>
       <section className="card card-pad">
         <div className="row"><span className="avatar av-admin"><Settings2 size={15} /></span><h1 className="h2" style={{ margin: 0 }}>Администрирование</h1></div>
-        <p className="muted">Пользователи и роли, ключи и модели, лимиты, вход и регистрация, SSO, параметры навыков. Профиль организации, шаблоны и реестры ПС, НПА и литературы — в разделе <Link to="/app/kb" style={{ color: 'var(--accent)', fontWeight: 700 }}>«База знаний»</Link>.</p>
+        <p className="muted">Пользователи и роли, токены API, ключи и модели, лимиты, вход и регистрация, SSO, параметры навыков. Профиль организации, шаблоны и реестры ПС, НПА и литературы — в разделе <Link to="/app/kb" style={{ color: 'var(--accent)', fontWeight: 700 }}>«База знаний»</Link>.</p>
         <div className="seg" role="tablist" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
           {tabs.map(([k, l, I]) => <button key={k} role="tab" aria-selected={tab === k} className={`seg-btn ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}><I size={14} style={{ verticalAlign: -2 }} /> {l}</button>)}
         </div>
       </section>
       {tab === 'users' && <UsersTab />}
+      {tab === 'tokens' && <TokensTab />}
       {tab === 'settings' && <SettingsTab />}
       {tab === 'skills' && <SkillsTab />}
       {tab === 'journal' && <JournalTab />}
@@ -106,6 +107,88 @@ function UsersTab() {
           </div>
           <div><button className="btn btn-primary"><Plus size={15} /> Создать</button></div>
         </form>
+      </section>
+    </>
+  )
+}
+
+/* Токены API для интеграций: выдача (значение показывается один раз), список без секретов, отзыв */
+function TokensTab() {
+  const toast = useToast()
+  const [items, setItems] = useState<any[] | null>(null)
+  const [people, setPeople] = useState<any[]>([])
+  const [draft, setDraft] = useState({ user_id: 'u-api', name: '', ttl_days: 90 })
+  const [issued, setIssued] = useState<{ token: string; name: string } | null>(null)
+  const load = () => api('/admin/api-tokens').then(setItems).catch((e) => toast(e.message, true))
+  useEffect(() => {
+    load()
+    api('/admin/users').then((u) => setPeople(u.filter((x: any) => x.active))).catch(() => setPeople([]))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function issue(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      const t = await api('/admin/api-tokens', { method: 'POST', json: { ...draft, ttl_days: Number(draft.ttl_days) } })
+      setIssued({ token: t.token, name: t.name })
+      setDraft({ ...draft, name: '' })
+      load()
+    } catch (err: any) { toast(err.message, true) }
+  }
+  async function revoke(t: any) {
+    if (!confirm(`Отозвать токен «${t.name}»? Интеграции с ним сразу получат 401.`)) return
+    try { await api(`/admin/api-tokens/${t.id}`, { method: 'DELETE' }); toast(`Токен «${t.name}» отозван`); load() } catch (e: any) { toast(e.message, true) }
+  }
+  async function copy() {
+    try { await navigator.clipboard.writeText(issued!.token); toast('Токен скопирован') } catch { toast('Скопируйте токен вручную', true) }
+  }
+
+  if (!items) return <div className="card card-pad"><Spinner /></div>
+  return (
+    <>
+      <section className="card card-pad">
+        <h2 className="h3"><Plus size={15} style={{ verticalAlign: -2 }} /> Выдать токен API</h2>
+        <p className="small muted">Токен даёт интеграции права роли владельца (по умолчанию — служебная учётка API-клиента). Передаётся в заголовке <code>Authorization: Bearer …</code>.</p>
+        <form onSubmit={issue} className="grid-2" style={{ gap: 10 }}>
+          <div><label className="label">Владелец</label>
+            <select className="field" value={draft.user_id} onChange={(e) => setDraft({ ...draft, user_id: e.target.value })}>
+              {(people.length ? people : [{ id: 'u-api', name: 'API-клиент', login: 'api' }]).map((u) => <option key={u.id} value={u.id}>{u.name} ({u.login})</option>)}
+            </select>
+          </div>
+          <div><label className="label">Назначение</label><input className="field" value={draft.name} maxLength={120} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Автопрогон жюри" /></div>
+          <div><label className="label">Срок, дней</label><input className="field" type="number" min={1} max={365} value={draft.ttl_days} onChange={(e) => setDraft({ ...draft, ttl_days: Number(e.target.value) })} /></div>
+          <div style={{ alignSelf: 'end' }}><button className="btn btn-primary"><Key size={15} /> Выдать</button></div>
+        </form>
+        {issued && (
+          <div className="callout small" style={{ marginTop: 12 }}>
+            <b>Токен «{issued.name}»</b> — скопируйте сейчас, больше он не покажется:
+            <div className="row" style={{ gap: 8, marginTop: 6 }}>
+              <input className="field grow" readOnly value={issued.token} onFocus={(e) => e.target.select()} style={{ fontFamily: 'var(--mono, monospace)' }} />
+              <button type="button" className="btn btn-ghost btn-sm" onClick={copy}><Copy size={13} /> Копировать</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIssued(null)}>Скрыть</button>
+            </div>
+          </div>
+        )}
+      </section>
+      <section className="card card-pad" style={{ overflowX: 'auto' }}>
+        <h2 className="h3">Выданные токены</h2>
+        {items.length === 0 ? <div className="small muted">Токенов пока нет.</div> : (
+          <table className="table admin-table">
+            <thead><tr><th>Назначение</th><th>Владелец</th><th>Токен</th><th>Выдан</th><th>Действует до</th><th></th></tr></thead>
+            <tbody>
+              {items.map((t) => (
+                <tr key={t.id} style={{ opacity: t.active ? 1 : 0.55 }}>
+                  <td><b>{t.name}</b></td>
+                  <td className="small">{t.user_name} · {ROLE_LABEL[t.role] || t.role}</td>
+                  <td className="small"><code>{t.prefix}…</code></td>
+                  <td className="small">{(t.created_at || '').slice(0, 10)}</td>
+                  <td className="small">{t.revoked_at ? `отозван ${t.revoked_at.slice(0, 10)}` : t.active ? t.expires_at.slice(0, 10) : 'истёк'}</td>
+                  <td>{!t.revoked_at && <button className="btn btn-ghost btn-sm" onClick={() => revoke(t)}><Ban size={13} /> Отозвать</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="tiny muted">В базе хранится только хеш токена. Отозванный или истёкший токен получает 401; выдача и отзыв записываются в журнал.</p>
       </section>
     </>
   )

@@ -41,7 +41,11 @@ class Settings(BaseSettings):
     # --- Auth ---
     secret_key: str = 'dev-secret-change-me'
     jwt_algorithm: str = 'HS256'
-    access_token_expire_minutes: int = 60 * 12
+    # ТЗ, 4.11: токен доступа живёт 30 минут, токен обновления — 30 дней (POST /auth/refresh)
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 30
+    # Срок токена API, который выдаёт администратор (POST /admin/api-tokens), если срок не указан; не больше 365 дней
+    api_token_default_days: int = 90
 
     # --- LLM: только Cloud.ru Evolution Foundation Models (напрямую или через шлюз хакатона) ---
     llm_api_key: str = Field(
@@ -56,6 +60,8 @@ class Settings(BaseSettings):
     llm_model_judge: str = 'ai-sage/GigaChat3.5-432B-A28B-Reasoning'
     llm_model_reserve: str = 'GigaChat/GigaChat-3-Pro'
     llm_model_embed: str = 'ai-sage/Giga-Embeddings-instruct-3B'
+    # Зарезервировано (таблица 26 ТЗ): реранкера в текущей сборке нет, значение читается, но не используется
+    llm_model_rerank: str = ''
     llm_concurrency: int = 2  # шлюз хакатона: не больше 2 параллельных запросов
     llm_timeout_s: float = 120.0
     # cloudru — рабочий режим; fixtures — без сети, детерминированные ответы навыков
@@ -75,7 +81,16 @@ class Settings(BaseSettings):
     anon_runs_per_hour: int = 12
     # ТЗ, 4.11 «Меры безопасности»: вход — не больше 5 неудачных попыток в минуту с адреса, дальше 429
     login_failures_per_minute: int = 5
+    # ТЗ, 4.11: не больше 30 новых программ в час на пользователя; для роли api — свой лимит профиля
+    programs_per_hour: int = 30
+    api_programs_per_hour: int = 30
     max_parallel_jobs: int = 4  # больше одновременных заданий ВМ 2 ядра / 4 ГБ не тянет (429)
+    # Зарезервировано (таблица 26 ТЗ): очередь заданий встроенная (asyncio), Redis и arq не подключены
+    redis_url: str = ''
+
+    # --- Песочница примеров кода (V-24): лимит времени и памяти дочернего процесса ---
+    sandbox_timeout_s: int = 10
+    sandbox_memory_mb: int = 512
 
     # --- Вход и регистрация (администратор меняет на странице «Администрирование») ---
     registration_enabled: bool = True

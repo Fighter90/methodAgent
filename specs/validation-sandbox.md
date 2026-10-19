@@ -20,6 +20,7 @@
 | SPEC-SANDBOX-08 | IF пример выполняется дольше 10 с, THEN THE SYSTEM SHALL вернуть `ok=False`, «Пример выполняется дольше 10 с» и время 10 с. | V-24 | `test_spec_sandbox.py::test_timeout_reported` |
 | SPEC-SANDBOX-09 | THE SYSTEM SHALL возвращать из `run_snippet` `None` при успехе и текст ошибки при сбое. | код | `test_spec_sandbox.py::test_run_snippet` |
 | SPEC-SANDBOX-10 | WHEN проверяются примеры комплекта, THE SYSTEM SHALL выполнить не больше `limit` (по умолчанию 12) примеров по порядку лекций и вернуть ошибки в виде «Пример к лекции <название>: <ошибка>». | V-24 | `test_spec_sandbox.py::test_check_examples_limit_and_messages` |
+| SPEC-SANDBOX-11 | THE SYSTEM SHALL брать лимит времени и памяти дочернего процесса из `SANDBOX_TIMEOUT_S` и `SANDBOX_MEMORY_MB` (по умолчанию 10 с и 512 МБ) и сообщать о превышении времени фактическим лимитом. | ТЗ 4.11 (T-11, T-15) | `test_spec_sandbox.py::test_limits_from_settings` |
 
 ## Вне области
 

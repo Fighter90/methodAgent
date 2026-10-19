@@ -9,6 +9,7 @@ import pytest
 
 os.environ.setdefault('LLM_PROVIDERS', 'fixtures')
 
+from app.core.config import get_settings  # noqa: E402
 from app.programs.schemas import Lecture, ProgramDoc  # noqa: E402
 from app.validation import sandbox  # noqa: E402
 
@@ -76,7 +77,29 @@ def test_network_is_blocked(runtime, monkeypatch) -> None:
     monkeypatch.setattr(sandbox.subprocess, 'run', spy)
     assert sandbox.run_detailed('print(1)')['ok']
     assert captured['env']['HTTPS_PROXY'] == 'http://0.0.0.0:9' and 'DATA_DIR' not in captured['env']
-    assert captured['timeout'] == sandbox._TIMEOUT_S
+    assert captured['timeout'] == get_settings().sandbox_timeout_s == 10
+
+
+def test_limits_from_settings(monkeypatch) -> None:
+    """SPEC-SANDBOX-11: лимиты времени и памяти песочницы берутся из SANDBOX_TIMEOUT_S и SANDBOX_MEMORY_MB (по умолчанию 10 с и 512 МБ)."""
+    from app.core.config import Settings
+
+    s = Settings(_env_file=None)
+    assert (s.sandbox_timeout_s, s.sandbox_memory_mb) == (10, 512)
+    monkeypatch.setenv('SANDBOX_TIMEOUT_S', '3')
+    monkeypatch.setenv('SANDBOX_MEMORY_MB', '256')
+    s = Settings(_env_file=None)
+    assert (s.sandbox_timeout_s, s.sandbox_memory_mb) == (3, 256)
+    captured = {}
+
+    def fake(cmd, **kw):
+        captured.update(kw)
+        raise subprocess.TimeoutExpired(cmd='python', timeout=3)
+
+    monkeypatch.setattr(sandbox, 'get_settings', lambda: s)
+    monkeypatch.setattr(sandbox.subprocess, 'run', fake)
+    r = sandbox.run_detailed('print(1)')
+    assert captured['timeout'] == 3 and r['error'] == 'Пример выполняется дольше 3 с' and r['seconds'] == 3.0
 
 
 def test_timeout_reported(monkeypatch) -> None:
