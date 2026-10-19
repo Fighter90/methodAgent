@@ -14,7 +14,7 @@ import re
 from pydantic import BaseModel, Field
 
 from app.kb.registry import tools
-from app.llm.client import CallStats, get_llm
+from app.llm.client import MODEL_DATA_ERRORS, CallStats, LLMUnavailable, get_llm
 from app.programs.schemas import (
     Criterion,
     LearningOutcome,
@@ -28,6 +28,8 @@ from app.programs.schemas import (
     Task,
 )
 from app.skills.base import skill
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionLLM(BaseModel):
@@ -157,9 +159,19 @@ async def run(
                 max_tokens=spec.max_tokens if need_slides else min(spec.max_tokens, 4500),
                 stats=stats,
             )
+        except LLMUnavailable as exc:
+            # Модель не ответила после всех повторов и резерва (или лимит/бюджет): шаблон из каркаса
+            logger.warning('content program=%s module=%s: резервная генерация (%s)', doc.id, m.id, str(exc)[:200])
+            if stats is not None:
+                stats.fallback('content', exc, 'шаблон из каркаса', module=m.id)
+            return fallback(doc, m, los, n_questions, test_id, slide_topics)
+        try:
             return _from_llm(doc, m, los, scrub_blocked(data), n_questions, test_id, slide_topics)
-        except Exception as exc:  # noqa: BLE001 — сбой модели или разбора ответа: работает резервная генерация
-            logging.getLogger(__name__).warning('%s: резервная генерация (%s: %s)', __name__, type(exc).__name__, str(exc)[:200])
+        except MODEL_DATA_ERRORS as exc:
+            # Ответ прошёл схему, но не лёг в каркас: это дефект разбора — трассировка в журнал
+            logger.exception('content program=%s module=%s: ответ модели не разобран, резервная генерация', doc.id, m.id)
+            if stats is not None:
+                stats.fallback('content', exc, 'шаблон из каркаса', module=m.id)
     return fallback(doc, m, los, n_questions, test_id, slide_topics)
 
 

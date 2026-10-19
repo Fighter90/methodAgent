@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import time
 from typing import Any, Literal
 
@@ -13,12 +14,21 @@ from pydantic import BaseModel, Field
 from app.agent import workflow as wf
 from app.core.config import get_settings
 from app.core.db import now_iso
-from app.core.errors import BadRequest, Conflict, ForbiddenRole, Unauthorized
+from app.core.errors import BadRequest, Conflict, ForbiddenRole, NotFound, Unauthorized
 from app.core.security import Principal, current_principal, require, users
 from app.export import service as export
 from app.kb.files import parse_reference
 from app.programs import service as svc
-from app.programs.schemas import Assumption, ProgramDoc, ReferenceInfo, Status
+from app.programs.schemas import (
+    Assumption,
+    ProgramDoc,
+    ReferenceInfo,
+    Status,
+    StepError,
+)
+from app.skills.clarify.run import DEFAULT_ANSWER
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/programs', tags=['programs'])
 misc = APIRouter(tags=['misc'])
@@ -29,6 +39,9 @@ async def _load_for(program_id: str, p: Principal) -> ProgramDoc:
     if p.role == 'admin':
         raise ForbiddenRole('Администратор ведёт пользователей и настройки; программы ведут методист, эксперт и руководитель')
     doc = await svc.load(program_id)
+    if p.role == 'expert' and not expert_modules(doc, p):
+        # FR-44: эксперт без назначенных модулей не читает программу (разделы, актуализация) — как и карточку
+        raise ForbiddenRole('Эксперт видит только программы с назначенными ему модулями')
     if p.role == 'api' and await svc.owner_of(program_id) != p.user_id:
         if p.anonymous:
             raise Unauthorized('Нужен вход: заголовок Authorization: Bearer <токен> (POST /api/v1/auth/login)')
@@ -89,7 +102,11 @@ def _auto_response(doc: ProgramDoc, base: str) -> dict[str, Any]:
         'program_id': doc.id,
         'status': status,
         'assumptions': [a.model_dump() for a in doc.assumptions],
-        'questions_skipped': [q.model_dump() for q in doc.questions],
+        # Все вопросы шага clarify (с ответами вызывающего в answer, если он их передал)
+        'questions_asked': [q.model_dump() for q in doc.questions],
+        # Вопросы, на которые вызывающий не ответил: поле заполнено значением профиля (см. assumptions)
+        'questions_skipped': [q.model_dump() for q in doc.questions if not q.answer or q.answer == DEFAULT_ANSWER],
+        'step_errors': [e.model_dump() for e in doc.step_errors],
         'skeleton': {
             'template': doc.template,
             'type': doc.type.value if doc.type else None,
@@ -122,6 +139,7 @@ def _auto_response(doc: ProgramDoc, base: str) -> dict[str, Any]:
         'files': {fmt: f'{base}/api/v1/programs/{doc.id}/export/{fmt}' for fmt in export.FORMATS},
         'timing_s': doc.timing_s,
         'tokens': {'in': doc.usage.tokens_in, 'out': doc.usage.tokens_out, 'cost_rub': round(doc.usage.cost_rub, 2), 'calls': doc.usage.calls},
+        'effect': wf.effect(doc),
     }
 
 
@@ -133,12 +151,46 @@ async def _new_doc(text: str, files: list[tuple[str, bytes]], mode: str, norm_mo
     return doc
 
 
+def _questions_response(doc: ProgramDoc, base: str) -> dict[str, Any]:
+    """Интерактивный режим, данных не хватает: конвейер стоит на шаге clarify до ответов (FR-11…FR-13)."""
+    return {
+        'program_id': doc.id,
+        'status': doc.status.value,
+        'needs_answers': True,
+        'questions': [q.model_dump() for q in doc.questions],
+        # Продолжение: POST answers; ?mode=auto — сразу полный комплект, ?wait=true — каркас в ответе
+        'answers_url': f'{base}/api/v1/programs/{doc.id}/answers',
+        'program': doc.model_dump(mode='json'),
+    }
+
+
+async def _run_auto(doc: ProgramDoc, owner: str, base: str, started: float) -> dict[str, Any]:
+    """Автопрогон с ответом по таблице 21: любой сбой — status failed с причиной, а не HTTP 500."""
+    try:
+        doc = await _auto_pipeline(doc, owner)
+    except Exception as exc:  # noqa: BLE001 — страховка автопрогона: клиент получает status failed с причиной и step_errors, а не 500 (таблица 21)
+        logger.exception('auto pipeline program=%s step=%s: сборка прервана', doc.id, doc.status.value)
+        reason = getattr(exc, 'message_ru', None) or type(exc).__name__
+        # Текст исключения в ответ не попадает (может содержать внутренние данные): тип и message_ru, трассировка — в журнал
+        doc.step_errors.append(StepError(step='pipeline', skill='workflow', error=f'{type(exc).__name__}: {reason}',
+                                         fallback='нет: сборка остановлена на шаге ' + doc.status.value, at=now_iso()))
+        doc.status = Status.FAILED
+        doc.agent_notes.append(f'Сборка прервана: {reason}')
+        await svc.save(doc, owner)
+        return {**_auto_response(doc, base), 'status': 'failed'}
+    doc.timing_s['total'] = round(time.monotonic() - started, 2)
+    await svc.save(doc, owner)
+    return _auto_response(doc, base)
+
+
 async def _auto_pipeline(doc: ProgramDoc, owner: str) -> ProgramDoc:
     wf.fill_defaults(doc)
     await wf.skeleton_step(doc)
     if doc.calendar.conflict and not doc.calendar.chosen_option:
         wf.choose_calendar_option(doc, 'six_days' if doc.params.max_hours_per_day else 'extend')
         doc.assumptions.append(Assumption(field='calendar', value=doc.calendar.chosen_option, source='auto: ограничение нагрузки в день сохранено'))
+        # Проверки каркаса пересчитываются после выбора варианта: иначе устаревший ✕ по V-10 мешает auto-approve
+        doc.report = wf.build_report(doc, 'skeleton')
     # auto-approve только без ✕: сначала до двух попыток repair, затем комплект со статусом done_with_errors (контракт автопрогона)
     for attempt in range(3):
         try:
@@ -190,20 +242,15 @@ async def create_program(
 
             svc.run_job(job_id, _auto_job(doc.id, p.user_id))
             return JSONResponse({'program_id': doc.id, 'job_id': job_id, 'status': 'queued'}, status_code=202)  # type: ignore[return-value]
-        try:
-            doc = await _auto_pipeline(doc, p.user_id)
-        except Exception as exc:  # noqa: BLE001 — автопрогон получает status: failed, а не 500 (таблица 21)
-            doc.status = Status.FAILED
-            doc.agent_notes.append(f'Сборка прервана: {getattr(exc, "message_ru", None) or type(exc).__name__}')
-            await svc.save(doc, p.user_id)
-            return {**_auto_response(doc, base), 'status': 'failed'}
-        doc.timing_s['total'] = round(time.monotonic() - started, 2)
-        await svc.save(doc, p.user_id)
-        return _auto_response(doc, base)
+        return await _run_auto(doc, p.user_id, base, started)
     if doc.questions:
         doc.status = Status.QUESTIONS
-        await svc.save(doc, p.user_id)
-        return {'program_id': doc.id, 'status': doc.status.value, 'questions': [q.model_dump() for q in doc.questions], 'program': doc.model_dump(mode='json')}
+        if body.answers:
+            # Ответы известны заранее: вопросы закрываются без остановки, неотвеченные — значением профиля (assumptions)
+            wf.answer_questions(doc, body.answers)
+        else:
+            await svc.save(doc, p.user_id)
+            return _questions_response(doc, base)
     await wf.skeleton_step(doc)
     await svc.save(doc, p.user_id, reason='каркас', snapshot=True)
     return {'program_id': doc.id, 'status': doc.status.value, 'program': doc.model_dump(mode='json')}
@@ -260,7 +307,7 @@ async def resume_jobs() -> int:
     for j in await svc.unfinished_jobs():
         try:
             owner = await svc.owner_of(j['program_id'])
-        except Exception:  # noqa: BLE001 — программа удалена: задание закрывается
+        except NotFound:  # программа удалена: задание закрывается
             await svc.update_job(j['job_id'], status='failed', error='Программа не найдена после перезапуска')
             continue
         factory = {'skeleton': lambda: _skeleton_job(j['program_id'], owner), 'kit': lambda: _kit_job(j['program_id'], owner),
@@ -316,6 +363,7 @@ async def get_program(program_id: str, p: Principal = Depends(current_principal)
     data['readiness'] = wf.readiness(doc)
     if p.role in ('head', 'methodist'):
         data['quality'] = wf.quality(doc, await svc.events(program_id))
+        data['effect'] = wf.effect(doc)
     data['totals'] = doc.totals().model_dump()
     # Комплект по схеме 4.8 (таблица 19); остальные поля — состояние для интерфейса
     data['program'] = export.kit_json(doc)['program'] if p.role != 'expert' else None
@@ -326,13 +374,29 @@ class Answers(BaseModel):
     answers: dict[str, str] = Field(default_factory=dict)
 
 
-@router.post('/{program_id}/answers', status_code=202, summary='Ответы на уточняющие вопросы; запускает сборку каркаса')
-async def answers(program_id: str, body: Answers, p: Principal = Depends(require('methodist'))) -> dict[str, Any]:
-    doc = await svc.load(program_id)
+@router.post('/{program_id}/answers', status_code=202,
+             summary='Ответы на уточняющие вопросы; продолжает конвейер: каркас (фоном или wait=true) или mode=auto — полный комплект')
+async def answers(
+    program_id: str,
+    body: Answers,
+    request: Request,
+    mode: Literal['interactive', 'auto'] = Query('interactive', description='auto — после ответов сразу каркас, утверждение и комплект (ответ как у автопрогона)'),
+    wait: bool = Query(False, description='interactive: собрать каркас в этом запросе и вернуть его (200), а не задание (202)'),
+    p: Principal = Depends(require('methodist', 'api')),
+) -> dict[str, Any]:
+    doc = await _load_for(program_id, p)
     wf.answer_questions(doc, body.answers)
     doc.status = Status.SKELETON
     await svc.save(doc, p.user_id)
     await svc.log_event(program_id, p.user_id, 'answers', '; '.join(f'{q.text} — {q.answer}' for q in doc.questions))
+    if mode == 'auto':
+        doc.mode = 'auto'
+        return JSONResponse(await _run_auto(doc, p.user_id, str(request.base_url).rstrip('/'), time.monotonic()))  # type: ignore[return-value]
+    if wait:
+        await wf.skeleton_step(doc)
+        await svc.save(doc, p.user_id, reason='каркас', snapshot=True)
+        return JSONResponse({'program_id': doc.id, 'status': doc.status.value, 'assumptions': [a.model_dump() for a in doc.assumptions],  # type: ignore[return-value]
+                             'program': doc.model_dump(mode='json')})
     job_id = await svc.create_job(program_id, 'skeleton')
     svc.run_job(job_id, _skeleton_job(program_id, p.user_id))
     return {'job_id': job_id, 'status': 'queued'}
@@ -449,6 +513,7 @@ async def edits(program_id: str, body: EditIn, p: Principal = Depends(require('m
         owner_module = owner_module or (lec.module_id if lec else None)
         if owner_module not in expert_modules(doc, p):
             raise ForbiddenRole('Эксперт правит только свои модули')
+    was_accepted = {m.id for m in doc.modules if m.review_status == 'accepted'}
     try:
         result = await wf.edit(doc, target, body.instruction, body.new_title, body.dry_run, body.hours)
     except Conflict:
@@ -460,6 +525,10 @@ async def edits(program_id: str, body: EditIn, p: Principal = Depends(require('m
         prev = result.get('preview') or {}
         await svc.log_event(program_id, p.user_id, 'edit', f'{target}: {body.instruction}', node_id=target, version=doc.version,
                             before=prev.get('before', ''), after=prev.get('after', ''))
+        for m in doc.modules:
+            if m.id in was_accepted and m.review_status != 'accepted' and m.expert_id and m.expert_id != p.user_id:
+                # US-15, FR-43: принятый модуль изменён и вернулся на вычитку, эксперт получает уведомление
+                await svc.notify(m.expert_id, program_id, f'Модуль {m.n} «{m.title}» изменён после приёмки и вернулся на вычитку')
     return {**result, 'program': doc.model_dump(mode='json')}
 
 
@@ -605,7 +674,9 @@ async def approval(program_id: str, body: ApproveIn, p: Principal = Depends(requ
     doc = await svc.load(program_id)
     wf.head_decision(doc, p.user_id, body.decision, body.comment)
     await svc.save(doc, p.user_id, reason='решение руководителя', snapshot=True)
-    await svc.log_event(program_id, p.user_id, 'approved' if body.decision == 'approve' else 'returned', body.comment)
+    # FR-58: журнал пишет решение словами, даже если руководитель утвердил без комментария
+    text = 'Программа утверждена руководителем' if body.decision == 'approve' else 'Программа возвращена методисту'
+    await svc.log_event(program_id, p.user_id, 'approved' if body.decision == 'approve' else 'returned', text + (f': {body.comment}' if body.comment else ''))
     await svc.notify(await svc.owner_of(program_id), program_id, 'Программа утверждена: проект приказа готов' if body.decision == 'approve' else f'Программа возвращена: {body.comment}')
     return {'status': doc.status.value}
 

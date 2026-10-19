@@ -92,8 +92,12 @@ async def test_only_warn_with_messages_kept(monkeypatch) -> None:
 
 async def test_judge_failure_keeps_code_results(monkeypatch) -> None:
     """SPEC-JUDGE-05: IF вызов судьи завершился ошибкой, THEN возвращается пустой журнал без исключения."""
-    _setup(monkeypatch, FakeLLM(exc=RuntimeError('timeout')))
-    assert await j.judge(_doc()) == []
+    from app.llm.client import CallStats, LLMUnavailable
+
+    _setup(monkeypatch, FakeLLM(exc=LLMUnavailable('judge: модель не ответила (TimeoutError)')))
+    st = CallStats()
+    assert await j.judge(_doc(), st) == []
+    assert st.fallbacks[0]['skill'] == 'judge' and st.fallbacks[0]['fallback'] == 'оценки правил кодом без судьи'
 
 
 def test_merge_adds_judge_messages() -> None:

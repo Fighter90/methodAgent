@@ -7,6 +7,13 @@ if [ ! -f .env ] || ! grep -q '^SECRET_KEY=.\+' .env; then
   echo "SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')" >> .env
   chmod 600 .env
 fi
+# Ключ шлюза Cloud.ru: из файла хакатона берутся только ключ и адрес, под именами приложения
+AI_ENV=/opt/hackathon/ai.env
+if [ -r "$AI_ENV" ]; then
+  grep -vE '^LLM_(API_KEY|BASE_URL)=' .env > .env.tmp || true
+  sed -nE 's/^(export +)?[A-Z_]*API_KEY=/LLM_API_KEY=/p; s/^(export +)?[A-Z_]*BASE_URL=/LLM_BASE_URL=/p' "$AI_ENV" >> .env.tmp
+  mv .env.tmp .env && chmod 600 .env
+fi
 if docker compose version >/dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
 $DC up -d --build
 # Контейнер с restart: unless-stopped поднимается вместе с docker после перезагрузки;

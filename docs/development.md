@@ -4,11 +4,24 @@
 
 ## Окружение
 
+Версии: Python 3.12 (`.python-version`), Node 22 и npm 10+ (`.nvmrc`, `frontend/package.json → engines`). Пакеты ставятся из lock-файлов с хэшами, поэтому окружение совпадает с образом Docker и CI.
+
 ```bash
 python3.12 -m venv .venv && . .venv/bin/activate
-pip install -r requirements-dev.txt     # pytest 9.1.1, pytest-asyncio 1.4.0, hypothesis 6.170.1, ruff 0.17.1
-cd frontend && npm ci                   # Node 22 (как в Dockerfile)
+pip install --require-hashes -r requirements-dev.lock   # сервис + pytest 9.1.1, pytest-asyncio 1.4.0, hypothesis 6.170.1, ruff 0.17.1
+cd frontend && npm ci                                   # ровно package-lock.json
 ```
+
+С uv то же самое быстрее: `uv venv .venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install --require-hashes -r requirements-dev.lock`.
+
+Новая зависимость добавляется в `requirements.txt` (или `requirements-dev.txt`) с точной версией `==`, после чего lock-файлы пересобираются:
+
+```bash
+uv pip compile requirements.txt     --universal --python-version 3.12 --generate-hashes -o requirements.lock
+uv pip compile requirements-dev.txt --universal --python-version 3.12 --generate-hashes -o requirements-dev.lock
+```
+
+Если lock-файл не обновлён, `tests/test_reproducibility.py` падает. Сервер для ручной проверки запускается так: `bash scripts/run_local.sh` (режим `fixtures`, если ключ LLM не задан); дымовой прогон основного сценария — `bash scripts/smoke.sh`. Подробно: [развёртывание](deployment.md#воспроизведение-основного-сценария).
 
 ## Тесты
 
@@ -74,6 +87,28 @@ python scripts/autorun.py --only 1 3               # только выбранн
 ### testset/
 
 `testset/cases.json` — массив из 5 объектов `{id, request, attachments, answers}`: открытые запросы кейса (например, кейс 1 — ДООП «Первые шаги в Python» для 8–9 классов, 16 ч, практика не меньше половины, итоговый тест на 10 вопросов, слайды первых двух занятий). `attachments` и `answers` пусты; формат совпадает с телом `POST /programs`.
+
+## Сквозной регресс
+
+Два прогона против запущенного сервера: API по всем ролям (`scripts/e2e_regression.py`, stdlib + httpx) и интерфейс по ролям в Chromium (`e2e/ui_roles.spec.cjs`, библиотека playwright). Оба печатают `PASS`/`FAIL` по каждой проверке и сводку, при любом `FAIL` код выхода 1.
+
+```bash
+cd frontend && npm run build && cd ..                 # интерфейс собирается в frontend/dist, его отдаёт FastAPI
+LLM_PROVIDERS=fixtures DATA_DIR=$(mktemp -d) PYTHONPATH=src \
+  python -m uvicorn app.main:app --port 8000 &        # детерминированные ответы навыков, чистая БД
+
+python scripts/e2e_regression.py                      # полный цикл по кейсу 4 + админка + автопрогон 5 кейсов (~15 с)
+python scripts/e2e_regression.py --case 1             # интерактивный цикл и автопрогон только кейса 1
+python scripts/e2e_regression.py --all-cases          # интерактивный цикл по каждому из 5 кейсов
+python scripts/e2e_regression.py --base http://host:8000 --skip-autorun
+
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers NODE_PATH=$(npm root -g) \
+  SHOTS_DIR=/tmp/e2e-shots node e2e/ui_roles.spec.cjs # UI; BASE_URL, CHROMIUM_PATH — по необходимости
+```
+
+`e2e_regression.py` проходит: вход всех демо-учёток, `/auth/me`, разделение ролей и анонимный доступ (только автопрогон и чтение); методист — создание в режиме interactive, ответы с «На ваше усмотрение», каркас, перенос часов между темами, перестановка тем (V-21), решения по «!», утверждение каркаса и комплект (асинхронные задания `/jobs`), точечная правка с dry-run, правка часов, версии, сравнение и откат, смена шаблона, адаптация, актуализация, песочница, создание через форму с файлом, назначение экспертов; эксперты timur и olga — только свои модули, комментарии, правка через агента, приём элементов и модуля с оценкой; руководитель — качество, затраты, журнал, возврат с комментарием и утверждение; выгрузки всех семи форматов с проверкой содержимого (python-docx, python-pptx, разбор Moodle XML, поля JSON 4.8, пустые поля `____` в приказе); администратор — пользователи и роли, настройки с маской секрета, параметры навыков, загрузка и поиск в базе знаний, журнал; автопрогон пяти кейсов с чек-листами `scripts/autorun.py`, обязательными НПА (кейс 1 — `law-273`, `order-629`; 2–5 — `law-273`, `order-266`) и асинхронный автопрогон.
+
+`ui_roles.spec.cjs` для каждой роли входит через форму, проверяет стартовую страницу (методист и руководитель — «Программы», эксперт — «Вычитка», администратор — «Администрирование»), открывает основные экраны без ошибок консоли, проверяет перенаправление с запрещённых роли страниц, «Выйти» и `/help`, сохраняет скриншоты в `SHOTS_DIR`. Запускайте его после `e2e_regression.py`: тогда в базе есть программы и задания на вычитку. `npx playwright install` не нужен — используется установленный Chromium.
 
 ## Правила для разработчиков
 

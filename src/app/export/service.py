@@ -87,7 +87,10 @@ def _curriculum(d: Document, doc: ProgramDoc, with_topics: bool) -> None:
     z = 0 if doc.type == ProgramType.DPP_PK_INTERNSHIP else ''
     rows.append(['', 'Итоговая аттестация', fa.hours, z, z, z, '', fa.form])
     rows.append(['', 'Итого (час.)', tot.total + fa.hours, tot.lk, tot.pr, tot.lb, tot.srs, ''])
-    _table(d, ['№ п/п', 'Наименование разделов программы', 'Трудоёмкость, всего (час.)', 'ЛК', 'ПР', 'ЛБ', 'СРС (час.)', 'Форма аттестации'], rows)
+    # Шапки образца ДПП ПК: в УП — «разделы» и «Форма аттестации», в УТП — «разделы, темы» и «Форма контроля»
+    name_col = 'Наименование разделов, тем программы' if with_topics else 'Наименование разделов программы'
+    form_col = 'Форма контроля' if with_topics else 'Форма аттестации'
+    _table(d, ['№ п/п', name_col, 'Трудоёмкость, всего (час.)', 'ЛК', 'ПР', 'ЛБ', 'СРС (час.)', form_col], rows)
 
 
 def _calendar(d: Document, doc: ProgramDoc) -> None:
@@ -201,6 +204,13 @@ def _doop_stages(d: Document, doc: ProgramDoc) -> None:
     _table(d, ['Этап', 'Артефакт', 'Кто и как оценивает'], rows)
 
 
+def _doop_staff(d: Document, doc: ProgramDoc) -> None:
+    """3.4 ДООП: таблица образца по модулям УП; ФИО, степень и должность заполняют люди (V-11)."""
+    rows: list[list[object]] = [[m.n, f'Модуль {m.n}. {m.title}', '', '', ''] for m in doc.modules]
+    rows.append([len(doc.modules) + 1, f'Итоговая аттестация ({doc.final_assessment.form})', '', '', ''])
+    _table(d, ['№', 'Модуль/Дисциплина в соответствии с УП', 'ФИО преподавателя', 'Уч. степень/Звание', 'Должность'], rows)
+
+
 def _interview(doc: ProgramDoc) -> dict[str, list[str]]:
     iq = doc.kit.final_assessment.get('interview_questions') if doc.kit.final_assessment else None
     return iq if isinstance(iq, dict) else {}
@@ -268,6 +278,9 @@ def render_docx(doc: ProgramDoc) -> bytes:
         elif key == 'assessment' and doop:
             _text(d, text)
             _doop_stages(d, doc)
+        elif key == 'conditions_org' and doop:
+            _text(d, text)
+            _doop_staff(d, doc)
         else:
             _text(d, text)
     buf = io.BytesIO()

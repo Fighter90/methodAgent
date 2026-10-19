@@ -1,11 +1,14 @@
-"""Слой моделей: OpenAI-совместимый клиент Cloud.ru / шлюза хакатона (ТЗ, 4.11).
+"""Слой моделей: клиент Cloud.ru Evolution Foundation Models / шлюза хакатона (ТЗ, 4.11).
 
 Правила:
 - повтор до 2 раз при ошибке, HTTP 5xx или невалидном JSON (паузы 1 и 3 с), при 429 — пауза 15, 30 с;
   затем резервная модель той же роли; при ошибке авторизации — сразу резерв;
 - параллельность ограничена семафором, после 429 временно снижается;
 - суточный лимит шлюза (429 «daily spending limit») — без повторов: до 00:00 МСК генерация по шаблонам;
-- каждый вызов учитывает токены и рубли; ключ и тексты запросов не логируются.
+- каждый вызов учитывает токены и рубли; ключ и тексты запросов не логируются;
+- у каждого запроса к шлюзу есть таймаут (asyncio.wait_for поверх таймаута httpx): chat, embeddings, ping;
+- наружу complete_json и embed отдают только LLMUnavailable — навык ловит его и включает резервную генерацию.
+Стратегия целиком — docs/llm.md, раздел «Таймауты, повторы и отказы».
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,6 +25,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import get_settings
+from app.llm.gateway import CloudRuGateway, GatewayError
 
 logger = logging.getLogger(__name__)
 
@@ -46,24 +51,57 @@ class LLMUnavailable(Exception):
     """Ни одна модель роли не ответила после всех повторов."""
 
 
+#: Ошибки обработки ответа модели в навыке: JSON прошёл схему, но не ложится в каркас
+#: (нет нужного ключа, неверный индекс, пустое поле). Навык ловит их вместе с LLMUnavailable
+#: и переходит на резервную генерацию; остальные исключения — ошибки кода и не глушатся.
+MODEL_DATA_ERRORS: tuple[type[Exception], ...] = (ValidationError, ValueError, KeyError, IndexError, TypeError, AttributeError)
+
+#: Повторяемые ошибки транспорта: сеть, таймаут, 429 (кроме суточного лимита), 5xx
+_TRANSIENT = (GatewayError, asyncio.TimeoutError)
+
+
 @dataclass
 class CallStats:
+    """Учёт вызовов одного шага. add() и merge() атомарны (под замком): статистику можно
+    передавать в параллельные задачи и в потоки, суммы не теряются. Параллельная генерация
+    модулей всё равно ведёт свой CallStats на модуль и сливает их по порядку модулей."""
+
     tokens_in: int = 0
     tokens_out: int = 0
     cost_rub: float = 0.0
     calls: int = 0
     by_skill: dict[str, dict[str, float]] = field(default_factory=dict)
+    # Отказы навыков на этом шаге: что упало и какая резервная генерация сработала
+    fallbacks: list[dict[str, str]] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
-    def add(self, skill: str, tin: int, tout: int, cost: float) -> None:
-        self.tokens_in += tin
-        self.tokens_out += tout
-        self.cost_rub += cost
-        self.calls += 1
-        s = self.by_skill.setdefault(skill, {'tokens_in': 0, 'tokens_out': 0, 'cost_rub': 0.0, 'calls': 0})
-        s['tokens_in'] += tin
-        s['tokens_out'] += tout
-        s['cost_rub'] = round(s['cost_rub'] + cost, 4)
-        s['calls'] += 1
+    def add(self, skill: str, tin: int, tout: int, cost: float, calls: int = 1) -> None:
+        with self._lock:
+            self.tokens_in += tin
+            self.tokens_out += tout
+            self.cost_rub += cost
+            self.calls += calls
+            s = self.by_skill.setdefault(skill, {'tokens_in': 0, 'tokens_out': 0, 'cost_rub': 0.0, 'calls': 0})
+            s['tokens_in'] += tin
+            s['tokens_out'] += tout
+            s['cost_rub'] = round(s['cost_rub'] + cost, 4)
+            s['calls'] += calls
+
+    def merge(self, other: CallStats) -> None:
+        """Добавляет статистику другой задачи (модуля) целиком, включая отказы навыков."""
+        with other._lock:
+            items = [(k, dict(v)) for k, v in other.by_skill.items()]
+            fallbacks = list(other.fallbacks)
+        for skill_name, s in items:
+            self.add(skill_name, int(s['tokens_in']), int(s['tokens_out']), float(s['cost_rub']), calls=int(s['calls']))
+        with self._lock:
+            self.fallbacks += fallbacks
+
+    def fallback(self, skill: str, error: Exception | str, used: str, module: str = '') -> None:
+        """Фиксирует отказ навыка: структурная запись попадает в doc.step_errors и в отчёт автопрогона."""
+        text = error if isinstance(error, str) else f'{type(error).__name__}: {str(error)[:200]}'
+        with self._lock:
+            self.fallbacks.append({'skill': skill, 'module': module, 'error': text, 'fallback': used})
 
 
 def parse_json(text: str) -> Any:
@@ -150,13 +188,10 @@ class LLMClient:
 
     def _get(self) -> Any:
         if self._client is None:
-            from openai import AsyncOpenAI
-
-            self._client = AsyncOpenAI(
+            self._client = CloudRuGateway(
                 base_url=self.settings.llm_base_url,
                 api_key=self.settings.llm_api_key,
                 timeout=self.settings.llm_timeout_s,
-                max_retries=0,
             )
         return self._client
 
@@ -220,7 +255,11 @@ class LLMClient:
                             )
                         finally:
                             active += time.monotonic() - started
-                    content = resp.choices[0].message.content or ''
+                    try:
+                        content = resp.choices[0].message.content or ''
+                    except (AttributeError, IndexError, TypeError) as exc:
+                        # Ответ шлюза без choices/message: повторяется как ошибка транспорта
+                        raise GatewayError(f'Ответ шлюза без choices: {type(exc).__name__}') from exc
                     usage = getattr(resp, 'usage', None)
                     tin = int(getattr(usage, 'prompt_tokens', 0) or 0)
                     tout = int(getattr(usage, 'completion_tokens', 0) or 0)
@@ -251,11 +290,12 @@ class LLMClient:
                             {'role': 'assistant', 'content': content[:6000]},
                             {'role': 'user', 'content': f'Ответ не прошёл проверку схемы: {str(exc)[:800]}. Верни только исправленный JSON.'},
                         ]
-                except Exception as exc:  # noqa: BLE001 — сеть, 429, 5xx, авторизация
+                except _TRANSIENT as exc:  # сеть, таймаут, 429, 5xx, авторизация
                     last_error = exc
                     code = getattr(exc, 'status_code', None)
                     self.status[role] = {'model': model, 'ok': False, 'error': type(exc).__name__, 'status': code}
-                    logger.warning('llm error skill=%s model=%s status=%s type=%s', skill, model, code, type(exc).__name__)
+                    logger.warning('llm error skill=%s model=%s status=%s type=%s attempt=%d/%d: %s',
+                                   skill, model, code, type(exc).__name__, attempt + 1, attempts, str(exc)[:200])
                     if code in (401, 403):
                         break
                     if is_daily_limit(exc):
@@ -267,44 +307,78 @@ class LLMClient:
                         await asyncio.sleep(15.0 * (attempt + 1))
                 if attempt < attempts - 1:
                     await asyncio.sleep(_RETRY_PAUSES[attempt])
-        raise LLMUnavailable(f'{skill}: модель не ответила ({type(last_error).__name__})')
+        raise LLMUnavailable(f'{skill}: модель не ответила ({type(last_error).__name__}: {str(last_error)[:200]})')
 
     async def embed(self, texts: list[str], stats: CallStats | None = None) -> list[list[float]]:
-        """Векторы текстов моделью эмбеддингов шлюза (база знаний организации, FR-09)."""
+        """Векторы текстов моделью эмбеддингов шлюза (база знаний организации, FR-09).
+
+        Каждая пачка — с таймаутом и теми же повторами, что у complete_json (паузы 1 и 3 с, при 429 —
+        15, 30 с); 401/403 и суточный лимит — без повторов. Наружу — только LLMUnavailable.
+        """
         if not self.enabled:
             raise LLMUnavailable('LLM не настроен')
         if self.limit_reached():
             raise LLMUnavailable(LIMIT_MSG)
         out: list[list[float]] = []
+        attempts = len(_RETRY_PAUSES) + 1
         for i in range(0, len(texts), 16):
-            async with self._sem:
-                resp = await self._get().embeddings.create(model=self.settings.llm_model_embed, input=texts[i : i + 16])
-            out += [list(d.embedding) for d in resp.data]
+            batch = texts[i : i + 16]
+            last_error: Exception | None = None
+            for attempt in range(attempts):
+                try:
+                    async with self._sem:
+                        resp = await asyncio.wait_for(
+                            self._get().embeddings.create(model=self.settings.llm_model_embed, input=batch),
+                            timeout=self.settings.llm_timeout_s,
+                        )
+                    vectors = [list(d.embedding) for d in resp.data]
+                    break
+                except (AttributeError, TypeError) as exc:
+                    last_error = GatewayError(f'Ответ шлюза без data: {type(exc).__name__}')
+                except _TRANSIENT as exc:
+                    last_error = exc
+                    code = getattr(exc, 'status_code', None)
+                    logger.warning('llm embed error status=%s type=%s attempt=%d/%d', code, type(exc).__name__, attempt + 1, attempts)
+                    if code in (401, 403):
+                        raise LLMUnavailable(f'embed: шлюз отклонил ключ (HTTP {code})') from exc
+                    if is_daily_limit(exc):
+                        self._mark_limit()
+                        raise LLMUnavailable(LIMIT_MSG) from exc
+                    if code == 429:
+                        await asyncio.sleep(15.0 * (attempt + 1))
+                if attempt < attempts - 1:
+                    await asyncio.sleep(_RETRY_PAUSES[attempt])
+            else:
+                raise LLMUnavailable(f'embed: модель не ответила ({type(last_error).__name__}: {str(last_error)[:200]})')
+            out += vectors
             if stats is not None:
                 stats.add('embed', int(getattr(getattr(resp, 'usage', None), 'prompt_tokens', 0) or 0), 0, 0.0)
         return out
 
     async def ping(self) -> dict[str, Any]:
-        """Проверочный запрос для GET /api/v1/llm/status."""
+        """Проверочный запрос для GET /api/v1/llm/status (одна попытка, таймаут не больше 30 с)."""
         if not self.enabled:
             return {'enabled': False, 'provider': self.settings.llm_providers}
         started = time.monotonic()
         try:
-            resp = await self._get().chat.completions.create(
-                model=self.settings.llm_model_generate,
-                messages=[{'role': 'user', 'content': 'Ответь одним словом: ок'}],
-                max_tokens=5,
+            resp = await asyncio.wait_for(
+                self._get().chat.completions.create(
+                    model=self.settings.llm_model_generate,
+                    messages=[{'role': 'user', 'content': 'Ответь одним словом: ок'}],
+                    max_tokens=5,
+                ),
+                timeout=min(30.0, self.settings.llm_timeout_s),
             )
             if self._limit_day:
                 self._limit_day = ''  # шлюз снова отвечает: лимит сброшен раньше полуночи
                 self._save_spend()
             return {
                 'enabled': True,
-                'ok': bool(resp.choices),
+                'ok': bool(getattr(resp, 'choices', None)),
                 'model': self.settings.llm_model_generate,
                 'latency_s': round(time.monotonic() - started, 2),
             }
-        except Exception as exc:  # noqa: BLE001
+        except _TRANSIENT as exc:
             if is_daily_limit(exc):
                 self._mark_limit()
             return {'enabled': True, 'ok': False, 'error': type(exc).__name__, 'daily_limit_reached': self.limit_reached()}

@@ -317,9 +317,12 @@ textarea.field { resize: vertical; min-height: 150px; line-height: 1.55; }
 
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 50px; }
 @media (max-width: 900px) { .stats { grid-template-columns: 1fr 1fr; } }
-.stat { padding: 26px; border-radius: 22px; border: 1px solid var(--night-line); background: rgba(255, 255, 255, .03); }
-.stat b { display: block; font-size: clamp(34px, 4vw, 54px); font-weight: 800; letter-spacing: -.03em; background: linear-gradient(180deg, #fff, #8FE3A3); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.stat span { color: var(--night-muted); font-size: 14px; }
+.stats > * { height: 100%; }
+.stat { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 26px; border-radius: 22px; border: 1px solid var(--night-line); background: rgba(255, 255, 255, .03); }
+.stat b { display: flex; align-items: baseline; gap: 6px; line-height: 1; font-size: clamp(34px, 4vw, 54px); font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.stat b > * { background: linear-gradient(180deg, #fff, #8FE3A3); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stat b > .unit { font-size: .5em; font-weight: 700; letter-spacing: 0; }
+.stat > span { color: var(--night-muted); font-size: 14px; line-height: 1.45; }
 
 .flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 50px; position: relative; }
 @media (max-width: 900px) { .flow { grid-template-columns: 1fr 1fr; } }

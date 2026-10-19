@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
-from app.llm.client import CallStats, get_llm
+from app.llm.client import CallStats, LLMUnavailable, get_llm
 from app.programs.schemas import ProgramDoc, Report
 
 RULES = {
@@ -70,8 +70,10 @@ async def judge(doc: ProgramDoc, stats: CallStats | None = None) -> list[str]:
         out: JudgeOut = await llm.complete_json(
             skill='judge', role='judge', system=system, user=user, schema=JudgeOut, temperature=0.0, max_tokens=4096, stats=stats,
         )
-    except Exception as exc:  # noqa: BLE001 — без судьи остаются оценки кода
-        logging.getLogger(__name__).warning('судья недоступен: %s', str(exc)[:200])
+    except LLMUnavailable as exc:  # без судьи остаются оценки кода
+        logging.getLogger(__name__).warning('judge program=%s: судья недоступен: %s', doc.id, str(exc)[:200])
+        if stats is not None:
+            stats.fallback('judge', exc, 'оценки правил кодом без судьи')
         return []
     doc.kit.judge = {}
     for v in out.verdicts:

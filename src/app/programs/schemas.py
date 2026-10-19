@@ -385,6 +385,17 @@ class Usage(BaseModel):
     by_skill: dict[str, dict[str, float]] = Field(default_factory=dict)
 
 
+class StepError(BaseModel):
+    """Отказ шага конвейера: что упало, где и какая резервная генерация его заменила."""
+
+    step: str  # intake | skeleton | kit | pipeline
+    skill: str = ''
+    module: str = ''  # id модуля, если отказ касается одного модуля
+    error: str  # тип и текст исключения (без ключей и текстов запросов)
+    fallback: str = ''  # что использовано вместо: шаблон, библиотека, эвристика
+    at: str = ''
+
+
 class ReferenceInfo(BaseModel):
     name: str
     chars: int = 0
@@ -429,6 +440,7 @@ class ProgramDoc(BaseModel):
     comments: list[Comment] = Field(default_factory=list)
     approvals: list[Approval] = Field(default_factory=list)
     agent_notes: list[str] = Field(default_factory=list)
+    step_errors: list[StepError] = Field(default_factory=list)  # структурный журнал отказов навыков (резервная генерация)
     usage: Usage = Field(default_factory=Usage)
     timing_s: dict[str, float] = Field(default_factory=dict)
     progress: dict[str, Any] = Field(default_factory=dict)

@@ -797,6 +797,16 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: (target?: strin
             <div className="param"><span className="k">Вызовов модели</span><span className="v">{doc.usage?.calls}</span></div>
             <div className="param"><span className="k">Стоимость</span><span className="v">{(doc.usage?.cost_rub || 0).toFixed(2)} ₽</span></div>
           </section>
+          {doc.effect && (
+            <section className="card card-pad">
+              <h3 className="h3">Эффект</h3>
+              <div className="param"><span className="k">Вручную</span><span className="v">≈ {doc.effect.manual_hours} ч методиста</span></div>
+              <div className="param"><span className="k">Вычитка черновика</span><span className="v">≈ {doc.effect.review_hours} ч</span></div>
+              <div className="param"><span className="k">Экономия</span><span className="v"><b>≈ {doc.effect.saved_hours} ч</b></span></div>
+              <div className="param"><span className="k">Цена часа экономии</span><span className="v">{doc.effect.rub_per_saved_hour ?? 0} ₽</span></div>
+              <p className="muted small">{doc.effect.method}</p>
+            </section>
+          )}
         </aside>
       </div>
       <section className="card card-pad">

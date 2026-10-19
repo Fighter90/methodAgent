@@ -237,12 +237,13 @@ def test_daily_limit_fails_fast(tmp_path, monkeypatch) -> None:
 
     from app.llm import client as c
 
-    class Limit(Exception):
-        status_code = 429
-        body = {'code': 'llm_daily_limit_exceeded', 'message': 'daily spending limit is reached'}
+    class Limit(c.GatewayError):
+        def __init__(self) -> None:
+            super().__init__('HTTP 429', 429, {'code': 'llm_daily_limit_exceeded', 'message': 'daily spending limit is reached'})
 
-    class Busy(Exception):
-        status_code = 429
+    class Busy(c.GatewayError):
+        def __init__(self) -> None:
+            super().__init__('HTTP 429', 429)
 
     assert c.is_daily_limit(Limit()) and not c.is_daily_limit(Busy())
     llm = c.LLMClient()

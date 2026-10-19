@@ -297,7 +297,7 @@ function useSections(): Sec[] {
       {
         id: 'models', title: 'Модели и стоимость', icon: Cpu, body: (
           <>
-            <p>Агент работает через OpenAI-совместимый шлюз Cloud.ru Foundation Models.</p>
+            <p>Агент работает через шлюз Cloud.ru Evolution Foundation Models; зарубежные API не используются.</p>
             <table className="table">
               <thead><tr><th>Роль</th><th>Модель</th><th>Тариф, ₽ за 1 млн токенов</th></tr></thead>
               <tbody>

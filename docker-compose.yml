@@ -8,12 +8,13 @@ services:
     restart: unless-stopped
     ports:
       - "0.0.0.0:8000:8000"
-    env_file:
-      - /opt/hackathon/ai.env
     environment:
       ENVIRONMENT: production
       SECRET_KEY: ${SECRET_KEY:-}
       LLM_PROVIDERS: ${LLM_PROVIDERS:-cloudru}
+      # Ключ и адрес шлюза Cloud.ru Foundation Models из .env (на ВМ его готовит scripts/deploy_vm.sh)
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
       LLM_JUDGE_ENABLED: ${LLM_JUDGE_ENABLED:-true}
       DATA_DIR: /app/data/runtime
     volumes:

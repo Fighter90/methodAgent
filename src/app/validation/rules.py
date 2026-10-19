@@ -8,6 +8,7 @@ validation/judge.py уточняет их моделью, если судья в
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from dataclasses import dataclass
 from app.kb.registry import match_source, tf_codes
 from app.programs.schemas import KINDS, ProgramDoc, ProgramType, RuleResult
 from app.validation.ngrams import overlap_share
+
+logger = logging.getLogger(__name__)
 
 SKELETON_RULES = {'V-01', 'V-02', 'V-03', 'V-04', 'V-05', 'V-06', 'V-07', 'V-08', 'V-10', 'V-12', 'V-13', 'V-15', 'V-21', 'V-22', 'V-27'}
 
@@ -261,7 +264,8 @@ _FILLED = [
 
 
 def v11(doc: ProgramDoc, stage: str):
-    text = ' '.join(doc.kit.sections.get(k, '') for k in ('approval', 'authors', 'document'))
+    # Кадровое обеспечение (3.4) — место, где модель могла бы вписать ФИО преподавателей
+    text = ' '.join(doc.kit.sections.get(k, '') for k in ('approval', 'authors', 'document', 'conditions_org'))
     for rx in _FILLED:
         if rx.search(text):
             return 'fail', ['Реквизиты приказа, ФИО преподавателей и подписи должны остаться пустыми полями'], ['section:approval']
@@ -520,7 +524,8 @@ def run_rules(doc: ProgramDoc, stage: str) -> list[RuleResult]:
             continue
         try:
             status, msgs, nodes = rule.fn(doc, stage)
-        except Exception as exc:  # noqa: BLE001 — правило не должно ронять отчёт
+        except Exception as exc:  # noqa: BLE001 — страховка отчёта: сбой одного из 27 правил не роняет проверку, правило получает «!»
+            logger.exception('rules program=%s stage=%s rule=%s: правило упало', doc.id, stage, rule.id)
             status, msgs, nodes = 'warn', [f'Правило не выполнено: {type(exc).__name__}'], []
         if rule.check is None and status == 'fail':
             status = 'warn'

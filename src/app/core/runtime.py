@@ -34,7 +34,7 @@ class Field:
 
 FIELDS: tuple[Field, ...] = (
     Field('llm_providers', 'llm', 'Режим генерации', 'choice', 'cloudru — модель шлюза; fixtures — без сети, детерминированные ответы навыков', ('cloudru', 'fixtures')),
-    Field('llm_base_url', 'llm', 'Адрес OpenAI-совместимого шлюза', 'str', 'Например, https://foundation-models.api.cloud.ru/v1'),
+    Field('llm_base_url', 'llm', 'Адрес шлюза Cloud.ru Foundation Models', 'str', 'Например, https://foundation-models.api.cloud.ru/v1'),
     Field('llm_api_key', 'llm', 'Ключ API шлюза', 'secret', 'Хранится зашифрованным; показываются только последние символы'),
     Field('llm_model_generate', 'llm', 'Модель генерации', 'str'),
     Field('llm_model_judge', 'llm', 'Модель-судья (проверка по смыслу)', 'str'),

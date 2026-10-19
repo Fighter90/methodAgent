@@ -59,8 +59,9 @@ def _checks(case: dict, r: dict) -> list[tuple[str, bool]]:
         out.append(('ПС по данным', sk['ps_code'] in ('06.042', '06.033', '06.016')))
         out.append(('слайды для лекций модуля pandas', any(lec['slides'] for lec in kit['lectures'])))
     if case['id'] == 4:
-        out.append(('вопросы были заданы', bool(r['questions_skipped'])))
-        out.append(('вопросов ≤ 5', len(r['questions_skipped']) <= 5))
+        asked = r['questions_asked']  # все вопросы clarify; questions_skipped — только неотвеченные
+        out.append(('вопросы были заданы', bool(asked)))
+        out.append(('вопросов ≤ 5', len(asked) <= 5))
         out.append(('ДПП ПК', sk['type'] == 'dpp_pk'))
         out.append(('разница ожиданий в отчёте', any('V-27' == x['id'] and x['messages'] for x in r['report']['rules']) or any('ожидан' in n.lower() for n in r['agent_notes'])))
         out.append(('итог — экзамен с практикой', 'экзамен' in sk['final_assessment']['form'].lower()))

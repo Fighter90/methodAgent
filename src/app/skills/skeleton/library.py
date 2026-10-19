@@ -15,6 +15,7 @@ Domain = dict[str, Any]
 DOMAINS: list[Domain] = [
     {
         'key': 'python_school',
+        'title': 'Первые шаги в Python',
         'keywords': ['python', 'школьник', 'класс', 'подрост'],
         'requires_any': ['школьник', 'класс', 'подрост', 'дет'],
         'goal': 'Познакомить школьников с программированием на Python и научить создавать простые программы и игры',
@@ -53,6 +54,7 @@ DOMAINS: list[Domain] = [
     },
     {
         'key': 'ai_teachers',
+        'title': 'Искусственный интеллект в работе учителя',
         'keywords': ['учител', 'педагог', 'урок', 'нейросет', 'искусственн'],
         'requires_any': ['учител', 'педагог'],
         'goal': 'Сформировать у учителей умение безопасно применять российские нейросетевые сервисы для подготовки уроков, заданий и проверочных работ',
@@ -99,6 +101,7 @@ DOMAINS: list[Domain] = [
     },
     {
         'key': 'data_analysis',
+        'title': 'Анализ данных на Python',
         'keywords': ['анализ данн', 'pandas', 'аналитик', 'статистик', 'визуализац', 'sql'],
         'goal': 'Научить слушателей готовить, анализировать и визуализировать данные на Python и SQL для решения рабочих задач',
         'modules': [
@@ -153,6 +156,7 @@ DOMAINS: list[Domain] = [
     },
     {
         'key': 'cybersecurity',
+        'title': 'Основы кибербезопасности',
         'keywords': ['кибербез', 'информационн безопасн', 'защит информ', 'безопасност'],
         'goal': 'Сформировать начальные практические навыки обеспечения информационной безопасности и мониторинга инцидентов',
         'modules': [
@@ -198,6 +202,7 @@ DOMAINS: list[Domain] = [
     },
     {
         'key': 'devops',
+        'title': 'DevOps-инженер: от Linux до CI/CD',
         'keywords': ['devops', 'ci/cd', 'docker', 'kubernetes', 'linux'],
         'goal': 'Сформировать практические навыки DevOps-инженера: от администрирования Linux до автоматизации поставки ПО',
         'modules': [
@@ -276,7 +281,8 @@ def generic_domain(title: str, topics: list[str], project: bool) -> Domain:
             ('own', 'Владеет оформлением результата', 'Оформляет и представляет результат работы'),
         ]),
     ]
-    return {'key': 'generic', 'goal': f'Сформировать практические навыки в области «{title or names[0]}»', 'modules': modules, 'competencies': comps}
+    name = title or names[0]
+    return {'key': 'generic', 'title': name[:1].upper() + name[1:], 'goal': f'Сформировать практические навыки в области «{title or names[0]}»', 'modules': modules, 'competencies': comps}
 
 
 def pick_domain(text: str) -> Domain | None:

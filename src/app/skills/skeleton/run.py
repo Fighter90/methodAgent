@@ -12,7 +12,7 @@ import re
 
 from pydantic import BaseModel, Field
 
-from app.llm.client import CallStats, get_llm
+from app.llm.client import MODEL_DATA_ERRORS, CallStats, LLMUnavailable, get_llm
 from app.programs.schemas import (
     Competency,
     Indicator,
@@ -139,8 +139,16 @@ async def run(
             ensure_topics(draft, must)
             if len(draft.modules) >= 2:
                 return draft
-        except Exception as exc:  # noqa: BLE001 — сбой модели или разбора ответа: работает резервная генерация
-            logging.getLogger(__name__).warning('%s: резервная генерация (%s: %s)', __name__, type(exc).__name__, str(exc)[:200])
+            if stats is not None:
+                stats.fallback('skeleton', f'модель вернула {len(draft.modules)} модуль(ей)', 'типовая структура направления')
+        except LLMUnavailable as exc:
+            logging.getLogger(__name__).warning('skeleton: резервная генерация (%s)', str(exc)[:200])
+            if stats is not None:
+                stats.fallback('skeleton', exc, 'типовая структура направления')
+        except MODEL_DATA_ERRORS as exc:
+            logging.getLogger(__name__).exception('skeleton: ответ модели не разобран, резервная генерация')
+            if stats is not None:
+                stats.fallback('skeleton', exc, 'типовая структура направления')
     return from_library(params, program_type, ps)
 
 
@@ -219,6 +227,16 @@ def _norm_code(code: str) -> str:
     return re.sub(r'[^0-9.]', '', code)
 
 
+def _short_title(text: str, limit: int = 60) -> str:
+    """Название из цели без обрыва посреди слова и без незакрытой кавычки «."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(' ', 1)[0].rstrip(' ,:;—-')
+    if cut.count('«') > cut.count('»'):
+        cut = cut[:cut.rfind('«')].rstrip(' ,:;—-')
+    return cut
+
+
 def from_library(params: Params, ptype: ProgramType, ps: ProfStandard | None) -> SkeletonDraft:
     text = ' '.join([params.title, params.direction, params.audience, ' '.join(params.required_topics)])
     domain = pick_domain(text)
@@ -252,7 +270,7 @@ def from_library(params: Params, ptype: ProgramType, ps: ProfStandard | None) ->
                 topics=[Topic(id=f't{mi}.{ti}', n=f'{mi}.{ti}', title=t, description=d) for ti, (t, d) in enumerate(topics, start=1)],
             )
         )
-    title = params.title or (domain.get('goal', '')[:60])
+    title = params.title or domain.get('title') or _short_title(domain.get('goal', ''))
     draft = SkeletonDraft(title=title, goal=domain['goal'], competencies=comps, modules=modules, source=domain['key'])
     link_outcomes(draft)
     return draft

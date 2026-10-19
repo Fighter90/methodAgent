@@ -266,7 +266,7 @@ def run_job(job_id: str, coro_factory: Callable[[Callable[[dict[str, Any]], Awai
         try:
             await coro_factory(_progress)
             await update_job(job_id, status='done')
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — страховка очереди: любая ошибка задания → status failed с текстом, а не потерянная задача
             logger.exception('Задание %s упало', job_id)
             msg = getattr(exc, 'message_ru', None) or f'{type(exc).__name__}'
             await update_job(job_id, status='failed', error=msg)

@@ -12,7 +12,7 @@ import re
 
 from pydantic import BaseModel, Field
 
-from app.llm.client import CallStats, get_llm
+from app.llm.client import MODEL_DATA_ERRORS, CallStats, LLMUnavailable, get_llm
 from app.programs.schemas import Materials, Params, ProgramType
 from app.skills.base import skill
 
@@ -48,18 +48,32 @@ class IntakeLLM(BaseModel):
     customer_expectation: str = ''
 
 
+# Аудитория-дети: общеразвивающая программа (приказ № 629), даже если тип не назван
+_CHILD = re.compile(r'школьник|подрост|\bдет(ей|и|ям|ский)\b|\bребен|\b\d{1,2}\s*(?:-|–)?\s*(?:\d{1,2}\s*)?класс')
+_AGES = re.compile(r'\b(\d{1,2})\s*(?:-|–|до)\s*(\d{1,2})\s*лет\b')
+
+
+def _is_child_audience(low: str) -> bool:
+    if _CHILD.search(low):
+        return True
+    m = _AGES.search(low)
+    return bool(m and int(m.group(2)) <= 17)
+
+
 def parse_numbers(text: str) -> Params:
     """Детерминированный разбор чисел и ключевых слов запроса."""
     low = text.lower().replace('ё', 'е')
     p = Params()
 
     # Тип программы
-    if 'общеразвива' in low:
+    if 'общеразвива' in low or re.search(r'\bдооп\b', low):
         p.program_type = ProgramType.DOOP
     elif 'стажировк' in low:
         p.program_type = ProgramType.DPP_PK_INTERNSHIP
-    elif 'повышени' in low and 'квалификац' in low or 'переподготовк' in low:
+    elif 'повышени' in low and 'квалификац' in low or 'переподготовк' in low or re.search(r'\b(дпп|пк|пп)\b', low):
         p.program_type = ProgramType.DPP_PK
+    elif _is_child_audience(low):
+        p.program_type = ProgramType.DOOP
 
     # Название в кавычках
     m = re.search(r'[«"]([^»"]{3,120})[»"]', text)
@@ -195,8 +209,14 @@ async def run(text: str, references_text: str = '', stats: CallStats | None = No
             params.required_topics = data.required_topics[:12]
             params.constraints = list(dict.fromkeys(params.constraints + data.constraints))[:8]
             params.customer_expectation = params.customer_expectation or data.customer_expectation
-        except Exception as exc:  # noqa: BLE001 — сбой модели или разбора ответа: работает резервная генерация
-            logging.getLogger(__name__).warning('%s: резервная генерация (%s: %s)', __name__, type(exc).__name__, str(exc)[:200])
+        except LLMUnavailable as exc:
+            logging.getLogger(__name__).warning('intake: эвристический разбор запроса (%s)', str(exc)[:200])
+            if stats is not None:
+                stats.fallback('intake', exc, 'эвристический разбор запроса')
+        except MODEL_DATA_ERRORS as exc:
+            logging.getLogger(__name__).exception('intake: ответ модели не разобран, эвристический разбор')
+            if stats is not None:
+                stats.fallback('intake', exc, 'эвристический разбор запроса')
     if not used_llm:
         _heuristic_semantics(text, params)
     return params, used_llm
@@ -226,4 +246,10 @@ def _heuristic_semantics(text: str, p: Params) -> None:
     if m:
         parts = re.split(r',\s*|\s+и\s+', m.group(1))
         p.required_topics = [x.strip(' .') for x in parts if 2 < len(x.strip()) < 60][:10]
-    p.direction = p.title or (p.required_topics[0] if p.required_topics else '')
+    p.direction = p.title or (p.required_topics[0] if p.required_topics else '') or _direction_phrase(low)
+
+
+def _direction_phrase(low: str) -> str:
+    """Направление из оборота «курс (программа) по …», когда нет названия в кавычках и перечня тем."""
+    m = re.search(r'(?:курс\w*|программ\w*|обучени\w*)\s+по\s+([^.,;:!?\d]{3,60}?)(?=\s+(?:для|на|в|с|со|от|до)\s|[.,;:!?]|$)', low)
+    return m.group(1).strip() if m else ''

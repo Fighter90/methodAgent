@@ -84,7 +84,8 @@ def _parse_pdf(name: str, content: bytes) -> ParsedReference:
             # Таблицы часов в PDF пересчитываются так же, как в .docx (FR-05)
             try:
                 tables = page.find_tables().tables
-            except Exception:  # noqa: BLE001 — страница без распознаваемой разметки таблиц
+            except Exception as exc:  # noqa: BLE001 — сторонний разборщик PyMuPDF бросает разные типы на нестандартной вёрстке; текст страницы уже взят
+                logger.debug('pdf %s: таблицы страницы не распознаны (%s)', name, type(exc).__name__)
                 tables = []
             for t in tables:
                 n_table += 1

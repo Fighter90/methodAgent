@@ -177,6 +177,15 @@ def test_v11_human_fields(text: str, status: str) -> None:
     assert _status(doc, 'V-11') == status
 
 
+def test_v11_staff_section() -> None:
+    """SPEC-RULES-09: ФИО преподавателя, вписанное в раздел «Кадровое обеспечение» (3.4), тоже даёт fail V-11."""
+    doc = _doc()
+    doc.kit.sections['conditions_org'] = 'Состав преподавателей (ФИО, должность, модули): ________________.'
+    assert _status(doc, 'V-11') == 'pass'
+    doc.kit.sections['conditions_org'] = 'Состав преподавателей: Иванов И. И., доцент, модули 1–3.'
+    assert _status(doc, 'V-11') == 'fail'
+
+
 def test_v12_v13_coverage() -> None:
     """SPEC-RULES-10: РО не раскрыт ни в одной теме (V-12) или проверяется меньше чем двумя средствами (V-13) — fail проверки 5."""
     assert _check_of('V-12') == _check_of('V-13') == 5

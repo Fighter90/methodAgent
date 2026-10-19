@@ -93,9 +93,25 @@ async def test_fallback_internship_tasks_every_topic(monkeypatch) -> None:
 
 
 async def test_fallback_on_model_error(monkeypatch) -> None:
-    """SPEC-CONTENT-05: IF модель ответила ошибкой, THEN используется шаблонное содержание без исключения."""
-    mc = await _run(monkeypatch, FakeLLM(exc=RuntimeError('LLM down')))
+    """SPEC-CONTENT-05, SPEC-CONTENT-13: IF модель ответила ошибкой, THEN используется шаблонное содержание без исключения."""
+    from app.llm.client import CallStats, LLMUnavailable
+
+    llm = FakeLLM(exc=LLMUnavailable('content: модель не ответила (GatewayError: HTTP 503)'))
+    doc = _doc()
+    monkeypatch.setattr(content, 'get_llm', lambda: llm)
+    st = CallStats()
+    mc = await content.run(doc, doc.modules[0], n_questions=5, test_id='test-m1', slide_topics=set(), stats=st)
     assert mc.source == 'template' and len(mc.questions) == 5
+    assert st.fallbacks == [{'skill': 'content', 'module': 'm1', 'error': 'LLMUnavailable: content: модель не ответила (GatewayError: HTTP 503)',
+                             'fallback': 'шаблон из каркаса'}]
+
+
+async def test_code_errors_are_not_swallowed(monkeypatch) -> None:
+    """SPEC-CONTENT-13: навык ловит только LLMUnavailable и ошибки разбора ответа модели; ошибка кода (например RuntimeError) не глушится и видна конвейеру."""
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        await _run(monkeypatch, FakeLLM(exc=RuntimeError('ошибка кода')))
 
 
 LLM_DATA = {

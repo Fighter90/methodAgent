@@ -4,6 +4,6 @@ omit = */__init__.py
 
 [report]
 # SDD: порог покрытия проверяется на каждом прогоне (docs/development.md)
-fail_under = 60
+fail_under = 70
 show_missing = false
 skip_covered = false

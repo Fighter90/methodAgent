@@ -13,6 +13,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel
@@ -22,7 +23,7 @@ from app.core.config import get_settings
 from app.core.db import now_iso
 from app.core.errors import Conflict, NotFound
 from app.kb.registry import find_ps, for_school, literature_for, match_source, registry
-from app.llm.client import LIMIT_MSG, CallStats, get_llm
+from app.llm.client import LIMIT_MSG, CallStats, LLMUnavailable, get_llm
 from app.programs.schemas import (
     Approval,
     Assessment,
@@ -42,6 +43,7 @@ from app.programs.schemas import (
     ReferenceInfo,
     Source,
     Status,
+    StepError,
     Task,
     Topic,
 )
@@ -72,7 +74,15 @@ async def _noop(_: dict[str, Any]) -> None:
     return None
 
 
-def _stats_to_usage(doc: ProgramDoc, stats: CallStats) -> None:
+def _stats_to_usage(doc: ProgramDoc, stats: CallStats, step: str = '') -> None:
+    """Токены шага — в doc.usage; отказы навыков — в doc.step_errors и в заметки агента."""
+    for f in stats.fallbacks:
+        doc.step_errors.append(StepError(step=step, skill=f['skill'], module=f.get('module', ''), error=f['error'], fallback=f['fallback'], at=now_iso()))
+        where = f' (модуль {f["module"]})' if f.get('module') else ''
+        note = f'Навык {f["skill"]}{where}: {f["error"][:120]} — использовано: {f["fallback"]}.'
+        if note not in doc.agent_notes:
+            doc.agent_notes.append(note)
+    stats.fallbacks.clear()
     u = doc.usage
     u.tokens_in += stats.tokens_in
     u.tokens_out += stats.tokens_out
@@ -109,7 +119,7 @@ async def intake_step(doc: ProgramDoc, references: list[ReferenceInfo], ref_text
     if params.reference_used and not references:
         _note_known_sample(doc)
     doc.questions = clarify.run(doc.params)
-    _stats_to_usage(doc, stats)
+    _stats_to_usage(doc, stats, 'intake')
     doc.timing_s['intake'] = round(time.monotonic() - started, 2)
 
 
@@ -306,7 +316,7 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
         _limit_note(doc)
         doc.report = build_report(doc, 'skeleton')
         doc.status = Status.SKELETON
-        _stats_to_usage(doc, stats)
+        _stats_to_usage(doc, stats, 'skeleton')
         return
     if draft.source != 'llm':
         doc.agent_notes.append('Каркас собран по типовой структуре направления (модель недоступна) — проверьте темы.')
@@ -324,7 +334,7 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
     _expectation_note(doc)
     doc.report = build_report(doc, 'skeleton')
     doc.status = Status.SKELETON
-    _stats_to_usage(doc, stats)
+    _stats_to_usage(doc, stats, 'skeleton')
     doc.timing_s['skeleton'] = round(time.monotonic() - started + doc.timing_s.get('intake', 0), 2)
 
 
@@ -492,6 +502,55 @@ def _distribute_final_test(doc: ProgramDoc) -> dict[str, int]:
     return {m.id: k for m, k in zip(doc.modules, parts, strict=True)}
 
 
+def _first_module_slide_topics(doc: ProgramDoc) -> set[str]:
+    """Слайды нужны хотя бы для одного модуля: запрос их не задал или темы не нашлись — первый модуль с лекциями."""
+    m = next((x for x in doc.modules if x.hours.lk > 0), doc.modules[0] if doc.modules else None)
+    if m is None:
+        return set()
+    if m.n not in doc.params.materials.slides_modules:
+        doc.params.materials.slides_modules = [*doc.params.materials.slides_modules, m.n]
+        doc.assumptions.append(Assumption(field='slides_modules', value=[m.n], source='профиль АЦР: слайды хотя бы для одного модуля'))
+    return {t.id for t in m.topics if t.hours.lk > 0} or {t.id for t in m.topics}
+
+
+def ensure_module_slides(doc: ProgramDoc, kit: Kit, slide_topics: set[str] | None = None) -> None:
+    """Гарантия без модели: в комплекте есть слайды хотя бы одного модуля (титул темы и ≥ 3 слайда с тезисами).
+
+    Темы — заказанные в запросе (`slide_topics`), иначе первый модуль с лекционными часами.
+
+    Слайды собираются детерминированно из каркаса (`content._fallback_lecture`): название и описание
+    темы, практика, итоги. Модель не нужна, поэтому PPTX не пустой и при LLM_PROVIDERS=fixtures,
+    и при отказе шлюза.
+    """
+    from app.skills.content.run import _fallback_lecture
+
+    if any(lec.slides for lec in kit.lectures):
+        return  # слайды уже есть (от модели или шаблона content)
+    topics = slide_topics or _first_module_slide_topics(doc)
+    if not topics:
+        return
+    have = {lec.topic_id: lec for lec in kit.lectures}
+    for m in doc.modules:
+        for t in m.topics:
+            if t.id not in topics:
+                continue
+            built = _fallback_lecture(m, t)
+            if t.id in have:
+                have[t.id].slides = built.slides
+            else:
+                kit.lectures.append(built)
+    doc.agent_notes.append('Слайды модуля собраны по каркасу без модели (титул, назначение, понятия, практика, итоги) — проверьте тезисы.')
+
+
+@dataclass
+class ModuleRun:
+    """Результат задачи одного модуля: содержание и своя статистика вызовов (без общих изменяемых данных)."""
+
+    module: Module
+    content: Any
+    stats: CallStats
+
+
 async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
     """Комплект: модули параллельно, затем разделы шаблона, источники, проверка и repair."""
     if doc.status not in (Status.SKELETON_APPROVED, Status.KIT_READY, Status.GENERATING):
@@ -499,7 +558,7 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
     doc.status = Status.GENERATING
     started = time.monotonic()
     stats = CallStats()
-    slide_topics = slide_topic_ids(doc)
+    slide_topics = slide_topic_ids(doc) or _first_module_slide_topics(doc)
     final_split = _distribute_final_test(doc)
     kit = Kit()
     module_state = {m.id: {'n': m.n, 'title': m.title, 'status': 'ждёт', 'parts': ''} for m in doc.modules}
@@ -507,35 +566,60 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
 
     workers = max(4, get_settings().gen_workers)
     gate = asyncio.Semaphore(workers)
+    # Задачи модулей не пишут в doc и в общий CallStats: у каждой свой ModuleRun со своей статистикой.
+    # Общее у них только состояние прогресса (module_state, feed) — его меняют и отправляют под замком,
+    # чтобы снимки прогресса не перемешивались. Слияние в doc — после gather, по порядку модулей.
+    progress_lock = asyncio.Lock()
+    per_module: dict[str, CallStats] = {m.id: CallStats() for m in doc.modules}
 
-    async def _report(extra: str = '') -> None:
-        if extra:
-            feed.append({'t': time.strftime('%H:%M:%S'), 'text': extra})
-        elapsed = time.monotonic() - started
-        done = sum(1 for x in module_state.values() if x['status'] == 'готово')
-        eta = round(elapsed / done * (len(module_state) - done), 0) if done else None
-        await progress({
-            'modules': list(module_state.values()), 'feed': feed[-12:], 'workers': workers, 'llm_slots': get_settings().llm_concurrency,
-            'usage': {'tokens': stats.tokens_in + stats.tokens_out, 'cost_rub': round(stats.cost_rub, 2), 'by_skill': stats.by_skill},
-            'elapsed_s': round(elapsed, 1), 'eta_s': eta, 'done': done, 'total': len(module_state),
-        })
+    async def _report(extra: str = '', module_id: str = '', status: str = '', parts: str = '') -> None:
+        async with progress_lock:
+            if module_id:
+                module_state[module_id]['status'] = status
+                if parts:
+                    module_state[module_id]['parts'] = parts
+            if extra:
+                feed.append({'t': time.strftime('%H:%M:%S'), 'text': extra})
+            elapsed = time.monotonic() - started
+            done = sum(1 for x in module_state.values() if x['status'] == 'готово')
+            eta = round(elapsed / done * (len(module_state) - done), 0) if done else None
+            live = CallStats()
+            live.merge(stats)
+            for ms in per_module.values():
+                live.merge(ms)
+            await progress({
+                'modules': [dict(x) for x in module_state.values()], 'feed': feed[-12:], 'workers': workers, 'llm_slots': get_settings().llm_concurrency,
+                'usage': {'tokens': live.tokens_in + live.tokens_out, 'cost_rub': round(live.cost_rub, 2), 'by_skill': live.by_skill},
+                'elapsed_s': round(elapsed, 1), 'eta_s': eta, 'done': done, 'total': len(module_state),
+            })
 
-    async def _one(m: Module):
+    async def _one(m: Module) -> ModuleRun:
         async with gate:
             return await _one_inner(m)
 
-    async def _one_inner(m: Module):
-        module_state[m.id]['status'] = 'идёт'
-        await _report(f'content · модуль {m.n} «{m.title}»')
+    async def _one_inner(m: Module) -> ModuleRun:
+        mstats = per_module[m.id]
+        await _report(f'content · модуль {m.n} «{m.title}»', m.id, 'идёт')
         test_id = 'test-final' if final_split else f'test-{m.id}'
         n_q = final_split.get(m.id, 0) if final_split else _n_questions(doc, m)
-        res = await content.run(doc, m, n_questions=n_q, test_id=test_id, slide_topics=slide_topics, stats=stats)
-        module_state[m.id]['status'] = 'готово'
-        module_state[m.id]['parts'] = f'тест {len(res.questions)} · задания {len(res.tasks)} · лекции {len(res.lectures)}'
-        await _report(f'готово · модуль {m.n}: {module_state[m.id]["parts"]}')
-        return m, res
+        try:
+            res = await content.run(doc, m, n_questions=n_q, test_id=test_id, slide_topics=slide_topics, stats=mstats)
+        except Exception as exc:  # noqa: BLE001 — страховка конвейера: сбой одного модуля не роняет комплект, модуль собирается по шаблону
+            logger.exception('generate_kit program=%s skill=content module=%s: сбой, шаблонная сборка', doc.id, m.id)
+            mstats.fallback('content', exc, 'шаблон из каркаса (страховка конвейера)', module=m.id)
+            res = content.fallback(doc, m, content._module_los(doc, m), n_q, test_id, slide_topics)
+        parts = f'тест {len(res.questions)} · задания {len(res.tasks)} · лекции {len(res.lectures)}'
+        await _report(f'готово · модуль {m.n}: {parts}', m.id, 'готово', parts)
+        return ModuleRun(module=m, content=res, stats=mstats)
 
-    results = await asyncio.gather(*(_one(m) for m in doc.modules))
+    runs = await asyncio.gather(*(_one(m) for m in doc.modules))
+    # Детерминированное слияние: порядок модулей каркаса, а не порядок завершения задач
+    order = {m.id: i for i, m in enumerate(doc.modules)}
+    runs = sorted(runs, key=lambda r: order[r.module.id])
+    for r in runs:
+        stats.merge(r.stats)
+    per_module.clear()  # уже в stats: прогресс дальше считает только общий учёт
+    results = [(r.module, r.content) for r in runs]
     extra_sources: list[str] = []
     internship = doc.type == ProgramType.DPP_PK_INTERNSHIP
     for m, res in results:
@@ -556,6 +640,7 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
         kit.assessments.append(Assessment(id='test-final', kind='test', title='Итоговый тест'))
         for i, q in enumerate(kit.questions, start=1):
             q.id = f'qf.{i}'
+    ensure_module_slides(doc, kit, slide_topics)
     # Лекции без слайдов: план для каждой темы с лекционными часами
     planned = {lec.topic_id for lec in kit.lectures}
     from app.skills.content.run import _default_plan
@@ -598,7 +683,7 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
             await _report('judge · ' + line[:120])
         doc.report = build_report(doc, 'kit')
     doc.status = Status.KIT_READY
-    _stats_to_usage(doc, stats)
+    _stats_to_usage(doc, stats, 'kit')
     doc.timing_s['kit'] = round(time.monotonic() - started, 2)
     await _report('Комплект собран')
 
@@ -705,7 +790,7 @@ async def check_source_urls(doc: ProgramDoc) -> None:
                 if r.status_code in (403, 405):
                     r = await c.get(url)
                 return r.status_code < 400
-        except Exception:  # noqa: BLE001 — нет сети или сайта: источник остаётся неподтверждённым
+        except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError):  # нет сети или сайта: источник остаётся неподтверждённым
             return False
 
     results = await asyncio.gather(*(_ok(u) for _, u in todo[:8]))
@@ -959,7 +1044,7 @@ async def edit(
             m.accepted_items = [x for x in m.accepted_items if x not in changed and x not in allowed]
             if m.review_status == 'accepted':
                 m.review_status = 'in_review'  # FR-43: изменение принятого модуля возвращает его эксперту
-    _stats_to_usage(doc, stats)
+    _stats_to_usage(doc, stats, 'edit')
     return {'plan': plan, 'applied': True, 'target': target, 'preview': preview, 'changed': sorted(changed), 'check_ok': True}
 
 
@@ -1205,6 +1290,45 @@ def quality(doc: ProgramDoc, events: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# Нормы ручной разработки для оценки эффекта (часы методиста). Ориентир — практика АЦР:
+# каркас и нормативная база, планы, рабочие программы, лекции со слайдами, тесты, задания, ИА.
+EFFECT_NORMS = {
+    'skeleton_h': 6.0, 'plan_h_per_ac_hour': 0.05, 'plan_min_h': 2.0, 'module_program_h': 1.5,
+    'lecture_h': 3.0, 'question_h': 0.25, 'task_h': 1.0, 'final_assessment_h': 3.0, 'review_share': 0.25,
+}
+
+
+def effect(doc: ProgramDoc) -> dict[str, Any]:
+    """Эффект для защиты (ТЗ, раздел 5): сколько часов методиста экономит программа и сколько стоит генерация."""
+    n = EFFECT_NORMS
+    k = doc.kit
+    parts = {
+        'skeleton': n['skeleton_h'],
+        'plans': max(n['plan_min_h'], n['plan_h_per_ac_hour'] * (doc.volume_h or 0)),
+        'module_programs': n['module_program_h'] * len(doc.modules),
+        'lectures': n['lecture_h'] * len(k.lectures),
+        'questions': n['question_h'] * len(k.questions),
+        'tasks': n['task_h'] * len([t for t in k.tasks if t.assessment_id != 'final']),
+        'final_assessment': n['final_assessment_h'],
+    }
+    manual = round(sum(parts.values()), 1)
+    review = round(manual * n['review_share'], 1)
+    saved = round(manual - review, 1)
+    cost = round(doc.usage.cost_rub, 2)
+    return {
+        'manual_hours': manual,
+        'review_hours': review,
+        'saved_hours': saved,
+        'generation_rub': cost,
+        'rub_per_saved_hour': round(cost / saved, 2) if saved > 0 else None,
+        'tokens': doc.usage.tokens_in + doc.usage.tokens_out,
+        'generation_s': round(sum(v for key, v in doc.timing_s.items() if key in ('skeleton', 'kit')), 1),
+        'breakdown_hours': {key: round(v, 1) for key, v in parts.items()},
+        'method': 'Оценка по нормам ручной разработки (EFFECT_NORMS): каркас, планы, рабочие программы, лекции, тесты, задания, ИА; '
+                  'вычитка черновика методистом — 25 % от ручной трудоёмкости.',
+    }
+
+
 def head_decision(doc: ProgramDoc, actor: str, decision: str, comment: str = '') -> None:
     if doc.status != Status.ON_APPROVAL:
         raise Conflict('Программа не на утверждении', code='BAD_STATE')
@@ -1264,8 +1388,9 @@ async def _fix_examples(doc: ProgramDoc, stats: CallStats, report: Callable[[str
                     )
                     retry = await asyncio.to_thread(run_detailed, out.code)
                     new_code = out.code if retry['ok'] and out.code.strip() else ''
-                except Exception as exc:  # noqa: BLE001 — без модели пример просто убирается
-                    logging.getLogger(__name__).warning('пример кода не исправлен: %s', str(exc)[:200])
+                except (LLMUnavailable, OSError) as exc:  # модель не ответила или песочница не запустилась: пример убирается
+                    logger.warning('program=%s skill=content lecture=%s: пример кода не исправлен: %s', doc.id, lec.id, str(exc)[:200])
+                    stats.fallback('content', exc, 'пример кода убран из лекции', module=lec.module_id)
             note = (f'Пример кода к лекции «{lec.title}» не запускался ({res["error"][:80]}) и '
                     + ('исправлен моделью' if new_code else 'убран из лекции'))
             doc.agent_notes.append(note)

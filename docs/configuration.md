@@ -47,8 +47,8 @@
 
 | Переменная | По умолчанию | Смысл |
 |---|---|---|
-| `LLM_API_KEY` (синонимы `CLOUDRU_API_KEY`, `OPENAI_API_KEY`) | пусто | Ключ OpenAI-совместимого шлюза |
-| `LLM_BASE_URL` (синонимы `CLOUDRU_BASE_URL`, `OPENAI_BASE_URL`) | `https://foundation-models.api.cloud.ru/v1` | Адрес шлюза |
+| `LLM_API_KEY` (синоним `CLOUDRU_API_KEY`) | пусто | Ключ шлюза Cloud.ru |
+| `LLM_BASE_URL` (синоним `CLOUDRU_BASE_URL`) | `https://foundation-models.api.cloud.ru/v1` | Адрес шлюза |
 | `LLM_MODEL_GENERATE` | `GigaChat/GigaChat-3-Pro` | Модель каркаса и содержания |
 | `LLM_MODEL_JUDGE` | `ai-sage/GigaChat3.5-432B-A28B-Reasoning` | Модель-судья |
 | `LLM_MODEL_RESERVE` | `GigaChat/GigaChat-3-Pro` | Резервная модель |
@@ -124,7 +124,7 @@ LLM считается включённой (`llm_enabled`), если `LLM_PROVI
 |---|---|
 | `.env.example` | Образец: `SECRET_KEY`, `LLM_PROVIDERS`, `LLM_JUDGE_ENABLED`, закомментированные `LLM_BASE_URL`, `LLM_API_KEY`, модели |
 | `.env` | Локальные значения; в git не попадает (`.gitignore`), в образ не копируется (`.dockerignore`) |
-| `/opt/hackathon/ai.env` | Ключ и адрес шлюза на ВМ (`OPENAI_API_KEY`, `OPENAI_BASE_URL`); читается `Settings`, подключается как `env_file` в `docker-compose.yml` и через `source` в `run_vm.sh` |
+| `/opt/hackathon/ai.env` | Ключ и адрес шлюза на ВМ (scripts/deploy_vm.sh переносит ключ и адрес в `.env` как `LLM_API_KEY` и `LLM_BASE_URL`); читается `Settings`, подключается как `env_file` в `docker-compose.yml` и через `source` в `run_vm.sh` |
 
 В `docker-compose.yml` дополнительно задаются `ENVIRONMENT=production`, `DATA_DIR=/app/data/runtime`, а `SECRET_KEY`, `LLM_PROVIDERS`, `LLM_JUDGE_ENABLED` пробрасываются из окружения оболочки (по умолчанию пусто, `cloudru`, `true`).
 

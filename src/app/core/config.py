@@ -43,14 +43,14 @@ class Settings(BaseSettings):
     jwt_algorithm: str = 'HS256'
     access_token_expire_minutes: int = 60 * 12
 
-    # --- LLM: OpenAI-совместимый шлюз (Cloud.ru Evolution / шлюз хакатона) ---
+    # --- LLM: только Cloud.ru Evolution Foundation Models (напрямую или через шлюз хакатона) ---
     llm_api_key: str = Field(
         default='',
-        validation_alias=AliasChoices('LLM_API_KEY', 'CLOUDRU_API_KEY', 'OPENAI_API_KEY'),
+        validation_alias=AliasChoices('LLM_API_KEY', 'CLOUDRU_API_KEY'),
     )
     llm_base_url: str = Field(
         default='https://foundation-models.api.cloud.ru/v1',
-        validation_alias=AliasChoices('LLM_BASE_URL', 'CLOUDRU_BASE_URL', 'OPENAI_BASE_URL'),
+        validation_alias=AliasChoices('LLM_BASE_URL', 'CLOUDRU_BASE_URL'),
     )
     llm_model_generate: str = 'GigaChat/GigaChat-3-Pro'
     llm_model_judge: str = 'ai-sage/GigaChat3.5-432B-A28B-Reasoning'
@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     gen_workers: int = 6
     # Анонимный доступ (роль api) — только автопрогон POST /programs?mode=auto, с ограничением частоты на IP
     anon_runs_per_hour: int = 12
+    # ТЗ, 4.11 «Меры безопасности»: вход — не больше 5 неудачных попыток в минуту с адреса, дальше 429
+    login_failures_per_minute: int = 5
     max_parallel_jobs: int = 4  # больше одновременных заданий ВМ 2 ядра / 4 ГБ не тянет (429)
 
     # --- Вход и регистрация (администратор меняет на странице «Администрирование») ---

@@ -14,7 +14,7 @@ if [ ! -x .venv/bin/python ]; then
   python3 -m venv .venv
 fi
 .venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -r requirements.txt
+.venv/bin/pip install -q --require-hashes -r requirements.lock
 if [ ! -f frontend/dist/index.html ]; then
   if command -v npm >/dev/null 2>&1; then
     (cd frontend && npm ci --silent && npm run build --silent)

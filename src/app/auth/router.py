@@ -54,11 +54,22 @@ class LoginIn(BaseModel):
     role: str | None = None
 
 
+_login_failures: dict[str, deque[float]] = defaultdict(deque)
+
+
 @auth.post('/login', summary='Вход по логину (или почте) и паролю: токен с ролью')
-async def login(body: LoginIn) -> dict[str, Any]:
+async def login(body: LoginIn, request: Request) -> dict[str, Any]:
+    # Подбор пароля: не больше login_failures_per_minute неудачных попыток в минуту с одного адреса (ТЗ, 4.11)
+    fails = _login_failures[_client_ip(request)]
+    now = time.monotonic()
+    while fails and now - fails[0] > 60:
+        fails.popleft()
+    if len(fails) >= get_settings().login_failures_per_minute:
+        raise RateLimited('Слишком много неудачных попыток входа с этого адреса. Повторите через минуту.')
     key = body.login or body.user_id
     u = by_login(key) or next((x for x in users().values() if x.email and x.email.lower() == key.strip().lower()), None)
     if u is None or not verify_password(body.password, u.password_hash):
+        fails.append(now)
         raise Unauthorized('Неверный логин или пароль')
     if not u.active:
         raise Unauthorized('Учётная запись отключена администратором')

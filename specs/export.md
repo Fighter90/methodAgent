@@ -21,6 +21,8 @@
 | SPEC-EXPORT-09 | THE SYSTEM SHALL называть файл по названию программы (символы, кроме букв, цифр и дефиса, — `_`, до 60 символов) и отдавать его с `Content-Disposition: attachment`. | код | `test_spec_export.py::test_filename_and_disposition` |
 | SPEC-EXPORT-10 | IF выгрузку запрашивает анонимный клиент к чужой программе, THEN THE SYSTEM SHALL ответить 401; IF эксперт, THEN 403. | FR-44, NFR-10 | `test_access.py::test_no_token_cannot_read_others`, `test_access.py::test_expert_sees_only_own_modules_and_accepts_items` |
 | SPEC-EXPORT-11 | WHEN завершается автопрогон, THE SYSTEM SHALL включить в ответ ссылки на выгрузку во всех форматах. | FR-62 | `test_spec_export.py::test_auto_run_lists_all_exports` |
+| SPEC-EXPORT-12 | WHEN выгружается DOCX программы ДПП ПК, THE SYSTEM SHALL использовать шапки образца АЦР: в учебном плане «Наименование разделов программы» и «Форма аттестации», в УТП «Наименование разделов, тем программы» и «Форма контроля». | FR-54, FR-25 | `test_tz_compliance.py::test_dpp_curriculum_and_utp_headers_follow_template` |
+| SPEC-EXPORT-13 | WHEN выгружается DOCX программы ДООП, THE SYSTEM SHALL выводить в разделе 3.4 таблицу образца «№ · Модуль/Дисциплина в соответствии с УП · ФИО преподавателя · Уч. степень/Звание · Должность» по модулям учебного плана и итоговой аттестации с пустыми ФИО, степенью и должностью. | FR-54, NFR-11 | `test_tz_compliance.py::test_doop_staff_table_with_blank_names` |
 
 ## Вне области
 

@@ -113,17 +113,17 @@ curl -s -X POST https://<host>/api/v1/auth/login \
 
 Ответ `POST /programs`:
 
-- `mode=interactive`: если нужны уточнения — `{"program_id", "status": "questions", "questions", "program"}`; иначе каркас собирается синхронно — `{"program_id", "status", "program"}`.
+- `mode=interactive`: если нужны уточнения и `answers` не переданы — `{"program_id", "status": "questions", "needs_answers": true, "questions" (до 5, с вариантами), "answers_url", "program"}`; иначе (вопросов нет или ответы в теле) каркас собирается синхронно — `{"program_id", "status", "program"}`.
 - `mode=auto`, `wait=true`: полный ответ автопрогона (поля ниже). При сбое — тот же формат со `status: "failed"`, а не 500.
 - `mode=auto`, `wait=false`: `202 {"program_id", "job_id", "status": "queued"}`; результат забирается через `GET /jobs/{job_id}`.
 
-Поля ответа автопрогона: `program_id`, `status` (`done` — комплект готов и нет проваленных правил; `done_with_errors` — комплект есть, но есть ошибки; `failed`), `assumptions`, `questions_skipped`, `skeleton` (`template`, `type`, `issued_document`, `title`, `goal`, `ps_code`, `volume_h`, `competencies`, `modules` с темами и часами, `final_assessment`, `totals` с `lk/pr/lb/srs/ia/all`, `calendar`), `kit`, `report` (`rules_passed`, `rules_total`, `blocking_checks`, `failed_rules`, `unconfirmed_sources`, `rules`, `coverage`), `agent_notes`, `files` (ссылки на выгрузку во всех форматах), `timing_s`, `tokens` (`in`, `out`, `cost_rub`, `calls`).
+Поля ответа автопрогона: `program_id`, `status` (`done` — комплект готов и нет проваленных правил; `done_with_errors` — комплект есть, но есть ошибки; `failed`), `assumptions` (`field`, `value`, `source` — каждое значение по умолчанию), `questions_asked` (все вопросы шага clarify, с `answer`, если ответ передан), `questions_skipped` (вопросы, на которые вызывающий не ответил), `step_errors` (отказы навыков: `step`, `skill`, `module`, `error`, `fallback`, `at`), `skeleton` (`template`, `type`, `issued_document`, `title`, `goal`, `ps_code`, `volume_h`, `competencies`, `modules` с темами и часами, `final_assessment`, `totals` с `lk/pr/lb/srs/ia/all`, `calendar`), `kit`, `report` (`rules_passed`, `rules_total`, `blocking_checks`, `failed_rules`, `unconfirmed_sources`, `rules`, `coverage`), `agent_notes`, `files` (ссылки на выгрузку во всех форматах), `timing_s`, `tokens` (`in`, `out`, `cost_rub`, `calls`).
 
 ### 7.2. Каркас
 
 | Метод и путь | Кто | Тело | Ответ |
 |---|---|---|---|
-| `POST /programs/{id}/answers` | methodist | `answers` (id вопроса → ответ) | `202 {"job_id", "status": "queued"}` — сборка каркаса |
+| `POST /programs/{id}/answers` | methodist, api (только свои программы) | `answers` (id вопроса или поле → ответ); query `wait` (`false`), `mode` (`interactive`/`auto`) | по умолчанию `202 {"job_id", "status": "queued"}` — фоновая сборка каркаса; `wait=true` — `200 {"program_id", "status": "skeleton", "assumptions", "program"}`; `mode=auto` — `200`, ответ автопрогона (каркас, auto-approve, комплект) |
 | `PATCH /programs/{id}/skeleton` | methodist | произвольный объект правок (часы, названия, формулировки, `final_hours`, `calendar_option` и др.) | `program`, `totals` |
 | `POST /programs/{id}/skeleton/decisions` | methodist | `rule_id`, `decision` (`accept`/`keep`), `node`, `proposal`, `option_id` | `program` |
 | `POST /programs/{id}/skeleton/approve` | methodist | `decision` (`approve`/`return`), `comment` | `202 {"job_id", "status": "queued"}`: при `approve` — сборка комплекта (с проверкой лимита заданий, 429), при `return` — пересборка каркаса с комментарием |

@@ -32,7 +32,7 @@
 | Группа | Настройка | Ключ | Пояснение |
 |---|---|---|---|
 | Модель и ключи | Режим генерации | `llm_providers` | `cloudru` — модель шлюза; `fixtures` — без сети, детерминированные ответы навыков |
-| | Адрес шлюза | `llm_base_url` | OpenAI-совместимый шлюз |
+| | Адрес шлюза | `llm_base_url` | шлюз Cloud.ru Foundation Models |
 | | Ключ API | `llm_api_key` | секрет |
 | | Модели генерации, судьи, резерва, эмбеддингов | `llm_model_generate`, `llm_model_judge`, `llm_model_reserve`, `llm_model_embed` | |
 | | Включить судью | `llm_judge_enabled` | судья тратит токены рассуждающей модели |

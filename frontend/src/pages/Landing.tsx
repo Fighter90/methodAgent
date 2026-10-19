@@ -158,9 +158,9 @@ export default function Landing() {
         </div>
         <div className="stats">
           <Reveal><div className="stat"><b><CountUp to={7} /></b><span>рабочих дней вместо 25 на одну программу</span></div></Reveal>
-          <Reveal delay={80}><div className="stat"><b><CountUp to={63} /> ч</b><span>работы команды вместо 426</span></div></Reveal>
+          <Reveal delay={80}><div className="stat"><b><CountUp to={63} /><span className="unit">ч</span></b><span>работы команды вместо 426</span></div></Reveal>
           <Reveal delay={160}><div className="stat"><b><CountUp to={27} /></b><span>правил автопроверки, 10 блокирующих</span></div></Reveal>
-          <Reveal delay={240}><div className="stat"><b><CountUp to={180} /> с</b><span>предел на сборку каркаса</span></div></Reveal>
+          <Reveal delay={240}><div className="stat"><b><CountUp to={180} /><span className="unit">с</span></b><span>предел на сборку каркаса</span></div></Reveal>
         </div>
       </section>
 

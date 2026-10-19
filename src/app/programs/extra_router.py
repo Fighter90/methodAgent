@@ -43,7 +43,9 @@ class AdaptIn(BaseModel):
 
 @router.post('/programs/{program_id}/adapt', summary='Адаптация: новая программа для другой аудитории или объёма (FR-60)')
 async def adapt(program_id: str, body: AdaptIn, p: Principal = Depends(require('methodist', 'api'))) -> dict[str, Any]:
-    src = await svc.load(program_id)
+    from app.programs.router import _load_for
+
+    src = await _load_for(program_id, p)  # API-клиент адаптирует только свои программы (ТЗ, 4.1)
     doc = extras.adapt(src, svc.new_id('prg'), volume_h=body.volume_h, audience=body.audience, title=body.title, duration_weeks=body.duration_weeks)
     await svc.save(doc, p.user_id, reason=f'адаптация из {src.id}', snapshot=True)
     await svc.log_event(doc.id, p.user_id, 'created', f'Адаптация программы «{src.title}»', version=doc.version)
@@ -133,6 +135,11 @@ async def kb_upload(file: UploadFile = File(...), kind: str = Form('other'), p: 
 async def kb_delete(doc_id: str, p: Principal = Depends(require('admin'))) -> dict[str, str]:
     orgdocs.delete_document(doc_id)
     return {'status': 'deleted'}
+
+
+@router.post('/kb/reindex', summary='Догнать эмбеддингами документы, проиндексированные только по словам (администратор)')
+async def kb_reindex(limit: int = 10, p: Principal = Depends(require('admin'))) -> dict[str, Any]:
+    return await orgdocs.reindex(max(1, min(limit, 50)))
 
 
 class SearchIn(BaseModel):

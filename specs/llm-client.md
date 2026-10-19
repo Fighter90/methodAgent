@@ -4,7 +4,7 @@
 
 ## Назначение
 
-OpenAI-совместимый клиент шлюза Cloud.ru (ТЗ 4.11): роли `generate` и `judge` с резервной моделью, повторы при ошибках и невалидном JSON, проверка ответа Pydantic-схемой, учёт токенов и рублей, дневной бюджет и суточный лимит шлюза по Москве, эмбеддинги и проверочный запрос (NFR-07, NFR-08, NFR-14).
+Клиент шлюза Cloud.ru Evolution Foundation Models (httpx, без сторонних SDK) (ТЗ 4.11): роли `generate` и `judge` с резервной моделью, повторы при ошибках и невалидном JSON, проверка ответа Pydantic-схемой, учёт токенов и рублей, дневной бюджет и суточный лимит шлюза по Москве, эмбеддинги и проверочный запрос (NFR-07, NFR-08, NFR-14).
 
 ## Требования
 
@@ -29,7 +29,17 @@ OpenAI-совместимый клиент шлюза Cloud.ru (ТЗ 4.11): ро
 | SPEC-LLM-17 | WHEN запрошены эмбеддинги, THE SYSTEM SHALL отправлять тексты пачками по 16 и учитывать входные токены под именем `embed` со стоимостью 0. | FR-09 | `test_spec_llm_client.py::test_embed_batches` |
 | SPEC-LLM-18 | IF модель не настроена или суточный лимит исчерпан, THEN THE SYSTEM SHALL бросить `LLMUnavailable` при запросе эмбеддингов. | FR-09 | `test_spec_llm_client.py::test_embed_guards` |
 | SPEC-LLM-19 | WHEN выполняется проверочный запрос, THE SYSTEM SHALL вернуть `enabled=False` и провайдера без модели; при успешном ответе — `ok`, модель и задержку со сбросом отметки лимита; при ответе «суточный лимит» — отметить лимит и вернуть `daily_limit_reached`. | код | `test_spec_llm_client.py::test_ping` |
-| SPEC-LLM-20 | THE SYSTEM SHALL создавать OpenAI-клиент лениво с адресом, ключом и таймаутом из настроек и без встроенных повторов, а `get_llm` — возвращать один экземпляр клиента на процесс. | ТЗ 4.11 | `test_spec_llm_client.py::test_openai_client_lazy_and_singleton` |
+| SPEC-LLM-20 | THE SYSTEM SHALL создавать клиент шлюза Cloud.ru лениво с адресом, ключом и таймаутом из настроек и без встроенных повторов, а `get_llm` — возвращать один экземпляр клиента на процесс. | ТЗ 4.11 | `test_spec_llm_client.py::test_gateway_client_lazy_and_singleton` |
+| SPEC-LLM-21 | THE SYSTEM SHALL учитывать вызовы в `CallStats` атомарно (`add` и `merge` под замком): параллельные задачи и потоки не теряют токены, рубли и число вызовов; `merge` переносит и отказы навыков. | NFR-08 | `test_spec_robustness.py::test_call_stats_threadsafe_and_merge` |
+| SPEC-LLM-22 | WHEN запрошены эмбеддинги, THE SYSTEM SHALL ограничивать каждую пачку таймаутом и повторять её при сетевой ошибке, таймауте, 429 и 5xx с паузами 1 и 3 с; IF шлюз ответил 401/403 или «суточный лимит», THEN THE SYSTEM SHALL бросить `LLMUnavailable` без повторов. | NFR-08 | `test_spec_robustness.py::test_embed_retries_transient`, `test_spec_robustness.py::test_embed_no_retry_on_auth_and_limit` |
+| SPEC-LLM-23 | THE SYSTEM SHALL ограничивать таймаутом и проверочный запрос `ping`; IF ответ шлюза не содержит `choices`, THEN THE SYSTEM SHALL считать его ошибкой транспорта и повторить по общим правилам, а наружу отдать только `LLMUnavailable`. | NFR-08 | `test_spec_robustness.py::test_ping_timeout_and_malformed_response` |
+
+## Таймауты, повторы и отказы (сводка)
+
+- Таймаут есть у каждого внешнего вызова: httpx (`llm_timeout_s`), `asyncio.wait_for` в `complete_json` (не больше остатка бюджета навыка `timeout_s × (retries + 1)` из `SKILL.md`), в `embed` и в `ping` (≤ 30 с).
+- Повторы: сеть, таймаут, 5xx, ответ без `choices` — паузы 1 и 3 с, затем резервная модель (SPEC-LLM-08, SPEC-LLM-23); 429 — паузы 15, 30 с; 401/403 — сразу резерв; суточный лимит — сразу `LLMUnavailable` до 00:00 МСК (SPEC-LLM-02, SPEC-LLM-22); эмбеддинги — те же паузы без резервной модели (SPEC-LLM-22).
+- Наружу — только `LLMUnavailable`; навык ловит его и `MODEL_DATA_ERRORS`, переходит на резерв и пишет отказ в `CallStats.fallbacks` → `doc.step_errors` (SPEC-CONTENT-13, SPEC-FLOW-39).
+- Подробно: [docs/llm.md](../docs/llm.md), раздел «Таймауты, повторы и отказы».
 
 ## Известные расхождения
 

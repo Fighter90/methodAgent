@@ -7,7 +7,8 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from app.llm.client import get_llm
+from app.core.errors import NotFound
+from app.llm.client import MODEL_DATA_ERRORS, LLMUnavailable, get_llm
 from app.programs.schemas import ProgramDoc
 from app.skills.base import skill
 
@@ -48,7 +49,7 @@ async def propose_full(doc: ProgramDoc, module_id: str, node_id: str, comment: s
     base = node_id.partition('#')[0]
     try:
         affected = descendants(doc, base)['rebuild'] if base else []
-    except Exception:  # noqa: BLE001 — комментарий к модулю целиком: элементы не пересобираются
+    except (NotFound, LookupError):  # комментарий к модулю целиком: элементы не пересобираются
         affected = []
     text = await propose(doc, module_id, node_id, comment)
     return Proposal(proposal=text, affected=affected)
@@ -66,6 +67,7 @@ async def propose(doc: ProgramDoc, module_id: str, node_id: str, comment: str) -
                 schema=Proposal, temperature=spec.temperature, max_tokens=spec.max_tokens,
             )
             return res.proposal
-        except Exception as exc:  # noqa: BLE001 — сбой модели или разбора ответа: работает резервная генерация
-            logging.getLogger(__name__).warning('%s: резервная генерация (%s: %s)', __name__, type(exc).__name__, str(exc)[:200])
+        except (LLMUnavailable, *MODEL_DATA_ERRORS) as exc:  # модель не ответила или ответ не разобран: шаблонное предложение
+            logging.getLogger(__name__).warning('review_assist program=%s module=%s: резервная генерация (%s: %s)',
+                                                doc.id, module_id, type(exc).__name__, str(exc)[:200])
     return f'Учесть замечание эксперта: «{comment}». Правка затронет только этот элемент модуля; часы и РО не меняются.'

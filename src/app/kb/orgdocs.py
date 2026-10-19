@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 import threading
 from typing import Any
+
+import numpy as np
 
 from app.core.config import get_settings
 from app.core.db import now_iso
@@ -24,20 +25,81 @@ logger = logging.getLogger(__name__)
 KINDS = {'template': 'Шаблон программы', 'regulation': 'Положение', 'other': 'Иной документ'}
 _CHUNK = 900
 _MAX_CHUNKS = 200
-_lock = threading.Lock()
+_lock = threading.RLock()
+
+
+def _dir():
+    d = get_settings().data_dir / 'kb'
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _path():
-    d = get_settings().data_dir / 'kb'
+    return _dir() / 'index.json'
+
+
+def _vec_path(doc_id: str):
+    d = _dir() / 'vectors'
     d.mkdir(parents=True, exist_ok=True)
-    return d / 'index.json'
+    return d / f'{doc_id}.npy'
+
+
+# Векторы хранятся отдельно от текстов: float32-матрица на документ (data/kb/vectors/<id>.npy),
+# строки нормированы. В памяти держится кэш матриц; index.json — только тексты и метаданные.
+_vec_cache: dict[str, np.ndarray] = {}
+
+
+def _write_vectors(doc_id: str, vectors: list[list[float]]) -> None:
+    m = np.asarray(vectors, dtype=np.float32)
+    norms = np.linalg.norm(m, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    m = m / norms
+    p = _vec_path(doc_id)
+    tmp = p.with_name(p.stem + '.tmp.npy')
+    np.save(tmp, m)
+    tmp.replace(p)
+    _vec_cache[doc_id] = m
+
+
+def _vectors(doc_id: str) -> np.ndarray | None:
+    m = _vec_cache.get(doc_id)
+    if m is None:
+        p = _vec_path(doc_id)
+        if not p.exists():
+            return None
+        m = np.load(p, mmap_mode='r')
+        _vec_cache[doc_id] = m
+    return m
+
+
+def _migrate(data: dict[str, Any]) -> bool:
+    """Старый формат: векторы внутри index.json. Переносит их в .npy и убирает из JSON."""
+    moved = False
+    for d in data['docs']:
+        vecs = [c.get('vec') for c in d.get('chunks', [])]
+        if any(v is not None for v in vecs):
+            if all(v is not None for v in vecs):
+                _write_vectors(d['id'], vecs)
+                d['indexed'] = 'embeddings'
+            else:
+                d['indexed'] = 'keywords'
+            moved = True
+        for c in d.get('chunks', []):
+            c.pop('vec', None)
+    return moved
 
 
 def _load() -> dict[str, Any]:
     p = _path()
     if not p.exists():
         return {'docs': []}
-    return json.loads(p.read_text(encoding='utf-8'))
+    data = json.loads(p.read_text(encoding='utf-8'))
+    if any('vec' in c for d in data['docs'] for c in d.get('chunks', [])):
+        with _lock:
+            if _migrate(data):
+                logger.info('kb: векторы перенесены из index.json в data/kb/vectors')
+            _save(data)
+    return data
 
 
 def _save(data: dict[str, Any]) -> None:
@@ -66,22 +128,16 @@ def _words(text: str) -> set[str]:
     return {w[:6] for w in re.findall(r'[a-zа-яё0-9]{4,}', text.lower())}
 
 
-def _cos(a: list[float], b: list[float]) -> float:
-    num = sum(x * y for x, y in zip(a, b, strict=False))
-    den = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
-    return num / den if den else 0.0
-
-
 async def _embed(texts: list[str]) -> list[list[float]] | None:
-    from app.llm.client import get_llm
+    from app.llm.client import LLMUnavailable, get_llm
 
     llm = get_llm()
     if not llm.enabled or not texts:
         return None
     try:
         return await llm.embed(texts)
-    except Exception as exc:  # noqa: BLE001 — без эмбеддингов работает поиск по словам
-        logger.warning('kb embed failed: %s', type(exc).__name__)
+    except LLMUnavailable as exc:  # без эмбеддингов работает поиск по словам
+        logger.warning('kb embed failed, поиск по словам: %s', str(exc)[:200])
         return None
 
 
@@ -98,8 +154,10 @@ async def add_document(name: str, content: bytes, kind: str, author: str) -> dic
             'id': doc_id, 'name': name, 'kind': kind if kind in KINDS else 'other', 'author': author,
             'uploaded_at': now_iso(), 'chars': len(parsed.text), 'structure': parsed.structure[:60],
             'indexed': 'embeddings' if vectors else 'keywords',
-            'chunks': [{'i': i, 'text': t, 'vec': vectors[i] if vectors else None} for i, t in enumerate(parts)],
+            'chunks': [{'i': i, 'text': t} for i, t in enumerate(parts)],
         }
+        if vectors:
+            _write_vectors(doc_id, vectors)
         data['docs'].append(item)
         _save(data)
     return public(item)
@@ -121,23 +179,30 @@ def delete_document(doc_id: str) -> None:
         if len(data['docs']) == before:
             raise NotFound('Документ не найден')
         _save(data)
+        _vec_cache.pop(doc_id, None)
+        _vec_path(doc_id).unlink(missing_ok=True)
 
 
 async def search(query: str, k: int = 5) -> list[dict[str, Any]]:
-    """Лучшие фрагменты по запросу: косинус эмбеддингов, иначе доля общих слов."""
+    """Лучшие фрагменты по запросу: косинус эмбеддингов (матрица float32), иначе доля общих слов."""
     docs = _load()['docs']
     if not docs or not query.strip():
         return []
+    mats = {d['id']: _vectors(d['id']) for d in docs if d.get('indexed') == 'embeddings'}
     qvec = None
-    if any(c.get('vec') for d in docs for c in d['chunks']):
+    if any(m is not None for m in mats.values()):
         got = await _embed([query[:2000]])
-        qvec = got[0] if got else None
+        if got:
+            q = np.asarray(got[0], dtype=np.float32)
+            qvec = q / (np.linalg.norm(q) or 1.0)
     qw = _words(query)
     scored = []
     for d in docs:
+        m = mats.get(d['id'])
+        sims = (np.asarray(m) @ qvec) if qvec is not None and m is not None and m.shape[1] == qvec.shape[0] else None
         for c in d['chunks']:
-            if qvec and c.get('vec'):
-                score = _cos(qvec, c['vec'])
+            if sims is not None and c['i'] < len(sims):
+                score = float(sims[c['i']])
             else:
                 cw = _words(c['text'])
                 score = len(qw & cw) / (len(qw) or 1)
@@ -148,6 +213,27 @@ async def search(query: str, k: int = 5) -> list[dict[str, Any]]:
         for s, d, c in scored[:k]
         if s > 0.05
     ]
+
+
+async def reindex(limit_docs: int = 10) -> dict[str, Any]:
+    """Догоняет эмбеддингами документы, проиндексированные только по словам (по limit_docs за вызов)."""
+    data = _load()
+    todo = [d for d in data['docs'] if d.get('indexed') != 'embeddings' or _vectors(d['id']) is None][:limit_docs]
+    done = []
+    for d in todo:
+        vectors = await _embed([c['text'] for c in d['chunks']])
+        if not vectors:
+            break
+        with _lock:
+            _write_vectors(d['id'], vectors)
+            fresh = _load()
+            for x in fresh['docs']:
+                if x['id'] == d['id']:
+                    x['indexed'] = 'embeddings'
+            _save(fresh)
+        done.append(d['id'])
+    left = sum(1 for d in _load()['docs'] if d.get('indexed') != 'embeddings')
+    return {'indexed': done, 'left': left}
 
 
 def templates() -> list[dict[str, Any]]:

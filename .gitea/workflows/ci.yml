@@ -1,0 +1,41 @@
+# CI: тесты с порогом покрытия, линтер, трассировка требований SDD и сборка интерфейса.
+# Формат совместим с Gitea Actions и GitHub Actions.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      LLM_PROVIDERS: fixtures
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Зависимости
+        run: |
+          if [ -f requirements-dev.lock ]; then pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+          else pip install -r requirements-dev.txt; fi
+      - name: Линтер
+        run: ruff check --isolated --select F,E9,I src tests scripts
+      - name: Тесты и покрытие (порог в .coveragerc)
+        run: pytest -q --cov=src/app --cov-report=term
+      - name: Трассировка требований specs/ → тесты
+        run: python scripts/spec_trace.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Сборка интерфейса
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund && npm run build

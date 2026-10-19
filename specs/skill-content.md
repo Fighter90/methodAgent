@@ -22,6 +22,7 @@
 | SPEC-CONTENT-10 | WHEN модель вызывается, THE SYSTEM SHALL передать темы с кодами РО и признаком практики, число вопросов, признак слайдов и версии только тех инструментов реестра, что встречаются в программе, а без слайдов ограничить ответ 4500 токенами. | FR-26, FR-30 | `test_spec_content.py::test_llm_request_payload` |
 | SPEC-CONTENT-11 | WHEN ответ модели упоминает сервисы, недоступные в России, THE SYSTEM SHALL отбросить такие вопросы (их место займут шаблонные) и заменить упоминания в остальном тексте на «зарубежный сервис». | код | `test_spec_content.py::test_blocked_services_removed_from_llm_content`, `test_extras.py::test_blocked_services_scrubbed` |
 | SPEC-CONTENT-12 | IF список заблокированных сервисов пуст, THEN THE SYSTEM SHALL вернуть ответ модели без изменений. | код | `test_spec_content.py::test_scrub_without_blocklist` |
+| SPEC-CONTENT-13 | IF вызов модели завершился ошибкой, THEN THE SYSTEM SHALL переходить на шаблон только при `LLMUnavailable` или ошибке разбора ответа модели и записывать отказ (навык, модуль, ошибка, резерв) в `CallStats.fallbacks`; ошибки кода не глушатся. | NFR-08 | `test_spec_content.py::test_code_errors_are_not_swallowed`, `test_spec_content.py::test_fallback_on_model_error` |
 
 ## Вне области
 

@@ -1,4 +1,4 @@
-"""Спецификация specs/llm-client.md: OpenAI-совместимый клиент шлюза (ТЗ 4.11, NFR-08)."""
+"""Спецификация specs/llm-client.md: клиент шлюза Cloud.ru (ТЗ 4.11, NFR-08)."""
 
 from __future__ import annotations
 
@@ -20,10 +20,9 @@ class Out(BaseModel):
     answer: str
 
 
-class HTTPError(Exception):
+class HTTPError(c.GatewayError):
     def __init__(self, code: int, body: object = '') -> None:
-        super().__init__(f'HTTP {code}')
-        self.status_code, self.body = code, body
+        super().__init__(f'HTTP {code}', code, body)
 
 
 def _resp(content: str, tin: int = 1000, tout: int = 500):
@@ -166,7 +165,7 @@ def test_server_errors_retry_then_reserve(make, sleeps) -> None:
     """SPEC-LLM-08: при 5xx — до 3 попыток с паузами 1 и 3 с, затем резервная модель; после всех — LLMUnavailable с типом ошибки."""
     gw = Gateway(HTTPError(500))
     llm = make(gw)
-    with pytest.raises(c.LLMUnavailable, match=r'модель не ответила \(HTTPError\)'):
+    with pytest.raises(c.LLMUnavailable, match=r'модель не ответила \(HTTPError: HTTP 500\)'):
         _run(llm.complete_json(skill='t', system='s', user='u'))
     assert [k['model'] for k in gw.calls] == ['gen'] * 3 + ['reserve'] * 3
     assert sleeps == [1.0, 3.0, 1.0, 3.0]
@@ -283,10 +282,40 @@ def test_ping(make) -> None:
     assert r == {'enabled': True, 'ok': False, 'error': 'HTTPError', 'daily_limit_reached': True}
 
 
-def test_openai_client_lazy_and_singleton(make, monkeypatch) -> None:
-    """SPEC-LLM-20: OpenAI-клиент создаётся лениво с адресом и таймаутом из настроек и без встроенных повторов; get_llm возвращает один экземпляр."""
+def test_gateway_client_lazy_and_singleton(make, monkeypatch) -> None:
+    """SPEC-LLM-20: клиент шлюза Cloud.ru создаётся лениво с адресом и таймаутом из настроек и без встроенных повторов; get_llm возвращает один экземпляр."""
     llm = make(llm_base_url='http://gw.local/v1', llm_timeout_s=33.0)
     cl = llm._get()
     assert cl is llm._get() and str(cl.base_url).startswith('http://gw.local/v1') and cl.max_retries == 0 and cl.timeout == 33.0
     monkeypatch.setattr(c, '_client', None)
     assert c.get_llm() is c.get_llm()
+
+
+def test_gateway_http_errors_and_no_foreign_sdk() -> None:
+    """SPEC-LLM-20: клиент шлюза Cloud.ru работает на httpx без сторонних SDK; HTTP-ошибка несёт статус и тело."""
+    import asyncio
+    from pathlib import Path
+
+    import httpx
+
+    from app.llm.gateway import CloudRuGateway, GatewayError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers['Authorization'] == 'Bearer k' and request.url.path.endswith('/chat/completions')
+        if b'"bad"' in request.content:
+            return httpx.Response(429, json={'message': 'daily spending limit'})
+        return httpx.Response(200, json={'choices': [{'message': {'content': '{"answer":"ok"}'}}], 'usage': {'prompt_tokens': 3, 'completion_tokens': 2}})
+
+    gw = CloudRuGateway('http://gw.local/v1', 'k', 10.0)
+    gw._http = httpx.AsyncClient(base_url=gw.base_url, transport=httpx.MockTransport(handler), headers={'Authorization': 'Bearer k'})
+    resp = asyncio.run(gw.chat.completions.create(model='m', messages=[]))
+    assert resp.choices[0].message.content == '{"answer":"ok"}' and resp.usage.prompt_tokens == 3
+    try:
+        asyncio.run(gw.chat.completions.create(model='bad', messages=[]))
+    except GatewayError as exc:
+        assert exc.status_code == 429 and c.is_daily_limit(exc)
+    else:
+        raise AssertionError('ожидалась GatewayError')
+    root = Path(__file__).resolve().parents[1]
+    deps = (root / 'requirements.txt').read_text(encoding='utf-8').lower()
+    assert not any(name in deps for name in ('openai', 'anthropic', 'google-generativeai', 'mistralai', 'cohere'))
