@@ -231,6 +231,8 @@ class Question_(BaseModel):
     key: int
     lo_ids: list[str] = Field(default_factory=list)
     difficulty: int = 2
+    # F12: происхождение элемента — честная подача: llm (модель), template (шаблонный резерв), repaired (исправлен repair)
+    origin: Literal['llm', 'template', 'repaired'] = 'template'
 
 
 class Criterion(BaseModel):
@@ -248,6 +250,7 @@ class Task(BaseModel):
     expected_result: str = ''
     criteria: list[Criterion] = Field(default_factory=list)
     lo_ids: list[str] = Field(default_factory=list)
+    origin: Literal['llm', 'template', 'repaired'] = 'template'  # F12: происхождение элемента
 
 
 class Slide(BaseModel):
@@ -292,6 +295,7 @@ class Lecture(BaseModel):
     plan: list[dict[str, Any]] = Field(default_factory=list)  # [{min, text}]
     code_examples: list[str] = Field(default_factory=list)
     slides: list[Slide] = Field(default_factory=list)
+    origin: Literal['llm', 'template', 'repaired'] = 'template'  # F12: происхождение элемента
 
 
 class Assessment(BaseModel):

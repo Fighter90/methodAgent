@@ -100,10 +100,11 @@ def _proposal_for(rule: RuleResult, doc: ProgramDoc) -> list[dict]:
 def build_report(doc: ProgramDoc, stage: str) -> Report:
     rules = run_rules(doc, stage)
     if stage == 'kit' and doc.kit.judge:
-        from app.validation.judge import merge
+        # Замечания судьи — отдельными строками отчёта: формальные правила кода и содержательные
+        # замечания судьи не смешиваются в одних сообщениях (MET-33, SPEC-JUDGE-08)
+        from app.validation.judge import judge_rows
 
-        tmp = Report(stage=stage, rules=rules)
-        merge(doc, tmp)
+        rules = rules + judge_rows(doc)
     blocking = blocking_status(rules)
     passed = sum(1 for n, ok in blocking.items() if ok and (stage == 'kit' or n in {1, 2, 3, 5, 7}))
     total = 10 if stage == 'kit' else 5
@@ -113,10 +114,10 @@ def build_report(doc: ProgramDoc, stage: str) -> Report:
         actions += [f'Модуль {m.n} «{m.title}» собран по шаблону без ответа модели — нужна доработка эксперта' for m in drafted]
         actions += [f'Судья ({k}): {v[0]}' for k, v in doc.kit.judge.items()]
     for r in rules:
-        if r.status == 'fail':
+        if r.status == 'fail' and not r.id.endswith('-judge'):  # замечания судьи уже выведены строкой «Судья (…): …»
             actions.extend(r.messages[:3])
     for r in rules:
-        if r.status == 'warn':
+        if r.status == 'warn' and not r.id.endswith('-judge'):
             actions.extend(r.messages[:2])
     proposals = [p for r in rules if r.status in ('warn', 'fail') for p in _proposal_for(r, doc)]
     decided = {(d.rule_id, d.node) for d in doc.decisions}

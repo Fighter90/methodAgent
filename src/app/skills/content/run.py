@@ -208,11 +208,15 @@ def _from_llm(
             Question_(
                 id=f'q{m.n}.{i}', assessment_id=test_id, module_id=m.id, stem=q.stem.strip(),
                 options=[o.strip() for o in q.options], key=q.key, lo_ids=_lo_ids(q.lo, los, default_lo),
+                origin='llm',
             )
         )
     if len(questions) < n_questions:
         extra = fallback(doc, m, los, n_questions, test_id, slide_topics).questions
-        questions += extra[len(questions) : n_questions]
+        added = extra[len(questions) : n_questions]
+        for q in added:
+            q.origin = 'template'  # F12: добор шаблоном помечается честно
+        questions += added
         for i, q in enumerate(questions, start=1):
             q.id = f'q{m.n}.{i}'
     tasks: list[Task] = []
@@ -224,11 +228,13 @@ def _from_llm(
                 id=f'task{m.n}.{i}', assessment_id=f'sem-{m.id}', module_id=m.id, topic_id=topic.id if topic else None,
                 title=t.title or (f'Задание к теме {topic.n}' if topic else f'Задание {i}'), statement=t.statement,
                 expected_result=t.expected_result, criteria=criteria,
-                lo_ids=_lo_ids(t.lo, los, topic.lo_ids if topic else []),
+                lo_ids=_lo_ids(t.lo, los, topic.lo_ids if topic else []), origin='llm',
             )
         )
     if not tasks:
-        tasks = fallback(doc, m, los, n_questions, test_id, slide_topics).tasks
+        for t in fallback(doc, m, los, n_questions, test_id, slide_topics).tasks:
+            t.origin = 'template'
+            tasks.append(t)
     lectures: list[Lecture] = []
     lec_by_topic = {lec.topic: lec for lec in data.lectures}
     for t in m.topics:
@@ -244,6 +250,7 @@ def _from_llm(
             Lecture(
                 id=f'lec{t.n}', topic_id=t.id, module_id=m.id, title=t.title, duration_min=max(45, t.hours.lk * 45),
                 plan=plan or _default_plan(t.title), code_examples=[lec.code] if lec.code else [], slides=slides,
+                origin='llm',
             )
         )
     interview = [q.strip() for q in data.interview if len(q.strip()) > 15][:6]
@@ -277,7 +284,7 @@ def _fallback_lecture(m: Module, t) -> Lecture:
     ]
     return Lecture(
         id=f'lec{t.n}', topic_id=t.id, module_id=m.id, title=t.title, duration_min=max(45, t.hours.lk * 45),
-        plan=_default_plan(t.title), slides=slides,
+        plan=_default_plan(t.title), slides=slides, origin='template',
     )
 
 

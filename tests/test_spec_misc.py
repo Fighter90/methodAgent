@@ -18,6 +18,7 @@ from app.programs.schemas import (  # noqa: E402
     Competency,
     Indicator,
     LearningOutcome,
+    Materials,
     Module,
     Params,
     ProgramDoc,
@@ -95,6 +96,29 @@ def _skel_doc(vague: bool = False) -> ProgramDoc:
     )
     mods = [Module(id='m1', n=1, title='Циклы', weight=1, topics=[Topic(id='t1.1', n='1.1', title='Цикл for', lo_ids=['lo1'])]),
             Module(id='m2', n=2, title='Функции', weight=1, topics=[Topic(id='t2.1', n='2.1', title='Функции', lo_ids=['lo2'])])]
+    wf.apply_solver(doc, mods)
+    wf.plan_doc_calendar(doc)
+    doc.report = build_report(doc, 'skeleton')
+    return doc
+
+
+def _prereq_doc() -> ProgramDoc:
+    """Каркас с нарушенным порядком тем «Классы → Циклы → Переменные» (аудит 19.10, MET-41)."""
+    from app.agent import workflow as wf
+    from app.validation.report import build_report
+
+    los = [LearningOutcome(id='lo1', code='РО 1', text='Пишет классы'),
+           LearningOutcome(id='lo2', code='РО 2', text='Пишет циклы'),
+           LearningOutcome(id='lo3', code='РО 3', text='Работает с переменными')]
+    doc = ProgramDoc(
+        id='p', request='x', type=ProgramType.DOOP, status=Status.SKELETON, goal='Цель', title='Python',
+        params=Params(volume_h=16, final_assessment_form='Зачёт', final_assessment_hours=2),
+        competencies=[Competency(id='c1', code='К-1', title='К', indicators=[Indicator(id='i1', kind='can', text='x', outcomes=los)])],
+    )
+    mods = [Module(id='m1', n=1, title='Основы Python', weight=1, topics=[
+        Topic(id='t1.1', n='1.1', title='Классы', lo_ids=['lo1']),
+        Topic(id='t1.2', n='1.2', title='Циклы', lo_ids=['lo2']),
+        Topic(id='t1.3', n='1.3', title='Переменные', lo_ids=['lo3'])])]
     wf.apply_solver(doc, mods)
     wf.plan_doc_calendar(doc)
     doc.report = build_report(doc, 'skeleton')
@@ -311,6 +335,97 @@ def test_return_with_comment_passes_current_skeleton(monkeypatch) -> None:
     assert payload['methodist_comment'] == 'Добавьте тему про словари'
     assert [m['title'] for m in payload['current_skeleton']['modules']] == ['Циклы', 'Функции']
     assert [m.title for m in doc.modules] == ['Циклы', 'Словари']
+
+
+def test_v21_swap_reorders_by_dependency_graph() -> None:
+    """SPEC-FLOW-44: перестановка по «!» пересчитывает порядок всех тем по единому графу зависимостей (аудит 19.10, MET-41).
+
+    Часы и итоги модулей остаются на позициях; устаревшее предложение, применённое
+    после пересчёта, порядок не ломает; сумма часов сохраняется.
+    """
+    from app.agent import workflow as wf
+
+    doc = _prereq_doc()
+    assert [t.title for t in doc.all_topics()] == ['Классы', 'Циклы', 'Переменные']
+    v21 = [p for p in doc.report.proposals if p['rule_id'] == 'V-21']
+    assert {p['node'] for p in v21} == {'t1.1>t1.2', 't1.1>t1.3'}
+    hours_before = [t.hours.model_dump() for t in doc.all_topics()]
+    wf.decide(doc, 'V-21', 'accept', 'u-madina', v21[0]['node'], v21[0]['proposal'])
+    assert [t.title for t in doc.all_topics()] == ['Переменные', 'Циклы', 'Классы']
+    assert [t.hours.model_dump() for t in doc.all_topics()] == hours_before, 'часы остаются на позициях'
+    assert doc.modules[0].hours.total == sum(t.hours.total for t in doc.all_topics())
+    assert not [p for p in doc.report.proposals if p['rule_id'] == 'V-21' and not p['decided']], 'дефект V-21 закрыт'
+    # предложение к устаревшим позициям (от старого отчёта) не портит пересчитанный порядок
+    wf.decide(doc, 'V-21', 'accept', 'u-madina', 't1.1>t1.3', 'устаревшее предложение')
+    assert [t.title for t in doc.all_topics()] == ['Переменные', 'Циклы', 'Классы']
+    assert sum(t.hours.total for t in doc.all_topics()) + doc.final_assessment.hours == doc.volume_h
+
+
+def test_v21_cycle_blocks_silent_approval() -> None:
+    """SPEC-FLOW-44: цикл зависимостей тем не даёт молчаливого утверждения каркаса (аудит 19.10, MET-41)."""
+    from app.agent import workflow as wf
+
+    doc = _prereq_doc()
+    doc.all_topics()[0].prerequisites = ['t1.2']
+    doc.all_topics()[1].prerequisites = ['t1.1']
+    with pytest.raises(Conflict) as e:
+        wf.approve_skeleton(doc, 'u-madina', auto=True)
+    assert e.value.code == 'TOPIC_DEPENDENCY_CYCLE'
+    assert [t.title for t in doc.all_topics()] == ['Классы', 'Циклы', 'Переменные'], 'порядок молча не меняется'
+    with pytest.raises(Conflict) as e:
+        wf.approve_skeleton(doc, 'u-madina')
+    assert e.value.code == 'TOPIC_DEPENDENCY_CYCLE'
+
+
+def test_slide_hint_finds_module_by_any_topic(monkeypatch) -> None:
+    """SPEC-FLOW-45: модуль для слайдов ищется по всем темам (аудит 19.10, MET-35/F13).
+
+    pandas — вторая тема второго модуля: слайды привязываются к модулю 2,
+    выбор подтверждается заметкой, темы слайдов — только модуля 2.
+    """
+    from app.agent import workflow as wf
+
+    doc = ProgramDoc(id='p', request='Нужны слайды для модуля про pandas', type=ProgramType.DPP_PK,
+                     status=Status.SKELETON, title='Анализ данных',
+                     params=Params(volume_h=72, form='очная', final_assessment_form='Защита проекта',
+                                   materials=Materials(slides_topic_hint='pandas')))
+    sk = importlib.import_module('app.skills.skeleton.run')
+    data = {'title': 'Анализ данных', 'goal': 'Цель',
+            'competencies': [{'title': 'К', 'indicators': [{'text': 'Анализирует данные', 'outcomes': [{'code': '1.1', 'text': 'Строит таблицы'}]}]}],
+            'modules': [{'title': 'Введение', 'weight': 1, 'topics': [{'title': 'Введение в курс', 'lo': ['1.1']}, {'title': 'Инструменты', 'lo': ['1.1']}]},
+                        {'title': 'Работа с данными', 'weight': 1, 'topics': [{'title': 'Знакомство с данными', 'lo': ['1.1']}, {'title': 'pandas: таблицы', 'lo': ['1.1']}]}]}
+    monkeypatch.setattr(sk, 'get_llm', lambda: FakeLLM(data))
+    asyncio.run(wf.skeleton_step(doc))
+    assert doc.params.materials.slides_modules == [2], 'pandas во второй теме модуля 2 найден'
+    assert any('модулю 2' in n and 'pandas' in n for n in doc.agent_notes), 'выбор подтверждён с номером модуля и темы'
+    ids = wf.slide_topic_ids(doc)
+    assert ids == {t.id for t in doc.modules[1].topics if t.hours.lk > 0}, 'слайды лекций — именно модуля 2'
+
+
+def test_return_rebuild_lists_changes(monkeypatch) -> None:
+    """SPEC-FLOW-46: после возврата с комментарием данные программы содержат изменения «было → стало» (демо 19.10, MET-14)."""
+    from app.agent import workflow as wf
+
+    sk = importlib.import_module('app.skills.skeleton.run')
+    doc = _skel_doc()
+    doc.norm_fragments = [{'name': 'x', 'text': 'y'}]
+    comment = 'Тема «Цикл for» должна занимать больше часов'
+    data = {'title': 'Python', 'goal': 'Цель',
+            'competencies': [{'title': 'К', 'indicators': [{'text': 'Пишет циклы', 'outcomes': [{'code': '1.1', 'text': 'Пишет циклы'}]}]}],
+            'modules': [{'title': 'Циклы', 'weight': 3, 'topics': [{'title': 'Цикл for', 'weight': 3, 'lo': ['1.1']}]},
+                        {'title': 'Функции', 'weight': 1, 'topics': [{'title': 'Функции', 'weight': 1, 'lo': ['1.1']}]}]}
+    monkeypatch.setattr(sk, 'get_llm', lambda: FakeLLM(data))
+    asyncio.run(wf.skeleton_step(doc, comment=comment))
+    changes = doc.progress['return_changes']
+    assert changes, 'методист видит, что именно изменил агент'
+    hours = next(c for c in changes if c['node'] == 't1.1' and c['kind'] == 'hours')
+    assert int(hours['before'].split()[0]) < int(hours['after'].split()[0]), 'часы темы выросли: 7 ч → больше'
+    assert any(n.startswith('Изменения по вашему комментарию') for n in doc.agent_notes)
+    assert sum(m.hours.total for m in doc.modules) + doc.final_assessment.hours == doc.volume_h == 16, 'сумма часов сохранена'
+
+    monkeypatch.setattr(sk, 'get_llm', lambda: DISABLED)
+    asyncio.run(wf.skeleton_step(doc, comment='Ещё правка'))
+    assert doc.progress['return_changes'] == [], 'каркас не менялся — изменений не сообщается'
 
 
 def test_edit_rollback_and_new_version(client, kit) -> None:
@@ -575,6 +690,9 @@ def test_passwords_bcrypt_only(client) -> None:
     stored = client.portal.call(_hash)
     assert stored.startswith('$2') and 'Ivan12345' not in stored
     assert bcrypt.checkpw(b'Ivan12345', stored.encode())
+    # Уборка (MET-7): деактивируем созданного эксперта — подсказки экспертов в других тестах
+    # должны оставаться пустыми (кэш пользователей обновляется внутри patch-эндпоинта)
+    assert client.patch(f'/api/v1/admin/users/{uid}', json={'active': False}, headers=ha).status_code == 200
 
 
 def test_secret_unreadable(monkeypatch) -> None:
@@ -654,3 +772,27 @@ def test_source_url_reachability_is_not_confirmation() -> None:
     assert srcs['c'].confirmed is False and not srcs['c'].url, 'локальные адреса не опрашиваются'
     assert srcs['d'].confirmed is True and not srcs['d'].checked_at, 'подтверждённые не трогаются'
     assert n == 1
+
+
+def test_llm_status_cache_and_admin_live(client, monkeypatch) -> None:
+    """SPEC-LLM-26"""
+    import app.main as m
+    from app.llm.client import get_llm
+
+    m._LLM_STATUS_CACHE.update(at=0.0, info=None)  # кэш от предыдущих тестов сбрасываем
+    calls = {'n': 0}
+
+    async def fake_ping():
+        calls['n'] += 1
+        return {'enabled': True, 'ok': True}
+
+    monkeypatch.setattr(get_llm(), 'ping', fake_ping)
+    r1 = client.get('/api/v1/llm/status').json()
+    assert calls['n'] == 1, 'первый запрос — живая проверка'
+    r2 = client.get('/api/v1/llm/status').json()
+    assert calls['n'] == 1, 'повторный запрос в течение 5 минут — кэш, модель не дёргается'
+    assert r1['ok'] == r2['ok']
+    tok = client.post('/api/v1/auth/login', json={'login': 'admin', 'password': 'demo'}).json()['access_token']
+    r3 = client.get('/api/v1/llm/status', headers={'X-MA-Token': tok}).json()
+    assert calls['n'] == 2, 'администратор получает живую проверку'
+    assert {'spent_today_rub', 'daily_budget_rub', 'daily_limit_reached', 'models'} <= set(r3)

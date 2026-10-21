@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import copy
-import re
 from importlib import metadata
 from typing import Any
 
@@ -119,58 +118,14 @@ def adapt(src: ProgramDoc, new_id: str, *, volume_h: int | None, audience: str =
 
 
 # --------------------------------------------------------------------------- FR-61
-# Шаблоны инструментов строятся из реестра (registry/tools.json → aliases, SPEC-SKILLS-18):
-# новый инструмент или псевдоним добавляется администратором в реестр без правки кода.
-
-
-def _tool_patterns(reg: dict) -> dict[str, str]:
-    """Регулярное выражение на инструмент из его алиасов: сначала самые длинные, чтобы «python3» не съелся «python»."""
-    out: dict[str, str] = {}
-    for tool, aliases in (reg.get('aliases') or {}).items():
-        # реестр редактируется администратором: кривой тип не должен ломать распознавание
-        alts = sorted({str(a).lower() for a in aliases if isinstance(a, str)}, key=len, reverse=True) if isinstance(aliases, list) else []
-        if alts:
-            out[tool] = '|'.join(re.escape(a) for a in alts)
-    return out
-
-
-def _ver(v: str) -> tuple[int, ...]:
-    return tuple(int(x) for x in re.findall(r'\d+', v)[:3])
-
-
+# Распознавание переехало в переиспользуемый слой kb/recognition (SPEC-KB-21, MET-22/MET-9):
+# там же нормализация написания. Обёртка осталась для workflow, правил и маршрутов;
+# реестр берётся отсюда, чтобы переопределения администратора подхватывались и в тестах.
 def scan_text(text: str) -> list[dict[str, str]]:
     """Устаревшие конструкции, версии ниже поддерживаемых, недоступные в России сервисы, старые источники."""
-    reg = tools()
-    low = text.lower()
-    out: list[dict[str, str]] = []
-    seen: set[str] = set()
+    from app.kb.recognition import scan_tools
 
-    def _add(kind: str, found: str, message: str, replacement: str) -> None:
-        key = f'{kind}:{found.lower()}'
-        if key not in seen:
-            seen.add(key)
-            out.append({'kind': kind, 'found': found, 'message': message, 'replacement': replacement})
-
-    repl = reg.get('outdated_replacements', {})
-    for key, msg in reg['outdated'].items():
-        if key in low:
-            _add('construct', key, msg, repl.get(key, ''))
-    current, minimum = reg['current'], reg.get('min_supported', {})
-    for tool, pattern in _tool_patterns(reg).items():
-        for m in re.finditer(rf'\b(?:{pattern})\s*v?(\d+(?:\.\d+)?)\b', low):
-            v = m.group(1)
-            if tool not in current or (tool == 'python' and _ver(v)[0] < 2):
-                continue
-            if tool in minimum and _ver(v) < _ver(minimum[tool]):
-                _add('version', m.group(0), f'{tool} {v} снят с поддержки (минимум {minimum[tool]})', f'{tool} {current[tool]}')
-            elif _ver(v)[:1] < _ver(current[tool])[:1] or (_ver(v) < _ver(current[tool]) and tool in ('python', 'pandas', 'postgresql', 'kubernetes')):
-                _add('update', m.group(0), f'Есть более новая версия {tool}: {current[tool]}', f'{tool} {current[tool]}')
-    for svc in reg.get('ai_services_blocked', []):
-        if re.search(rf'\b{re.escape(svc.lower())}\b', low):
-            _add('service', svc, f'{svc} недоступен в России без ограничений', 'GigaChat или YandexGPT (Алиса)')
-    for y in re.findall(r'\b(19[5-9]\d|200\d|201[0-5])\b(?=\s*\.?\s*[–—-]?\s*\d*\s*с\.)', text):
-        _add('source', y, f'Источник {y} года старше 10 лет', 'издание не старше 2016 года из реестра литературы')
-    return out
+    return scan_tools(text, tools())
 
 
 def actualize_doc(doc: ProgramDoc) -> list[dict[str, Any]]:
@@ -374,24 +329,36 @@ async def apply_org_docs(doc: ProgramDoc) -> list[dict[str, Any]]:
 
 # --------------------------------------------------------------------------- FR-39
 def suggest_experts(doc: ProgramDoc) -> dict[str, Any]:
-    """Подсказка экспертов из профиля: совпадение навыков с темами модуля, при равенстве — меньшая нагрузка."""
+    """Подсказка экспертов из профиля: совпадение навыков с темами модуля, при равенстве — меньшая нагрузка.
+
+    Подсказывать можно только реальных активных экспертов (роль `expert`, не демо-учётка,
+    не отключена) — демо-прогон 19.10, MET-7: тестовые учётки в подсказках не появляются.
+    Полный список `experts` для выпадающего списка назначения не меняется; если реальных
+    экспертов нет, подсказок нет, а в `note` — честный ответ «подходящих экспертов нет».
+    """
     from app.core.security import users
     from app.kb.registry import org_profile
 
     prof = org_profile().get('experts') or []
     known = {e['id']: e for e in prof}
+    all_users = users()
     experts = [
         {'id': u.id, 'name': u.name, 'title': u.title, 'skills': known.get(u.id, {}).get('skills', [])}
-        for u in users().values() if 'expert' in u.roles
+        for u in all_users.values() if 'expert' in u.roles
     ]
-    load = {e['id']: 0 for e in experts}
+    real = [e for e in experts if all_users[e['id']].source != 'demo' and all_users[e['id']].active]
+    load = {e['id']: 0 for e in real}
     out = []
     for m in doc.modules:
         text = (m.title + ' ' + ' '.join(t.title + ' ' + t.description for t in m.topics)).lower()
-        scored = sorted(experts, key=lambda e: (-sum(1 for s in e['skills'] if s in text), load[e['id']]))
+        scored = sorted(real, key=lambda e: (-sum(1 for s in e['skills'] if s in text), load[e['id']]))
         best = scored[0] if scored else None
         if best:
             load[best['id']] += 1
             hits = [s for s in best['skills'] if s in text]
             out.append({'module_id': m.id, 'expert_id': best['id'], 'reason': f'совпадение по темам: {", ".join(hits[:3])}' if hits else 'по нагрузке'})
-    return {'experts': experts, 'suggestions': out}
+    res: dict[str, Any] = {'experts': experts, 'suggestions': out}
+    if not real:
+        res['note'] = ('Подходящих экспертов нет: в организации нет активных экспертов, кроме демонстрационных '
+                       'учёток. Заведите учётные записи экспертов (администратор) или назначьте модули вручную.')
+    return res

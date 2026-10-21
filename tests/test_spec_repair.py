@@ -314,3 +314,14 @@ def test_v16_unconfirmed_sources_marked_once() -> None:
     assert doc.sources[0].bibl == 'Книга [не подтверждено]' and doc.sources[1].bibl == 'Док'
     assert log == ['Источник s1 помечен «не подтверждено»']
     assert repair(doc, _fail('V-16')) == []
+
+
+def test_repaired_origin_marked() -> None:
+    """SPEC-CONTENT-15 (repair): элемент, изменённый repair'ом, получает origin=repaired."""
+    doc = _doc()
+    doc.kit.questions = [
+        Question_(id='q1', assessment_id='test-m1', stem='Сколько будет 2+2? Правильный ответ: 4', options=['3', '4', '5'], key=99),
+    ]
+    repair(doc, _fail('V-19'))
+    assert doc.kit.questions[0].key == 1
+    assert doc.kit.questions[0].origin == 'repaired'

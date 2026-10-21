@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from app.kb.registry import match_source, tf_codes
 from app.programs.schemas import KINDS, ProgramDoc, ProgramType, RuleResult
-from app.validation.ngrams import overlap_share
+from app.validation.ngrams import overlap_share, similarity
 
 logger = logging.getLogger(__name__)
 
@@ -216,27 +216,33 @@ def v08(doc: ProgramDoc, stage: str):
 
 
 def v09(doc: ProgramDoc, stage: str):
-    msgs, nodes = [], []
+    # Блокирующая часть — отсутствие запрошенных материалов; пустые пункты слайда — только предупреждение (SPEC-RULES-22)
+    hard, warns, nodes = [], [], []
     mat = doc.params.materials
     if mat.test_questions:
         final_qs = [q for q in doc.kit.questions if q.assessment_id == 'test-final']
         if len(final_qs) != mat.test_questions:
-            msgs.append(f'В запросе {mat.test_questions} вопросов, в итоговом тесте {len(final_qs)}')
+            hard.append(f'В запросе {mat.test_questions} вопросов, в итоговом тесте {len(final_qs)}')
     if not any(lec.slides for lec in doc.kit.lectures):
-        msgs.append('Нет ни одного модуля со слайдами')
+        hard.append('Нет ни одного модуля со слайдами')
     topic_titles = {t.id: t.title for t in doc.all_topics()}
     for lec in doc.kit.lectures:
         if lec.topic_id not in topic_titles:
-            msgs.append(f'Лекция «{lec.title}» не соответствует теме УТП')
+            hard.append(f'Лекция «{lec.title}» не соответствует теме УТП')
             nodes.append(lec.id)
         elif lec.title.strip().lower() != topic_titles[lec.topic_id].strip().lower():
-            msgs.append(f'Тема лекции «{lec.title}» не совпадает с темой УТП «{topic_titles[lec.topic_id]}»')
+            hard.append(f'Тема лекции «{lec.title}» не совпадает с темой УТП «{topic_titles[lec.topic_id]}»')
             nodes.append(lec.id)
+        for sl in lec.slides:
+            if not any(str(b).strip() for b in sl.bullets):
+                warns.append(f'Слайд {sl.id} «{sl.title[:40]}» без пунктов')
+                nodes.append(sl.id)
     for mod_n in mat.slides_modules:
         mod = next((m for m in doc.modules if m.n == mod_n), None)
         if mod and not any(lec.module_id == mod.id and lec.slides for lec in doc.kit.lectures):
-            msgs.append(f'Нет слайдов для модуля {mod_n}, указанного в запросе')
-    return ('fail' if msgs else 'pass'), msgs, nodes
+            hard.append(f'Нет слайдов для модуля {mod_n}, указанного в запросе')
+    status = 'fail' if hard else ('warn' if warns else 'pass')
+    return status, hard + warns, nodes
 
 
 # --- 3. Календарь ---
@@ -382,8 +388,9 @@ def v17(doc: ProgramDoc, stage: str):
 
 # --- 9. Измеримость ---
 def v18(doc: ProgramDoc, stage: str):
-    bad = [t for t in doc.kit.tasks if not t.criteria or any(c.points <= 0 for c in t.criteria)]
-    return ('fail' if bad else 'pass'), [f'{t.title}: нет критериев оценки с баллами' for t in bad], [t.id for t in bad]
+    # Критерий без текста так же бесполезен, как без баллов (MET-33: контрпример аудита — пустые критерии)
+    bad = [t for t in doc.kit.tasks if not t.criteria or any(c.points <= 0 or not c.text.strip() for c in t.criteria)]
+    return ('fail' if bad else 'pass'), [f'{t.title}: нет критериев оценки с текстом и баллами' for t in bad], [t.id for t in bad]
 
 
 def v19(doc: ProgramDoc, stage: str):
@@ -453,25 +460,65 @@ def v24(doc: ProgramDoc, stage: str):
 
 
 def v25(doc: ProgramDoc, stage: str):
-    from app.validation.ngrams import similarity
-
+    """Дубли тем между модулями (сходство > 0.85) и дубли строк материалов (SPEC-RULES-22):
+    одинаковые формулировки вопросов (в том числе с разными ключами), пункты одного слайда, строки одного плана."""
     topics = doc.all_topics()
-    msgs = []
+    msgs, nodes = [], []
     for i, a in enumerate(topics):
         for b in topics[i + 1 :]:
             if a.id.split('.')[0] != b.id.split('.')[0] and similarity(a.title, b.title) > 0.85:
                 msgs.append(f'Темы {a.n} и {b.n} почти совпадают')
-    return ('warn' if msgs else 'pass'), msgs, []
+    by_stem: dict[str, list] = {}
+    for q in doc.kit.questions:
+        by_stem.setdefault(' '.join(q.stem.lower().split()), []).append(q)
+    for qs in by_stem.values():
+        if len(qs) > 1:
+            ids = ', '.join(q.id for q in qs[:3])
+            if len({q.key for q in qs}) > 1:
+                msgs.append(f'Одинаковые вопросы ({ids}) помечают разными ключами верный ответ — проверьте ключ')
+            else:
+                msgs.append(f'Вопрос повторяется: {ids}')
+            nodes += [q.id for q in qs[:3]]
+    for lec in doc.kit.lectures:
+        for sl in lec.slides:
+            bullets = [' '.join(str(b).lower().split()) for b in sl.bullets if str(b).strip()]
+            if len(bullets) != len(set(bullets)):
+                msgs.append(f'Слайд {sl.id}: повторяются пункты')
+                nodes.append(sl.id)
+        plan = [' '.join(str(p.get('text', '')).lower().split()) for p in lec.plan if isinstance(p, dict) and str(p.get('text', '')).strip()]
+        if len(plan) != len(set(plan)):
+            msgs.append(f'Лекция {lec.id}: повторяются строки плана')
+            nodes.append(lec.id)
+    return ('warn' if msgs else 'pass'), msgs[:20], nodes[:20]
+
+
+def _latin_share(text: str) -> float:
+    """Доля латинских букв среди букв текста (MET-33: английский текст материалов ловится кодом, без модели)."""
+    letters = [ch.lower() for ch in text if ch.isalpha()]
+    if not letters:
+        return 0.0
+    return sum('a' <= ch <= 'z' for ch in letters) / len(letters)
 
 
 def v26(doc: ProgramDoc, stage: str):
+    msgs, nodes = [], []
     text = ' '.join(doc.kit.sections.values()) + ' '.join(q.stem for q in doc.kit.questions)
     letters = [ch for ch in text if ch.isalpha()]
     if letters:
         cyr = sum('а' <= ch.lower() <= 'я' or ch.lower() == 'ё' for ch in letters) / len(letters)
         if cyr < 0.8:
-            return 'warn', [f'Доля русского текста {cyr:.0%} — проверьте язык материалов'], []
-    return _ok()
+            msgs.append(f'Доля русского текста {cyr:.0%} — проверьте язык материалов')
+    # Контекст судьи (SPEC-RULES-21): каждый узел с преимущественно латинским текстом — отдельная находка
+    for q in doc.kit.questions:
+        if _latin_share(q.stem + ' ' + ' '.join(q.options)) > 0.3:
+            msgs.append(f'Вопрос {q.id}: больше 30 % латиницы — вопрос или варианты не на русском')
+            nodes.append(q.id)
+    for lec in doc.kit.lectures:
+        for sl in lec.slides:
+            if _latin_share(sl.title + ' ' + ' '.join(sl.bullets) + ' ' + sl.notes) > 0.3:
+                msgs.append(f'Слайд {sl.id}: больше 30 % латиницы — проверьте язык материалов')
+                nodes.append(sl.id)
+    return ('warn' if msgs else 'pass'), msgs[:20], nodes[:20]
 
 
 def v27(doc: ProgramDoc, stage: str):
@@ -504,14 +551,14 @@ RULES: list[Rule] = [
     Rule('V-15', 'ПС и коды ТФ только из реестра; в ДООП раздела ПС нет', 7, 'code', v15),
     Rule('V-16', 'Источник найден в реестре или помечен «не подтверждено»', 7, 'code', v16),
     Rule('V-17', 'Совпадение 8-грамм с референсами меньше 5 %', 8, 'code', v17),
-    Rule('V-18', 'У каждого задания есть критерии и баллы', 9, 'code', v18),
+    Rule('V-18', 'У каждого задания есть критерии с текстом и баллами', 9, 'code', v18),
     Rule('V-19', 'У вопроса ровно один верный вариант', 9, 'code', v19),
     Rule('V-20', 'После правки изменились только потомки узла', 10, 'code', v20),
     Rule('V-21', 'Порядок тем учитывает пререквизиты', None, 'llm', v21),
     Rule('V-22', 'РО сформулирован проверяемым действием', None, 'llm', v22),
     Rule('V-23', 'Версии инструментов актуальны', None, 'code', v23),
     Rule('V-24', 'Примеры кода выполняются без ошибок', None, 'code', v24),
-    Rule('V-25', 'Нет дублей тем между модулями', None, 'code', v25),
+    Rule('V-25', 'Нет дублей тем между модулями и дублей строк материалов', None, 'code', v25),
     Rule('V-26', 'Текст на русском, термины поясняются', None, 'llm', v26),
     Rule('V-27', 'Обещания реалистичны, разрыв показан методисту', None, 'llm', v27),
 ]

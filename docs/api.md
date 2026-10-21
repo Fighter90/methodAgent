@@ -195,6 +195,7 @@ curl -s -X POST https://<host>/api/v1/auth/refresh -H 'Content-Type: application
 | `PUT /org/profile` | admin | частичный профиль (допустимые поля см. `knowledge-base.md`) | итоговый профиль; 400 при неизвестных полях или пароле SMTP |
 | `GET /org/registry` | admin, methodist, head | query `kind`: `ps`, `npa`, `fgos`, `tools`, `literature` | раздел реестра; 400 при другом `kind` |
 | `PUT /org/registry` | admin | `kind` (`ps`, `npa`, `tools`, `literature`), `items` | `{"kind", "items": N}`; 400 при пустом списке или отсутствии обязательных полей |
+| `POST /kb/reindex` | admin | query `limit` (1–50, по умолчанию 10) | догоняет эмбеддингами документы, проиндексированные только по словам (`indexed: keywords` или потерянные векторы); ответ `{"indexed": [id…], "left": N}` — переиндексированные документы и сколько осталось |
 
 ## 10. Служебные методы
 

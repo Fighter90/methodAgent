@@ -325,6 +325,10 @@ class LLMClient:
                     raise LLMUnavailable(f'{skill}: бюджет времени {budget:.0f} с исчерпан')
                 try:
                     async with sem:
+                        # F15 (аудит 19.10): бюджет перепроверяется после ожидания в очереди —
+                        # ждущие вызовы не отправляются, пока они стояли в очереди, бюджет мог исчерпаться.
+                        if self.spent_today() >= self.settings.llm_daily_budget_rub:
+                            raise LLMUnavailable(f'Дневной бюджет LLM {self.settings.llm_daily_budget_rub:.0f} ₽ исчерпан (проверка после очереди)')
                         started = time.monotonic()
                         try:
                             resp = await asyncio.wait_for(
@@ -448,14 +452,17 @@ class LLMClient:
             return {'enabled': False, 'provider': self.settings.llm_providers}
         started = time.monotonic()
         try:
-            resp = await asyncio.wait_for(
-                self._get().chat.completions.create(
-                    model=self.settings.llm_model_generate,
-                    messages=[{'role': 'user', 'content': 'Ответь одним словом: ок'}],
-                    max_tokens=5,
-                ),
-                timeout=min(30.0, self.settings.llm_timeout_s),
-            )
+            # F15: проверочный запрос идёт через общий семафор, как и рабочие вызовы,
+            # чтобы частые проверки статуса не обходили ограничение параллельности
+            async with self._sem:
+                resp = await asyncio.wait_for(
+                    self._get().chat.completions.create(
+                        model=self.settings.llm_model_generate,
+                        messages=[{'role': 'user', 'content': 'Ответь одним словом: ок'}],
+                        max_tokens=5,
+                    ),
+                    timeout=min(30.0, self.settings.llm_timeout_s),
+                )
             if self._limit_day:
                 self._limit_day = ''  # шлюз снова отвечает: лимит сброшен раньше полуночи
                 self._save_spend()

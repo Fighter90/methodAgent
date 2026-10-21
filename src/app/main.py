@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +17,7 @@ from app.core import runtime
 from app.core.config import ROOT_DIR, get_settings
 from app.core.db import init_db
 from app.core.errors import register_error_handlers
+from app.core.security import Principal, current_principal
 from app.llm.client import get_llm
 from app.programs.extra_router import router as extra_router
 from app.programs.router import misc
@@ -24,6 +26,8 @@ from app.skills.base import load_skills
 
 logger = logging.getLogger('metodagent')
 STATIC_DIR = ROOT_DIR / 'frontend' / 'dist'
+# Кэш живой проверки LLM для /llm/status: живой probe не чаще раза в 5 минут (F15)
+_LLM_STATUS_CACHE: dict = {'at': 0.0, 'info': None}
 
 
 @asynccontextmanager
@@ -68,12 +72,18 @@ def create_app() -> FastAPI:
     api.include_router(extra_router)
 
     @api.get('/llm/status', tags=['misc'], summary='Доступность LLM-шлюза и выбранные модели')
-    async def llm_status() -> dict:
-        info = await get_llm().ping()
+    async def llm_status(p: Principal = Depends(current_principal)) -> dict:
+        # F15 (аудит 19.10): живой probe — не чаще раза в 5 минут; администратору — всегда живой,
+        # остальным — кэш последней проверки, чтобы частые опросы не дёргали модель мимо семафора.
         llm = get_llm()
-        info['spent_today_rub'] = round(llm.spent_today(), 2)
-        info['daily_budget_rub'] = s.llm_daily_budget_rub
-        info['daily_limit_reached'] = llm.limit_reached()
+        now = time.monotonic()
+        fresh = _LLM_STATUS_CACHE['info'] is not None and now - _LLM_STATUS_CACHE['at'] < 300
+        if fresh and p.role != 'admin':
+            info = _LLM_STATUS_CACHE['info']
+        else:
+            info = await llm.ping()
+            _LLM_STATUS_CACHE['info'], _LLM_STATUS_CACHE['at'] = info, now
+        info = {**info, 'spent_today_rub': round(llm.spent_today(), 2), 'daily_budget_rub': s.llm_daily_budget_rub, 'daily_limit_reached': llm.limit_reached()}
         return {**info, 'models': {'generate': s.llm_model_generate, 'judge': s.llm_model_judge, 'embed': s.llm_model_embed}, 'judge_enabled': s.llm_judge_enabled}
 
     @api.get('/skills', tags=['misc'], summary='Навыки агента (SKILL.md)')

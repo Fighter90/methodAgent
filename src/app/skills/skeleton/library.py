@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 # (название, вес, доля ЛК, доля СРС, [(тема, описание)], контроль)
@@ -17,6 +19,9 @@ DOMAINS: list[Domain] = [
         'key': 'python_school',
         'title': 'Первые шаги в Python',
         'keywords': ['python', 'школьник', 'класс', 'подрост'],
+        # Предметные технологии домена: если запрос называет незнакомый домену инструмент,
+        # направление другое и домен не применяется (SPEC-SKILLS-19)
+        'tech': ['python'],
         'requires_any': ['школьник', 'класс', 'подрост', 'дет'],
         'goal': 'Познакомить школьников с программированием на Python и научить создавать простые программы и игры',
         'modules': [
@@ -57,6 +62,7 @@ DOMAINS: list[Domain] = [
         'title': 'Искусственный интеллект в работе учителя',
         'keywords': ['учител', 'педагог', 'урок', 'нейросет', 'искусственн'],
         'requires_any': ['учител', 'педагог'],
+        'tech': ['нейросет', 'искусственн', 'gigachat', 'yandexgpt', 'kandinsky', 'шедеврум'],
         'goal': 'Сформировать у учителей умение безопасно применять российские нейросетевые сервисы для подготовки уроков, заданий и проверочных работ',
         'modules': [
             ('Нейросети в школе: возможности и ограничения', 0.15, 0.5, 0.2, [
@@ -103,6 +109,7 @@ DOMAINS: list[Domain] = [
         'key': 'data_analysis',
         'title': 'Анализ данных на Python',
         'keywords': ['анализ данн', 'pandas', 'аналитик', 'статистик', 'визуализац', 'sql'],
+        'tech': ['pandas', 'numpy', 'matplotlib', 'seaborn', 'jupyter', 'sql', 'python', 'статистик', 'визуализац', 'анализ данн'],
         'goal': 'Научить слушателей готовить, анализировать и визуализировать данные на Python и SQL для решения рабочих задач',
         'modules': [
             ('Python для пользователей Excel', 0.18, 0.33, 0.17, [
@@ -158,6 +165,7 @@ DOMAINS: list[Domain] = [
         'key': 'cybersecurity',
         'title': 'Основы кибербезопасности',
         'keywords': ['кибербез', 'информационн безопасн', 'защит информ', 'безопасност'],
+        'tech': ['кибербез', 'безопасност', 'фстэк', 'siem', 'wireshark', 'уязвим', 'пентест', 'инцидент', 'атак'],
         'goal': 'Сформировать начальные практические навыки обеспечения информационной безопасности и мониторинга инцидентов',
         'modules': [
             ('Основы информационной безопасности', 0.15, 0.4, 0.15, [
@@ -204,6 +212,7 @@ DOMAINS: list[Domain] = [
         'key': 'devops',
         'title': 'DevOps-инженер: от Linux до CI/CD',
         'keywords': ['devops', 'ci/cd', 'docker', 'kubernetes', 'linux'],
+        'tech': ['devops', 'docker', 'kubernetes', 'k8s', 'linux', 'ci/cd', 'gitlab', 'terraform', 'opentofu', 'ansible', 'prometheus', 'grafana', 'bash', 'nginx'],
         'goal': 'Сформировать практические навыки DevOps-инженера: от администрирования Linux до автоматизации поставки ПО',
         'modules': [
             ('Администрирование Linux', 0.16, 0.0, 1.0, [
@@ -256,8 +265,65 @@ DOMAINS: list[Domain] = [
 ]
 
 
-def generic_domain(title: str, topics: list[str], project: bool) -> Domain:
-    """Каркас по обязательным темам запроса, когда направление не из библиотеки."""
+# Инструменты, которых нет ни в одном домене: их упоминание в запросе — признак другого направления
+_TECH_EXTRA: tuple[str, ...] = (
+    'java', 'javascript', 'typescript', 'react', 'vue', 'angular', 'node.js', 'php', 'c#', 'c++',
+    'golang', 'rust', 'kotlin', 'swift', 'django', 'flask', 'fastapi', 'html', 'css', 'unity', 'figma',
+    'postgresql', 'mysql', 'mongodb', 'excel', 'blender', '1с',
+)
+_KNOWN_TECH: tuple[str, ...] = tuple(dict.fromkeys([*(t for d in DOMAINS for t in d.get('tech', ())), *_TECH_EXTRA]))
+
+# Виды итоговой аттестации: признаки в тексте формы (SPEC-SKILLS-19)
+_FORM_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ('project', ('проект',)),
+    ('exam', ('экзамен',)),
+    ('portfolio', ('портфолио',)),
+    ('report', ('отч',)),
+    ('credit', ('зачет', 'зачёт')),
+    ('test', ('тест',)),
+)
+
+
+def _has_tech(low: str, term: str) -> bool:
+    """Латинский термин по границам слова: 'sql' не совпадает внутри 'postgresql', но 'python3' ловится."""
+    return re.search(rf'(?<![a-z0-9]){re.escape(term)}(?![a-z])', low) is not None
+
+
+def kw_hit(low: str, kw: str) -> bool:
+    """Кириллические ключи — по основе (подстрока), латинские — по границам слова."""
+    return _has_tech(low, kw) if re.fullmatch(r'[a-z0-9+/.\-]+', kw) else kw in low
+
+
+def form_kind(text: str) -> str:
+    """Вид итоговой аттестации по тексту формы: проект, экзамен, портфолио, отчёт, зачёт, тест; '' — не распознана."""
+    low = (text or '').lower()
+    for kind, stems in _FORM_KINDS:
+        if any(stem in low for stem in stems):
+            return kind
+    return ''
+
+
+def final_assessment(form: str, subject: str) -> tuple[str, list[tuple[str, str]], str] | None:
+    """Модуль итоговой аттестации от формы запроса и предмета (SPEC-SKILLS-19); None — форма не распознана.
+
+    Тема итогового задания строится от предмета запроса: экзамен по Docker — про Docker,
+    а не про «обнаружение атаки» или отчёт о стажировке из чужого домена.
+    """
+    subject = (subject or '').strip() or 'программы'
+    about = f'направлению «{subject}»'
+    builders: dict[str, tuple[str, list[tuple[str, str]], str]] = {
+        'project': ('Итоговый проект', [('Выполнение и защита проекта', f'Проект по {about}: постановка задачи, реализация, защита результатов')], 'Защита проекта'),
+        'exam': ('Итоговый экзамен', [(f'Итоговый экзамен по {about}', 'Практическое задание по предмету программы и ответы на вопросы комиссии')], 'Экзамен'),
+        'portfolio': ('Итоговое портфолио', [('Сборка портфолио', f'Работы по {about}, выполненные в ходе обучения, и представление результатов')], 'Зачёт по портфолио'),
+        'report': ('Итоговый отчёт', [('Подготовка отчёта', f'Выполненные работы по {about}, артефакты, выводы и защита отчёта')], 'Проверка отчёта'),
+        'credit': ('Итоговый зачёт', [('Итоговое собеседование', f'Собеседование по материалам программы по {about}')], 'Зачёт'),
+        'test': ('Итоговое тестирование', [('Итоговый тест', f'Итоговый тест по материалам программы по {about}')], 'Тест'),
+    }
+    return builders.get(form_kind(form))
+
+
+def generic_domain(title: str, topics: list[str], form: str = '') -> Domain:
+    """Каркас по обязательным темам запроса, когда направление не из библиотеки (SPEC-SKILLS-13, SPEC-SKILLS-19)."""
     names = [t for t in topics if t][:6] or [title or 'Основы направления', 'Инструменты и практика', 'Прикладные задачи']
     modules = [('Введение в направление', 0.12, 0.45, 0.15, [
         ('Обзор направления и инструментов', 'Ключевые понятия, роли, рабочая среда'),
@@ -269,8 +335,9 @@ def generic_domain(title: str, topics: list[str], project: bool) -> Domain:
             (f'{cap}: основные понятия', f'Теоретические основы темы «{name}»'),
             (f'{cap}: практикум', f'Решение прикладных задач по теме «{name}»'),
         ], 'Практическая работа'))
-    if project:
-        modules.append(('Итоговый проект', 0.18, 0.0, 0.4, [('Выполнение и защита проекта', 'Постановка задачи, реализация, защита')], 'Защита проекта'))
+    final = final_assessment(form, title)
+    if final:
+        modules.append((final[0], 0.18, 0.0, 0.4, final[1], final[2]))
     comps = [
         (f'Применять инструменты направления «{title or names[0]}»', [
             ('know', 'Знает базовые понятия и инструменты направления', 'Описывает назначение основных инструментов направления'),
@@ -285,15 +352,31 @@ def generic_domain(title: str, topics: list[str], project: bool) -> Domain:
     return {'key': 'generic', 'title': name[:1].upper() + name[1:], 'goal': f'Сформировать практические навыки в области «{title or names[0]}»', 'modules': modules, 'competencies': comps}
 
 
+def _domain_blob(domain: Domain) -> str:
+    return json.dumps(domain, ensure_ascii=False).lower()
+
+
+def _direction_conflict(low: str, domain: Domain) -> bool:
+    """Запрос называет инструменты, которых в домене нет вовсе: направление другое, домен не навязываем."""
+    named = [t for t in _KNOWN_TECH if _has_tech(low, t)]
+    return bool(named) and not any(_has_tech(_domain_blob(domain), t) for t in named)
+
+
 def pick_domain(text: str) -> Domain | None:
+    """Домен библиотеки по запросу: направление запроса первично (SPEC-SKILLS-19).
+
+    Кириллические ключи матчатся по основе, латинские — по границам слова ('sql' внутри
+    'postgresql' не считается); домен с незнакомыми для него инструментами запроса отвергается.
+    """
     low = text.lower()
     best, best_score = None, 0
     for d in DOMAINS:
         if d.get('requires_any') and not any(k in low for k in d['requires_any']):
             continue
-        score = sum(1 for kw in d['keywords'] if kw in low)
-        if score > best_score:
-            best, best_score = d, score
+        score = sum(1 for kw in d['keywords'] if kw_hit(low, kw))
+        if score <= best_score or _direction_conflict(low, d):
+            continue
+        best, best_score = d, score
     return best
 
 

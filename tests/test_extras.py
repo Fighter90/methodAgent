@@ -150,10 +150,14 @@ def test_skeleton_guards() -> None:
     draft = SkeletonDraft(title='DevOps', goal='', competencies=[], modules=mods, source='llm')
     drop_assessment_modules(draft)
     assert [m.title for m in draft.modules][-1] == 'Конвейеры CI/CD' and draft.modules[-1].id == 'm3'
-    must = must_cover(Params(title='DevOps-инженер от Linux до CI/CD', direction='DevOps'))
+    # Темы библиотеки — предложения: добавляются только те, что запрос сам называет (SPEC-SKILLS-19)
+    must = must_cover(Params(title='DevOps: Docker, Kubernetes и CI/CD', direction='DevOps', required_topics=['мониторинг Prometheus']))
+    assert [row[0] for row in must] == ['Контейнеризация', 'Конвейеры CI/CD', 'Мониторинг и логирование']
     ensure_topics(draft, must)
+    assert len([t for m in draft.modules for t in m.topics]) == 4  # контейнеризация и CI/CD уже были, вернулась лишь мониторинг
     text = ' '.join(t.title for m in draft.modules for t in m.topics).lower()
-    assert 'инфраструктура как код' in text and 'мониторинг' in text
+    assert 'мониторинг' in text
+    assert 'инфраструктура как код' not in text and 'компьютерные сети' not in text  # неназванное не навязано
 
 
 def test_v13_repair_adds_question(client, program) -> None:
@@ -320,7 +324,7 @@ def test_kb_docx_zip_bomb_rejected_and_normal_ok() -> None:
 
 
 def test_tool_aliases_from_registry(monkeypatch) -> None:
-    """SPEC-SKILLS-18"""
+    """SPEC-SKILLS-18, SPEC-KB-21"""
     from app.agent import extras
     from app.kb.registry import tools
 

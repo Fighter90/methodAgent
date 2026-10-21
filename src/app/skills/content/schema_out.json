@@ -40,6 +40,16 @@
           "title": "Module Id",
           "type": "string"
         },
+        "origin": {
+          "default": "template",
+          "enum": [
+            "llm",
+            "template",
+            "repaired"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
         "plan": {
           "items": {
             "type": "object"
@@ -154,6 +164,16 @@
           "title": "Options",
           "type": "array"
         },
+        "origin": {
+          "default": "template",
+          "enum": [
+            "llm",
+            "template",
+            "repaired"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
         "stem": {
           "title": "Stem",
           "type": "string"
@@ -244,6 +264,16 @@
           ],
           "default": null,
           "title": "Module Id"
+        },
+        "origin": {
+          "default": "template",
+          "enum": [
+            "llm",
+            "template",
+            "repaired"
+          ],
+          "title": "Origin",
+          "type": "string"
         },
         "statement": {
           "title": "Statement",

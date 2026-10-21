@@ -89,3 +89,22 @@ def test_abbreviations_expanded_in_search() -> None:
     assert expand('ДОТ и ЭО') == 'ДОТ и ЭО (дистанционные образовательные технологии; электронное обучение)'
     top = norms.search('квалификация педагога ДО', k=3)
     assert any('01.003' in h['name'] for h in top)
+
+
+def test_recognition_normalizes_writing() -> None:
+    """SPEC-KB-21: распознавание инструментов живёт в переиспользуемом слое kb/recognition и переживает кривое написание.
+
+    «PоstgreS 12» — намешаны латиница и кириллица, «питоон 3.7» — сдвоенная буква,
+    «k8s 1.25» — обычное написание не сломано; находки сливаются без дубликатов.
+    """
+    from app.agent import extras
+    from app.kb.recognition import scan_tools
+
+    found = scan_tools('PоstgreS 12, питоон 3.7 и k8s 1.25')
+    got = {(f['kind'], f['found'].lower()) for f in found}
+    assert any(k == 'version' and 'postgres' in x for k, x in got), found
+    assert any(k == 'version' and 'питон' in x for k, x in got), found
+    assert any(k == 'version' and 'k8s' in x for k, x in got), found
+    assert len(got) == len(found), found  # дубликатов между вариантами нормализации нет
+    assert any('постгрес' in f['found'] for f in scan_tools('постгрес 13'))  # каноничное написание не потерялось
+    assert extras.scan_text('k8s 1.25') == scan_tools('k8s 1.25')  # обёртка extras — тот же сканер

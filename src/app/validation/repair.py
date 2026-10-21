@@ -50,6 +50,7 @@ def _extend_task_for_lo(t: Task, lo_text: str, log: list[str]) -> None:
         ]
         changed = True
     if changed:
+        t.origin = 'repaired'  # F12: элемент, изменённый repair, помечается
         log.append(f'Задание «{t.title}»: формулировка и критерии дополнены под РО «{lo_text}»')
 
 
@@ -73,6 +74,7 @@ def repair(doc: ProgramDoc, rules: list[RuleResult]) -> list[str]:
                 restored = _key_from_text(q)
                 if restored >= 0:
                     q.key = restored
+                    q.origin = 'repaired'  # F12: элемент изменён repair'ом
                     log.append(f'Вопрос {q.id}: ключ восстановлен по тексту вопроса')
                 else:
                     # F09: ключ не подменяется нулём — дефект остаётся видимым для V-19 и методиста

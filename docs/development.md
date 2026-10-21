@@ -52,7 +52,7 @@ pytest -q -k skeleton         # по имени
 PYTHONPATH=src pytest -q --cov=src/app --cov-report=term
 ```
 
-Порог задан в `.coveragerc` (`fail_under = 70`, ТЗ 4.11): прогон с покрытием падает, если оно ниже 70%. Сейчас 303 теста и покрытие около 92%.
+Порог задан в `.coveragerc` (`fail_under = 70`, ТЗ 4.11): прогон с покрытием падает, если оно ниже 70%. Сейчас около 340 тестов (пара из них помечена как skip), покрытие около 92 %; сводка последнего прогона — `docs/reports/quality.md`, её обновляет `python scripts/quality_report.py`.
 
 ### SDD: спецификация → тест → код
 

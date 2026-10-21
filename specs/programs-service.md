@@ -25,6 +25,7 @@
 | SPEC-SVC-13 | IF выполняется `max_parallel_jobs` заданий, THEN THE SYSTEM SHALL отклонить новое задание с `RateLimited` (429). | ТЗ, таблица 20 | `test_spec_service.py::test_check_capacity` |
 | SPEC-SVC-14 | WHEN создаётся фоновое задание через `start_job`, THE SYSTEM SHALL сначала проверить лимит параллельных заданий (429 до создания записи) и вернуть уже активное задание программы, если оно есть, не создавая новое: на программе — один активный job. | аудит 19.10 (F05) | `test_spec_service.py::test_start_job_capacity_first_and_idempotent` |
 | SPEC-SVC-15 | WHEN действие с зарезервированным заданием прервалось до его запуска, THEN `cancel_job` SHALL закрыть задание со статусом `failed`, освобождая место для следующего задания программы. | аудит 19.10 (F05) | `test_spec_service.py::test_start_job_capacity_first_and_idempotent` |
+| SPEC-SVC-16 | WHEN документ сохраняется, THE SYSTEM SHALL подогнать хронометраж каждого плана лекции под его длительность; IF план одной лекции в неожиданном формате (например, минуты строкой), THEN THE SYSTEM SHALL сохранить документ, оставив этот план как есть, не прерывая сохранение ошибкой 500. | FR-28, демо-прогон 19.10 (MET-5) | `test_spec_service.py::test_save_survives_malformed_lecture_plan` |
 
 ## Вне области
 

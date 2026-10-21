@@ -24,7 +24,14 @@ from app.programs.schemas import (
     Topic,
 )
 from app.skills.base import skill
-from app.skills.skeleton.library import MUST_COVER, generic_domain, pick_domain
+from app.skills.skeleton.library import (
+    MUST_COVER,
+    final_assessment,
+    form_kind,
+    generic_domain,
+    kw_hit,
+    pick_domain,
+)
 
 
 class OutcomeLLM(BaseModel):
@@ -100,6 +107,7 @@ async def run(
 ) -> SkeletonDraft:
     llm = get_llm()
     must = must_cover(params)
+    reason = 'LLM не настроен'
     if llm.enabled:
         spec = skill('skeleton')
         payload = {
@@ -139,17 +147,14 @@ async def run(
             ensure_topics(draft, must)
             if len(draft.modules) >= 2:
                 return draft
-            if stats is not None:
-                stats.fallback('skeleton', f'модель вернула {len(draft.modules)} модуль(ей)', 'типовая структура направления')
+            reason = f'модель вернула {len(draft.modules)} модуль(ей)'
         except LLMUnavailable as exc:
             logging.getLogger(__name__).warning('skeleton: резервная генерация (%s)', str(exc)[:200])
-            if stats is not None:
-                stats.fallback('skeleton', exc, 'типовая структура направления')
+            reason = str(exc)
         except MODEL_DATA_ERRORS as exc:
             logging.getLogger(__name__).exception('skeleton: ответ модели не разобран, резервная генерация')
-            if stats is not None:
-                stats.fallback('skeleton', exc, 'типовая структура направления')
-    return from_library(params, program_type, ps)
+            reason = f'{type(exc).__name__}: {exc}'
+    return from_library(params, program_type, ps, stats=stats, reason=reason)
 
 
 def _code(prefix: str, i: int) -> str:
@@ -237,12 +242,26 @@ def _short_title(text: str, limit: int = 60) -> str:
     return cut
 
 
-def from_library(params: Params, ptype: ProgramType, ps: ProfStandard | None) -> SkeletonDraft:
-    text = ' '.join([params.title, params.direction, params.audience, ' '.join(params.required_topics)])
+def _request_text(params: Params) -> str:
+    return ' '.join([params.title, params.direction, params.audience, ' '.join(params.required_topics)])
+
+
+def from_library(
+    params: Params,
+    ptype: ProgramType,
+    ps: ProfStandard | None,
+    stats: CallStats | None = None,
+    reason: str = '',
+) -> SkeletonDraft:
+    text = _request_text(params)
     domain = pick_domain(text)
-    project = 'проект' in params.final_assessment_form.lower()
     if domain is None:
-        domain = generic_domain(params.title or params.direction, params.required_topics, project)
+        # Направление запроса библиотека не покрывает: честный каркас по запросу, а не чужой домен (SPEC-SKILLS-19)
+        if stats is not None:
+            stats.fallback('skeleton', reason or 'LLM не настроен', 'каркас по универсальному шаблону, направление из библиотеки не найдено')
+        domain = generic_domain(params.title or params.direction, params.required_topics, params.final_assessment_form)
+    elif stats is not None:
+        stats.fallback('skeleton', reason or 'LLM не настроен', f'типовой каркас направления «{domain["title"]}»')
     prefix = 'К' if ptype == ProgramType.DOOP else 'ПК'
     comps: list[Competency] = []
     for ci, (title, inds) in enumerate(domain['competencies'], start=1):
@@ -262,8 +281,17 @@ def from_library(params: Params, ptype: ProgramType, ps: ProfStandard | None) ->
                 indicators=indicators,
             )
         )
+    module_rows = list(domain['modules'])
+    # Итоговый модуль домена остаётся только при совпадении вида аттестации (SPEC-SKILLS-19):
+    # иначе он строится от формы и предмета запроса, а не из шаблона чужого направления
+    wanted = form_kind(params.final_assessment_form)
+    if wanted and wanted != form_kind(module_rows[-1][5]):
+        final = final_assessment(params.final_assessment_form, params.direction or params.title or domain['title'])
+        if final:
+            w, lk, srs = module_rows[-1][1:4]
+            module_rows = [*module_rows[:-1], (final[0], w, lk, srs, final[1], final[2])]
     modules = []
-    for mi, (title, w, lk, srs, topics, control) in enumerate(domain['modules'], start=1):
+    for mi, (title, w, lk, srs, topics, control) in enumerate(module_rows, start=1):
         modules.append(
             Module(
                 id=f'm{mi}', n=mi, title=title, weight=w, lk_share=lk, srs_share=srs, control=control,
@@ -307,9 +335,13 @@ def link_outcomes(draft: SkeletonDraft) -> None:
 
 
 def must_cover(params: Params) -> list[tuple[str, str, tuple[str, ...]]]:
-    text = ' '.join([params.title, params.direction, params.audience, ' '.join(params.required_topics)])
+    """Темы направления, релевантные запросу (SPEC-SKILLS-19): темы библиотеки — предложения,
+    в каркас попадают только те, что запрос сам называет, и только при распознанном направлении."""
+    text = _request_text(params).lower()
     domain = pick_domain(text)
-    return MUST_COVER.get(domain['key'], []) if domain else []
+    if domain is None:
+        return []
+    return [row for row in MUST_COVER.get(domain['key'], []) if any(kw_hit(text, kw) for kw in row[2])]
 
 
 _ASSESSMENT_MODULE = re.compile(r'итогов\w*\s+аттестац|защит\w*\s+отч|подготовк\w*\s+к\s+(итогов|аттестац|защит)', re.IGNORECASE)

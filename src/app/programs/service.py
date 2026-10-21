@@ -21,7 +21,7 @@ from app.core.db import (
     sessionmaker,
 )
 from app.core.errors import NotFound, RateLimited
-from app.programs.schemas import ProgramDoc
+from app.programs.schemas import ProgramDoc, fit_plan
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,13 @@ async def load(program_id: str) -> ProgramDoc:
 
 async def save(doc: ProgramDoc, owner: str = 'u-madina', *, reason: str = '', snapshot: bool = False) -> None:
     doc.updated_at = now_iso()
-    doc.fit_lecture_plans()  # после любой правки часов хронометраж лекций равен их длительности
+    for lec in doc.kit.lectures:
+        # после любой правки часов хронометраж лекций равен их длительности (FR-28); план в
+        # неожиданном формате (например, минуты строкой от модели) не валит сохранение (MET-5)
+        try:
+            lec.plan = fit_plan(lec.plan, lec.duration_min)
+        except (TypeError, ValueError):
+            logger.warning('program=%s lecture=%s: план в неожиданном формате — сохранён как есть', doc.id, lec.id)
     async with sessionmaker()() as s:
         row = await s.get(ProgramRow, doc.id)
         if snapshot:

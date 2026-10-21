@@ -54,6 +54,21 @@ async def test_save_and_load_roundtrip(store) -> None:
     assert (await svc.load('p-1')).title == 'Новое' and await svc.owner_of('p-1') == 'u-x'
 
 
+async def test_save_survives_malformed_lecture_plan(store) -> None:
+    """SPEC-SVC-16: IF план лекции в неожиданном формате (минуты строкой или не число),
+    THEN save не падает: документ сохраняется, корректный план подгоняется под длительность,
+    а план с дефектом остаётся как есть (демо-прогон 19.10, MET-5 — вместо 500 документ сохраняется)."""
+    doc = _doc()
+    doc.kit.lectures = [
+        Lecture(id='l-ok', topic_id='t', module_id='m', title='Ок', duration_min=90, plan=[{'min': 10, 'text': 'a'}, {'min': 20, 'text': 'b'}]),
+        Lecture(id='l-bad', topic_id='t', module_id='m', title='Битый', duration_min=90, plan=[{'min': '10 минут', 'text': 'b'}]),
+    ]
+    await svc.save(doc, owner='u-x')
+    got = await svc.load('p-1')
+    assert sum(p['min'] for p in got.kit.lectures[0].plan) == 90
+    assert got.kit.lectures[1].plan == [{'min': '10 минут', 'text': 'b'}]
+
+
 async def test_missing_program_not_found(store) -> None:
     """SPEC-SVC-03: IF программы или версии нет, THEN load, owner_of и version_doc бросают NotFound."""
     with pytest.raises(NotFound):

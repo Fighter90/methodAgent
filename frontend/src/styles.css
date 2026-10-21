@@ -414,6 +414,10 @@ mark { background: rgba(242, 233, 19, .45); color: inherit; border-radius: 3px; 
 .doc-sec.lvl-3 .doc-h { font-size: 13px; color: var(--ink-2); }
 .ver-row { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; transition: border-color .2s, background .2s; }
 .ver-row.sel { border-color: var(--accent); background: var(--accent-soft); }
+/* Вычитка эксперта: панель «Ваше решение» видна при прокрутке длинного модуля (MET-18); на узких экранах — в потоке */
+@media (min-width: 1001px) {
+  .sticky-side { position: sticky; top: 76px; }
+}
 .diff-del { color: var(--red); text-decoration: line-through; text-decoration-color: rgba(198, 40, 40, .35); }
 .diff-add { color: var(--accent-deep); font-weight: 600; }
 .sandbox-item { border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; }

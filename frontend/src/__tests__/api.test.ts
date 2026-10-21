@@ -274,3 +274,18 @@ describe('справочники ролей и статусов', () => {
     }
   })
 })
+
+describe('вход с несколькими ролями', () => {
+  it('SPEC-UI-13: вход учётки с ролями api+methodist сразу переключает на методиста', async () => {
+    const apiUser = { id: 'u-api', name: 'API-клиент', role: 'api' as const, roles: ['api', 'methodist'], title: '' }
+    const methUser = { ...apiUser, role: 'methodist' as const }
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ access_token: 't1', refresh_token: 'r1', user: apiUser }))
+      .mockResolvedValueOnce(jsonResponse({ access_token: 't2', refresh_token: 'r2', user: methUser }))
+    const u = await login('api-user', 'demo')
+    expect(u.role).toBe('methodist')
+    expect(getSession()).toMatchObject({ token: 't2', user: { role: 'methodist' } })
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/auth/switch-role')
+    expect(JSON.parse(fetchMock.mock.calls[1][1]!.body as string)).toEqual({ role: 'methodist' })
+  })
+})

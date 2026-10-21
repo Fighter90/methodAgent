@@ -219,3 +219,12 @@ def test_scrub_without_blocklist(monkeypatch) -> None:
     monkeypatch.setattr(content, 'tools', lambda: {'current': {}})
     data = ModuleContentLLM.model_validate({'annotation': 'ChatGPT'})
     assert content.scrub_blocked(data) is data and data.annotation == 'ChatGPT'
+
+
+async def test_element_origin_marked(monkeypatch) -> None:
+    """SPEC-CONTENT-15: происхождение элементов честно — llm у модельных, template у добора шаблоном."""
+    mc = await _run(monkeypatch, FakeLLM(LLM_DATA), n=4)
+    llm_marks = {q.origin for q in mc.questions[:2]} | {t.origin for t in mc.tasks} | {l.origin for l in mc.lectures}
+    assert llm_marks == {'llm'}, 'модельные элементы помечаются llm'
+    extra = mc.questions[2:]
+    assert {q.origin for q in extra} == {'template'}, 'добор шаблоном помечается template'

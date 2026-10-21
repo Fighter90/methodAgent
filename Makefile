@@ -3,7 +3,7 @@ PY ?= python3
 export PYTHONPATH := src
 export LLM_PROVIDERS := fixtures
 
-.PHONY: check lint test trace openapi constraints frontend e2e demo
+.PHONY: check lint test trace openapi constraints frontend e2e demo report
 
 check: lint test trace openapi constraints frontend
 
@@ -29,6 +29,10 @@ frontend:
 BASE ?= http://127.0.0.1:8000
 demo:
 	bash scripts/demo.sh
+
+# Регенерация docs/reports/quality.md фактическими числами (MET-8)
+report:
+	$(PY) scripts/quality_report.py
 
 e2e:
 	$(PY) scripts/e2e_regression.py --base $(BASE) --all-cases

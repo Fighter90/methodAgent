@@ -145,6 +145,10 @@ async function run() {
       let ok = true
       try { await page.getByText(anyProgram.title.slice(0, 20)).first().waitFor({ timeout: 10000 }) } catch (_) { ok = false }
       check('methodist: карточка программы показывает название', ok)
+      // SPEC-UI-22: кнопка перехода к следующему шагу закреплена в шапке шага (data-step-next);
+      // на терминальных шагах её заменяет «Отправить на утверждение»
+      check('methodist: кнопка следующего шага закреплена в шапке шага',
+        await page.locator('[data-step-next]').count() > 0 || await page.getByText('Отправить на утверждение').count() > 0)
     })
     await screen(page, '/app/kb', 'kb', 'База знаний организации')
     await screen(page, '/app/me', 'me', 'Личный кабинет')
@@ -170,7 +174,10 @@ async function run() {
       const foreign = [...reviews[user === 'timur' ? 'olga' : 'timur']].filter((r) => !reviews[user].some((x) => x.title === r.title))
       if (foreign.length) check(`expert-${user}: чужих модулей в списке нет`, await page.getByText(foreign[0].title.slice(0, 25), { exact: false }).count() === 0)
     })
-    if (reviews[user][0]) await screen(page, `/app/p/${reviews[user][0].program_id}`, 'program', null)
+    if (reviews[user][0]) await screen(page, `/app/p/${reviews[user][0].program_id}`, 'program', null, async () => {
+      // SPEC-UI-23: панель «Ваше решение» прилипающая при прокрутке
+      check(`expert-${user}: панель «Ваше решение» sticky`, await page.locator('.sticky-side').count() > 0)
+    })
     await screen(page, '/app', 'programs', null)
     await page.goto(`${BASE}/app/admin`, { waitUntil: 'networkidle' })
     await expectPath(page, '/app', `expert-${user}: /app/admin → /app`)

@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from app.agent.sections import build_sections
 from app.core.config import get_settings
 from app.core.db import now_iso
-from app.core.errors import Conflict, NotFound
+from app.core.errors import AppError, BadRequest, Conflict, NotFound
 from app.kb.registry import (
     find_ps,
     for_school,
@@ -72,6 +72,7 @@ from app.solver.hours import (
 from app.validation.judge import judge
 from app.validation.repair import repair
 from app.validation.report import build_report
+from app.validation.rules import _PREREQ as _V21_PREREQ
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,60 @@ def fill_defaults(doc: ProgramDoc) -> None:
         _classify(doc)
 
 
+def _hours_brief(h: Hours) -> str:
+    return f'{h.total} ч (ЛК {h.lk} · ПР {h.pr} · ЛБ {h.lb} · СРС {h.srs})'
+
+
+def _skeleton_snapshot(doc: ProgramDoc) -> dict[str, Any]:
+    """Снимок каркаса перед перестроением — для «что агент изменил по вашему комментарию» (MET-14)."""
+    return {
+        'modules': {m.id: m.title for m in doc.modules},
+        'topics': {t.id: (t.title, t.hours.model_dump()) for t in doc.all_topics()},
+        'outcomes': {lo.id: lo.text for lo in doc.all_outcomes()},
+    }
+
+
+def _record_return_changes(doc: ProgramDoc, before: dict[str, Any] | None) -> None:
+    """MET-14 (демо 19.10): изменения каркаса по комментарию — узлы «было → стало» в данных программы.
+
+    `progress.return_changes` — краткий список: названия и часы тем, названия модулей,
+    формулировки РО, добавленные и удалённые темы. Суммы часов он не меняет. Пустой
+    список означает: каркас не менялся (например, модель недоступна).
+    """
+    if before is None:
+        return
+    changes: list[dict[str, str]] = []
+    for m in doc.modules:
+        old = before['modules'].get(m.id)
+        if old and old != m.title:
+            changes.append({'node': m.id, 'kind': 'module', 'label': f'Модуль {m.n}', 'before': old, 'after': m.title})
+    seen: set[str] = set()
+    for m in doc.modules:
+        for t in m.topics:
+            seen.add(t.id)
+            old = before['topics'].get(t.id)
+            label = f'Тема {t.n}'
+            if old is None:
+                changes.append({'node': t.id, 'kind': 'added', 'label': label, 'before': '', 'after': t.title})
+                continue
+            if old[0] != t.title:
+                changes.append({'node': t.id, 'kind': 'title', 'label': label, 'before': old[0], 'after': t.title})
+            if old[1] != t.hours.model_dump():
+                changes.append({'node': t.id, 'kind': 'hours', 'label': f'{label} «{t.title}»',
+                                'before': _hours_brief(Hours(**old[1])), 'after': _hours_brief(t.hours)})
+    for tid, (title, _h) in before['topics'].items():
+        if tid not in seen:
+            changes.append({'node': tid, 'kind': 'removed', 'label': 'Тема (удалена)', 'before': title, 'after': ''})
+    for lo in doc.all_outcomes():
+        old = before['outcomes'].get(lo.id)
+        if old and old != lo.text:
+            changes.append({'node': lo.id, 'kind': 'outcome', 'label': lo.code, 'before': old[:120], 'after': lo.text[:120]})
+    doc.progress['return_changes'] = changes[:40]
+    if changes:
+        brief = '; '.join(f'{c["label"]}: {c["before"] or "—"} → {c["after"] or "—"}' for c in changes[:3])
+        doc.agent_notes.append(f'Изменения по вашему комментарию ({len(changes)}): {brief}.' + (' …' if len(changes) > 3 else ''))
+
+
 # --------------------------------------------------------------------------- шаг 3
 def _final_hours(doc: ProgramDoc) -> int:
     p = doc.params
@@ -180,19 +235,44 @@ def _final_hours(doc: ProgramDoc) -> int:
     return 2 if v <= 36 else 4 if v <= 144 else 6
 
 
+def _module_by_hint(doc: ProgramDoc, hint: str) -> tuple[Module, str] | None:
+    """Модуль для слайдов по подсказке запроса (аудит 19.10, MET-35/F13).
+
+    Ищет по названию модуля и по ВСЕМ его темам (аудит: pandas во второй теме
+    модуля 2 не находился, слайды уходили в первый модуль). Возвращает модуль
+    и краткое пояснение, по чему он найден.
+    """
+    low = hint.lower()
+    keys = {low[:5], *(w for w in re.findall(r'[a-zа-яё0-9]{4,}', low))}
+    for m in doc.modules:
+        if any(k in m.title.lower() for k in keys):
+            return m, 'по названию модуля'
+        hit = next((t for t in m.topics if any(k in t.title.lower() for k in keys)), None)
+        if hit is not None:
+            return m, f'по теме {hit.n} «{hit.title}»'
+    return None
+
+
 def _resolve_slide_modules(doc: ProgramDoc) -> None:
     mat = doc.params.materials
     if mat.slides_topic_hint and not mat.slides_modules:
-        hint = mat.slides_topic_hint.lower()[:5]
-        for m in doc.modules:
-            if hint in m.title.lower() or any(hint in t.title.lower() for t in m.topics[:1]):
-                mat.slides_modules = [m.n]
-                break
+        found = _module_by_hint(doc, mat.slides_topic_hint)
+        if found:
+            m, how = found
+            mat.slides_modules = [m.n]
+            doc.agent_notes.append(f'Слайды привязаны к модулю {m.n} «{m.title}» ({how}) — по запросу «{mat.slides_topic_hint}».')
     if not mat.slides_modules and not mat.slides_lessons:
         first = next((m for m in doc.modules if m.hours.lk > 0), doc.modules[0] if doc.modules else None)
         if first:
             mat.slides_modules = [first.n]
             doc.assumptions.append(Assumption(field='slides_modules', value=[first.n], source='профиль АЦР: слайды хотя бы для одного модуля'))
+    elif not mat.slides_modules and mat.slides_lessons:
+        # MET-35: подтверждаем, каким модулям и темам соответствуют запрошенные занятия
+        topics = slide_topic_ids(doc)
+        mods = sorted({m.n for m in doc.modules for t in m.topics if t.id in topics})
+        if mods:
+            sess = doc.calendar.session_hours or 2
+            doc.agent_notes.append(f'Занятия {mat.slides_lessons} (занятие = {sess} ч) — это {len(topics)} тем модулей {mods}: слайды строятся по ним.')
 
 
 def slide_topic_ids(doc: ProgramDoc) -> set[str]:
@@ -307,6 +387,7 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
         raise Conflict('Сначала ответьте на вопросы: тип программы не определён', code='QUESTIONS_PENDING')
     stats = CallStats()
     started = time.monotonic()
+    before = _skeleton_snapshot(doc) if comment and doc.modules else None  # MET-14: что было до перестроения
     if doc.norm_mode == 'org' and not any(n.startswith(('Использую документы организации', 'Режим «документы организации»')) for n in doc.agent_notes):
         from app.agent.extras import apply_org_docs
 
@@ -324,6 +405,7 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
         _limit_note(doc)
         doc.report = build_report(doc, 'skeleton')
         doc.status = Status.SKELETON
+        _record_return_changes(doc, before)
         _stats_to_usage(doc, stats, 'skeleton')
         return
     if draft.source != 'llm':
@@ -342,6 +424,7 @@ async def skeleton_step(doc: ProgramDoc, comment: str = '') -> None:
     _expectation_note(doc)
     doc.report = build_report(doc, 'skeleton')
     doc.status = Status.SKELETON
+    _record_return_changes(doc, before)
     _stats_to_usage(doc, stats, 'skeleton')
     doc.timing_s['skeleton'] = round(time.monotonic() - started + doc.timing_s.get('intake', 0), 2)
 
@@ -443,6 +526,8 @@ def decide(doc: ProgramDoc, rule_id: str, decision: str, actor: str, node: str =
             choose_calendar_option(doc, option_id)
         if rule_id == 'V-21' and '>' in node:
             _swap_topics(doc, *node.split('>', 1))
+            if not _apply_dependency_order(doc):  # MET-41: порядок всех тем пересчитывается по единому графу
+                doc.agent_notes.append('Граф зависимостей тем содержит цикл: автоматически порядок не восстановить — исправьте темы вручную.')
     doc.decisions.append(Decision(rule_id=rule_id, node=node, proposal=proposal, decision=decision, actor=actor, at=now_iso()))
     doc.report = build_report(doc, 'skeleton')
 
@@ -457,6 +542,101 @@ def _swap_topics(doc: ProgramDoc, a_id: str, b_id: str) -> None:
         va, vb = getattr(a, f), getattr(b, f)
         setattr(a, f, vb)
         setattr(b, f, va)
+
+
+_EXTRA_PREREQ = [(('цикл', 'услов'), ('переменн',))]  # циклы и условия опираются на переменные (MET-41)
+
+
+def _topic_deps(doc: ProgramDoc) -> tuple[dict[str, set[str]], bool]:
+    """Единый граф зависимостей тем (MET-41/F22): ключ — тема, значение — темы, которые должны идти раньше.
+
+    Явные `prerequisites` тем — жёсткие ограничения: их цикл означает, что корректного
+    порядка не существует (второе значение — True, утверждать такой каркас нельзя).
+    Эвристика опорных тем V-21 и базовые связки — мягкие: дуга, замыкающая цикл,
+    не добавляется. Итоговый граф всегда ацикличен.
+    """
+    topics = doc.all_topics()
+    ids = {t.id for t in topics}
+    deps: dict[str, set[str]] = {t.id: set() for t in topics}
+    for t in topics:
+        for p in t.prerequisites:
+            if p in ids and p != t.id:
+                deps[t.id].add(p)
+    hard_cycle = _cycle_in(deps)
+
+    def reaches(src: str, dst: str) -> bool:  # dst уже должен идти раньше src?
+        seen: set[str] = set()
+        stack = [src]
+        while stack:
+            x = stack.pop()
+            if x == dst:
+                return True
+            for y in deps.get(x, ()):
+                if y not in seen:
+                    seen.add(y)
+                    stack.append(y)
+        return False
+
+    if not hard_cycle:
+        low = {t.id: t.title.lower() for t in topics}
+        for advanced, basics in (*_V21_PREREQ, *_EXTRA_PREREQ):
+            adv = next((t.id for t in topics if any(a in low[t.id] for a in advanced)), '')
+            if not adv:
+                continue
+            for b in basics:
+                bas = next((t.id for t in topics if b in low[t.id]), '')
+                if bas and adv != bas and not reaches(adv, bas):
+                    deps[adv].add(bas)
+    return deps, hard_cycle
+
+
+def _cycle_in(deps: dict[str, set[str]]) -> bool:
+    remaining = {k: set(v) for k, v in deps.items()}
+    while remaining:
+        ready = [k for k, v in remaining.items() if not v]
+        if not ready:
+            return True
+        for k in ready:
+            del remaining[k]
+        for v in remaining.values():
+            v.difference_update(ready)
+    return False
+
+
+def _apply_dependency_order(doc: ProgramDoc) -> bool:
+    """MET-41 (F22): раскладывает содержание тем по позициям в топологическом порядке графа зависимостей.
+
+    Позиции, их часы, веса и номера остаются на месте, поэтому итоги модулей и программы
+    не меняются. False — в графе жёсткий цикл зависимостей: порядок не тронут, решение
+    за методистом (молчаливое утверждение такого каркаса запрещено).
+    """
+    deps, hard_cycle = _topic_deps(doc)
+    if hard_cycle:
+        return False
+    slots = [t for m in doc.modules for t in m.topics]
+    pos = {t.id: i for i, t in enumerate(slots)}
+    remaining = {k: set(v) for k, v in deps.items()}
+    order: list[str] = []
+    while remaining:  # стабильно: при равной готовности берём тему с более ранней текущей позицией
+        ready = sorted((k for k, v in remaining.items() if not v), key=pos.__getitem__)
+        tid = ready[0]
+        order.append(tid)
+        del remaining[tid]
+        for v in remaining.values():
+            v.discard(tid)
+    contents = {t.id: {'title': t.title, 'description': t.description, 'lo_ids': t.lo_ids, 'prerequisites': t.prerequisites} for t in slots}
+    titles = []
+    changed = False
+    for slot, tid in zip(slots, order, strict=True):
+        titles.append(contents[tid]['title'])
+        if slot.id == tid:
+            continue
+        for f, v in contents[tid].items():
+            setattr(slot, f, list(v) if isinstance(v, list) else v)
+        changed = True
+    if changed:
+        doc.agent_notes.append('Порядок тем пересобран по зависимостям: ' + ' → '.join(titles[:8]) + ('…' if len(titles) > 8 else ''))
+    return True
 
 
 def approve_skeleton(doc: ProgramDoc, actor: str, *, auto: bool = False) -> None:
@@ -476,6 +656,16 @@ def approve_skeleton(doc: ProgramDoc, actor: str, *, auto: bool = False) -> None
                 decide(doc, p['rule_id'], 'accept', 'auto-approve', p.get('node', ''), p.get('proposal', ''), p.get('option_id', ''))
         report = doc.report or report
         errors = [r for r in report.rules if r.status == 'fail']
+    if _topic_deps(doc)[1]:  # MET-41: цикл зависимостей тем не даёт молчаливого утверждения
+        raise Conflict(
+            'Порядок тем противоречив: граф зависимостей тем содержит цикл — исправьте темы и их зависимости вручную',
+            code='TOPIC_DEPENDENCY_CYCLE',
+        )
+    if auto:
+        left = [p for p in report.proposals if p['rule_id'] == 'V-21' and not p.get('decided')]
+        if left:  # MET-41: оставшийся дефект V-21 в auto не проходит молча — нужно явное решение методиста
+            raise Conflict('Порядок тем противоречит зависимостям (V-21) — утверждение невозможно без решения методиста',
+                           code='DECISIONS_PENDING', details={'pending': left})
     if errors:
         raise Conflict(
             'Есть ошибки ✕ — утвердить каркас нельзя', code='SKELETON_HAS_ERRORS',
@@ -1199,28 +1389,49 @@ def review_items(doc: ProgramDoc, module_id: str) -> tuple[int, int]:
     return len(items), done
 
 
-def restore_into(doc: ProgramDoc, cur: ProgramDoc) -> None:
-    """Откат возвращает содержание версии, но не статус и не решения людей (FR-38).
+def review_item_of(doc: ProgramDoc, module_id: str, node_id: str) -> str | None:
+    """Элемент вычитки по любой ссылке на него (демо-прогон 19.10, MET-5).
 
-    Иначе снимок «утверждена» вернул бы утверждение без руководителя.
+    Ссылкой может быть сам элемент (`mp-m1`, `lec1.1`, `q1.2`, `task1.1`), фрагмент
+    (`lec1.1#p2` — пункт плана, `task1.1#c3` — критерий), слайд (считается отметкой его
+    лекции) или тема (считается отметкой рабочей программы модуля). None — ссылка не на
+    элемент этого модуля: чужой или неизвестный идентификатор модулю не приписывается.
     """
-    doc.version = cur.version
-    doc.comments, doc.approvals = cur.comments, cur.approvals
-    has_kit = bool(doc.kit.questions or doc.kit.tasks)
-    for m in doc.modules:
-        cm = cur.module_by_id(m.id)
-        m.expert_id = cm.expert_id if cm else None
-        if cm and cm.expert_id:
-            # содержание поменялось: принятый модуль снова на вычитке (FR-43)
-            m.review_status = 'in_review' if cm.review_status == 'accepted' else cm.review_status
-        else:
-            m.review_status = 'not_started'
-        m.accepted_items = []
-    if doc.status in (Status.ON_REVIEW, Status.ON_APPROVAL, Status.APPROVED, Status.RETURNED) or cur.status in (Status.ON_APPROVAL, Status.APPROVED):
-        doc.status = (Status.ON_REVIEW if any(m.expert_id for m in doc.modules) else Status.KIT_READY) if has_kit else Status.SKELETON
+    items = set(module_items(doc, module_id))
+    nid = (node_id or '').strip()
+    if not nid:
+        return None
+    if nid in items:
+        return nid
+    base = nid.partition('#')[0]
+    if base in items:
+        return base
+    lec = _lecture_of(doc, base)  # слайд или фрагмент лекции → её лекция
+    if lec is not None and lec.module_id == module_id and lec.id in items:
+        return lec.id
+    module = doc.module_by_id(module_id)
+    if module is not None and any(t.id == base for t in module.topics) and f'mp-{module_id}' in items:
+        return f'mp-{module_id}'  # тема → рабочая программа модуля
+    return None
 
 
 def review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: str, comment: str = '', node_id: str = '', score: int | None = None) -> None:
+    """Решение эксперта по модулю или элементу (FR-49, FR-50).
+
+    Любое ожидаемое «не могу принять» — 4xx с русским текстом (NotFound, Conflict, ForbiddenRole);
+    данные комплекта в неожиданном формате не превращают приёмку элемента в 500
+    (демо-прогон 19.10, MET-5).
+    """
+    try:
+        _review_decision(doc, module_id, actor_id, decision, comment, node_id, score)
+    except AppError:
+        raise
+    except (AttributeError, TypeError, ValueError, KeyError) as exc:
+        raise BadRequest('Не удалось принять решение по элементу: данные комплекта в неожиданном формате. '
+                         'Обновите программу и повторите; если ошибка повторится, сообщите методисту') from exc
+
+
+def _review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: str, comment: str = '', node_id: str = '', score: int | None = None) -> None:
     m = doc.module_by_id(module_id)
     if m is None:
         raise NotFound('Модуль не найден')
@@ -1231,10 +1442,11 @@ def review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: st
     if not doc.kit.questions and not doc.kit.tasks:
         raise Conflict('Комплект ещё не собран — вычитывать нечего', code='KIT_NOT_READY')
     if decision == 'accept_item':
-        if not node_id or node_id not in module_items(doc, module_id):
-            raise NotFound('Элемент не найден в модуле')
-        if node_id not in m.accepted_items:
-            m.accepted_items.append(node_id)
+        item = review_item_of(doc, module_id, node_id)
+        if item is None:
+            raise NotFound('Элемент не найден в модуле: отметьте рабочую программу, лекцию, вопрос или задание')
+        if item not in m.accepted_items:
+            m.accepted_items.append(item)
         if m.review_status in ('not_started', 'question'):
             m.review_status = 'in_review'
         return  # модуль целиком принимает эксперт отдельным решением — с оценкой 1–5 (FR-49, FR-50)
@@ -1254,6 +1466,37 @@ def review_decision(doc: ProgramDoc, module_id: str, actor_id: str, decision: st
         m.review_status = 'question'
     doc.approvals.append(Approval(stage='module', actor=actor_id, decision='approve' if decision == 'accept' else 'return', comment=comment,
                                   module_id=module_id, score=score if decision == 'accept' else None, at=now_iso()))
+
+
+def restore_into(doc: ProgramDoc, cur: ProgramDoc) -> None:
+    """Откат возвращает содержание версии, но не решения людей (FR-38).
+
+    Иначе снимок «утверждена» вернул бы утверждение без руководителя.
+    Статус и производные данные согласуются с содержанием версии (демо-прогон 19.10, MET-6):
+    снимок каркаса не может остаться «готовым комплектом» или «каркас утверждён» —
+    иначе программу нельзя ни утвердить заново, ни править; отчёт, разделы и календарь пересчитываются.
+    """
+    doc.version = cur.version
+    doc.comments, doc.approvals = cur.comments, cur.approvals
+    has_kit = bool(doc.kit.questions or doc.kit.tasks)
+    for m in doc.modules:
+        cm = cur.module_by_id(m.id)
+        m.expert_id = cm.expert_id if cm else None
+        if cm and cm.expert_id and has_kit:
+            # содержание поменялось: принятый модуль снова на вычитке (FR-43)
+            m.review_status = 'in_review' if cm.review_status == 'accepted' else cm.review_status
+        else:
+            m.review_status = 'not_started'  # без комплекта вычитывать нечего
+        m.accepted_items = []
+    if not has_kit:
+        doc.status = Status.SKELETON
+    elif doc.status in (Status.ON_REVIEW, Status.ON_APPROVAL, Status.APPROVED, Status.RETURNED) or cur.status in (Status.ON_APPROVAL, Status.APPROVED):
+        doc.status = (Status.ON_REVIEW if any(m.expert_id for m in doc.modules) else Status.KIT_READY)
+    if has_kit:
+        doc.kit.sections = build_sections(doc)
+        doc.report = build_report(doc, 'kit')
+    else:
+        recompute(doc)  # часы тем, календарь и отчёт каркаса от содержания версии
 
 
 def add_comment(doc: ProgramDoc, module_id: str, author: str, text: str, node_id: str = '', proposal: str = '', affected: list[str] | None = None) -> Comment:

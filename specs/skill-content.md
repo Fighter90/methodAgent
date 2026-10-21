@@ -24,6 +24,7 @@
 | SPEC-CONTENT-12 | IF список заблокированных сервисов пуст, THEN THE SYSTEM SHALL вернуть ответ модели без изменений. | код | `test_spec_content.py::test_scrub_without_blocklist` |
 | SPEC-CONTENT-13 | IF вызов модели завершился ошибкой, THEN THE SYSTEM SHALL переходить на шаблон только при `LLMUnavailable` или ошибке разбора ответа модели и записывать отказ (навык, модуль, ошибка, резерв) в `CallStats.fallbacks`; ошибки кода не глушатся. | NFR-08 | `test_spec_content.py::test_code_errors_are_not_swallowed`, `test_spec_content.py::test_fallback_on_model_error` |
 | SPEC-CONTENT-14 | IF модель вернула ключ ответа вне диапазона вариантов, THEN THE SYSTEM SHALL не подставлять 0: вопрос остаётся с этим ключом как с видимым дефектом, который не проходит V-19 и попадает в repair, а в `doc.step_errors` пишется сообщение (вопрос, ключ, число вариантов) о необходимости вычитки. | аудит 19.10 | `test_spec_content.py::test_llm_invalid_key_not_zeroed` |
+| SPEC-CONTENT-15 | THE SYSTEM SHALL хранить происхождение каждого вопроса, задания и лекции (`origin`: llm — сгенерировано моделью, template — добрано шаблоном, repaired — исправлено repair'ом), чтобы неполный комплект не выдавался за полностью модельную генерацию (F12). | аудит 19.10 (F12), FR-31 | `test_spec_content.py::test_element_origin_marked`, `test_spec_repair.py::test_repaired_origin_marked` |
 
 ## Вне области
 

@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, BookOpenText, CheckCircle2, Copy, FlaskConical, GitCompare, History, Pencil, RefreshCw, RotateCcw, Wand2 } from 'lucide-react'
 import { api, getSession } from '../api'
+import { TYPE_HINTS } from '../kit'
 import { Spinner, useToast } from '../components/ui'
 
 type Doc = any
 
 export const TEMPLATES = [
-  { id: 'dpp_pk', label: 'ДПП ПК', hint: 'повышение квалификации' },
-  { id: 'dpp_pk_internship', label: 'ДПП ПК · стажировка', hint: 'без аудиторных часов' },
-  { id: 'doop', label: 'ДООП', hint: 'общеразвивающая' },
+  { id: 'dpp_pk', label: 'ДПП ПК', hint: TYPE_HINTS.dpp_pk },
+  { id: 'dpp_pk_internship', label: 'ДПП ПК · стажировка', hint: TYPE_HINTS.dpp_pk_internship },
+  { id: 'doop', label: 'ДООП', hint: TYPE_HINTS.doop },
 ]
 
 /* Текст, который меняется по щелчку: Enter или уход фокуса сохраняет, Esc отменяет (FR-17) */
@@ -142,11 +143,12 @@ function VersionsView({ doc }: { doc: Doc }) {
   return (
     <div className="grid-main versions-grid">
       <div className="col" style={{ gap: 6 }}>
+        <div className="tiny muted">A — версия «было», B — версия «стало»: нажмите кнопку, чтобы задать версии сравнения.</div>
         {list.map((v) => (
           <div key={v.version} className={`ver-row ${v.version === a || v.version === b ? 'sel' : ''}`}>
             <div className="grow"><b>v{v.version}</b> <span className="small">{v.reason || 'сохранение'}</span><div className="tiny muted">{(v.at || '').slice(0, 16).replace('T', ' ')}</div></div>
-            <button className="btn btn-ghost btn-sm" title="Сравнить как «было»" onClick={() => setA(v.version)}>A</button>
-            <button className="btn btn-ghost btn-sm" title="Сравнить как «стало»" onClick={() => setB(v.version)}>B</button>
+            <button className={`btn btn-sm ${v.version === a ? 'btn-soft' : 'btn-ghost'}`} title={`Сравнить: версия A («было») — v${v.version}`} aria-label={`Сравнить: версия A — v${v.version}`} aria-pressed={v.version === a} onClick={() => setA(v.version)}>A</button>
+            <button className={`btn btn-sm ${v.version === b ? 'btn-soft' : 'btn-ghost'}`} title={`Сравнить: версия B («стало») — v${v.version}`} aria-label={`Сравнить: версия B — v${v.version}`} aria-pressed={v.version === b} onClick={() => setB(v.version)}>B</button>
             {v.version !== doc.version && getSession()?.user.role === 'methodist' && <button className="btn btn-ghost btn-sm" title="Откатить" onClick={() => restore(v.version)}><RotateCcw size={13} /></button>}
           </div>
         ))}

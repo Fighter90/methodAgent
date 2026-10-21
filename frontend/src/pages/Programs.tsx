@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, FileText, Paperclip, Plus, RefreshCw, Sparkles, Upload, X } from 'lucide-react'
+import { ArrowRight, FileText, ListChecks, Paperclip, Plus, RefreshCw, Sparkles, Upload, X } from 'lucide-react'
 import { api, getSession, STATUS_LABEL } from '../api'
 import { Spinner, useToast } from '../components/ui'
+import {
+  applyRequestForm, EMPTY_REQUEST_FORM, REQUEST_FORM_FINAL_OPTIONS, REQUEST_FORM_FORM_OPTIONS,
+  REQUEST_FORM_TYPE_LABEL, VOLUME_PRESETS, type RequestFormFields,
+} from '../kit'
 import { FindingsList } from './ProgramTools'
 
 export const EXAMPLES = [
@@ -18,6 +22,7 @@ const STATUS_CHIP: Record<string, string> = { approved: 'chip-ok', kit_ready: 'c
 export default function Programs() {
   const [list, setList] = useState<any[] | null>(null)
   const [text, setText] = useState('')
+  const [form, setForm] = useState<RequestFormFields>({ ...EMPTY_REQUEST_FORM })
   const [files, setFiles] = useState<File[]>([])
   const [norm, setNorm] = useState<'gos' | 'org'>('gos')
   const [busy, setBusy] = useState(false)
@@ -29,6 +34,7 @@ export default function Programs() {
   const [filter, setFilter] = useState(role === 'head' ? 'on_approval,approved' : '')
   const [since, setSince] = useState('')
   const [until, setUntil] = useState('')
+  const setField = (k: keyof RequestFormFields, v: string | number) => setForm((f) => ({ ...f, [k]: v }) as RequestFormFields)
 
   useEffect(() => {
     const q = new URLSearchParams()
@@ -40,11 +46,12 @@ export default function Programs() {
   }, [toast, filter, since, until])
 
   async function create() {
-    if (text.trim().length < 5) return toast('Опишите программу хотя бы в одном предложении', true)
+    const full = applyRequestForm(form, text)
+    if (full.trim().length < 5) return toast('Опишите программу хотя бы в одном предложении или заполните поля формы', true)
     setBusy(true)
     try {
       const fd = new FormData()
-      fd.append('text', text)
+      fd.append('text', full)
       fd.append('norm_mode', norm)
       files.forEach((f) => fd.append('files', f))
       const r = await api('/programs/upload', { method: 'POST', body: fd })
@@ -73,10 +80,11 @@ export default function Programs() {
               <h1 className="h2" style={{ margin: 0 }}>Новая программа</h1>
             </div>
             <p className="muted" style={{ marginTop: 4 }}>Опишите программу своими словами: для кого, сколько часов, в каком формате, чем завершается. Агент сам определит тип и шаблон АЦР.</p>
+            <RequestForm form={form} setField={setField} />
             <textarea className="field" value={text} onChange={(e) => setText(e.target.value)} placeholder="Например: программа повышения квалификации «Анализ данных на Python» на 72 часа для сотрудников банков, очно-заочно, 4 недели, итог — защита проекта" />
             <div className="row row-wrap" style={{ gap: 8, marginTop: 10 }}>
               <span className="small muted">Примеры кейса:</span>
-              {EXAMPLES.map((e) => <button key={e.t} className="chip" style={{ cursor: 'pointer' }} onClick={() => setText(e.q)}>{e.t}</button>)}
+              {EXAMPLES.map((e) => <button key={e.t} className="chip" style={{ cursor: 'pointer' }} onClick={() => { setText(e.q); setForm({ ...EMPTY_REQUEST_FORM }) }}>{e.t}</button>)}
             </div>
             <div className={`drop ${over ? 'over' : ''}`} style={{ marginTop: 14 }} onClick={() => input.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)}
@@ -159,6 +167,69 @@ export default function Programs() {
         </div>
       </aside>
     </div>
+  )
+}
+
+/* Панель «Известные параметры» над свободным текстом: 8 необязательных полей (MET-15).
+ * Заполненное попадает в начало запроса строкой «Тип: …; Объём: 72 ч; …», пустое агент уточнит вопросами. */
+function RequestForm({ form, setField }: { form: RequestFormFields; setField: (k: keyof RequestFormFields, v: string | number) => void }) {
+  return (
+    <details style={{ margin: '10px 0', border: '1px solid var(--line)', borderRadius: 14, padding: '10px 14px', background: 'var(--bg-2)' }}>
+      <summary className="small" style={{ cursor: 'pointer', fontWeight: 700, userSelect: 'none' }}>
+        <ListChecks size={15} style={{ verticalAlign: -3 }} /> Известные параметры — необязательно
+      </summary>
+      <p className="tiny muted" style={{ margin: '8px 0 12px' }}>
+        Заполненные поля добавятся в начало запроса строкой вида «Тип: …; Объём: 72 ч; …». Пустые оставьте — агент спросит или предложит сам.
+      </p>
+      <div className="grid-2" style={{ gap: 10 }}>
+        <label className="label">Тема / название
+          <input className="field" value={form.title} placeholder="Например: Анализ данных на Python" onChange={(e) => setField('title', e.target.value)} />
+        </label>
+        <label className="label">Тип программы
+          <select className="field" value={form.program_type} onChange={(e) => setField('program_type', e.target.value)}>
+            {Object.entries(REQUEST_FORM_TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <label className="label">Для кого (аудитория)
+          <input className="field" value={form.audience} placeholder="Например: учителя школ" onChange={(e) => setField('audience', e.target.value)} />
+        </label>
+        <label className="label">Что слушатели уже знают
+          <input className="field" value={form.entry_level} placeholder="Например: работают в Excel" onChange={(e) => setField('entry_level', e.target.value)} />
+        </label>
+        <label className="label">Объём, ак. ч
+          <span className="row row-wrap" style={{ gap: 6 }}>
+            <input className="field" type="number" min={1} max={2000} style={{ width: 90 }} aria-label="Объём, ак. ч" value={form.volume_h}
+              onChange={(e) => setField('volume_h', e.target.value ? Number(e.target.value) : '')} />
+            {VOLUME_PRESETS.map((v) => (
+              <button key={v} type="button" className={`chip ${form.volume_h === v ? 'chip-ok' : ''}`} style={{ cursor: 'pointer' }}
+                onClick={() => setField('volume_h', form.volume_h === v ? '' : v)}>{v}</button>
+            ))}
+          </span>
+        </label>
+        <label className="label">Форма обучения
+          <select className="field" value={form.form} onChange={(e) => setField('form', e.target.value)}>
+            <option value="">Предложит агент</option>
+            {REQUEST_FORM_FORM_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </label>
+        <label className="label">Срок · примерный, агент уточнит график
+          <span className="row" style={{ gap: 6 }}>
+            <input className="field" type="number" min={1} style={{ width: 80 }} aria-label="Срок, число" value={form.duration_value}
+              onChange={(e) => setField('duration_value', e.target.value ? Number(e.target.value) : '')} />
+            <select className="field" style={{ width: 'auto' }} aria-label="Единица срока" value={form.duration_unit} onChange={(e) => setField('duration_unit', e.target.value)}>
+              <option value="weeks">недель</option>
+              <option value="months">месяцев</option>
+            </select>
+          </span>
+        </label>
+        <label className="label">Итоговая аттестация
+          <select className="field" value={form.final_assessment} onChange={(e) => setField('final_assessment', e.target.value)}>
+            <option value="">Предложит агент</option>
+            {REQUEST_FORM_FINAL_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </label>
+      </div>
+    </details>
   )
 }
 

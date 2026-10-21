@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { api, download, getSession, STATUS_LABEL, waitJob } from '../api'
 import { Avatar, Spinner, useToast } from '../components/ui'
+import { groupKitByTopic, humanChecklist, isOrderRegistered, KIND_ABBR, KIND_TITLES, ORDER_CHECKLIST, ORDER_NOTE, orderRegisteredValue, orderStorageKey, programMetrics, readStore, TYPE_HINTS, writeStore } from '../kit'
 import { REVIEW_LABEL } from './Reviews'
 import { EditableText, TemplateSwitch, ToolsPanel } from './ProgramTools'
 
@@ -97,7 +98,7 @@ export default function Program() {
         <Link to="/app" className="btn btn-ghost btn-sm"><ArrowLeft size={15} /> Программы</Link>
         <div className="grow">
           <h1 className="h1" style={{ fontSize: 24, margin: 0 }}>{doc.title || 'Новая программа'}</h1>
-          <div className="small muted">{doc.template || TYPE_LABEL[doc.type] || 'тип определяется'}{doc.volume_h ? ` · ${doc.volume_h} ак. ч` : ''} · версия {doc.version}</div>
+          <div className="small muted" title={doc.type ? TYPE_HINTS[doc.type] : undefined}>{doc.template || TYPE_LABEL[doc.type] || 'тип определяется'}{doc.volume_h ? ` · ${doc.volume_h} ак. ч` : ''} · версия {doc.version}</div>
         </div>
         <span className="chip chip-ok">{STATUS_LABEL[doc.status] || doc.status}</span>
         {doc.usage?.calls > 0 && <span className="chip"><Coins size={13} /> {doc.usage.cost_rub.toFixed(2)} ₽ · {doc.usage.calls} вызовов</span>}
@@ -138,6 +139,15 @@ export default function Program() {
 }
 
 /* ---------------- Сборка каркаса ---------------- */
+/** Единая кнопка перехода к следующему шагу мастера: всегда справа в шапке шага (MET-18). */
+function StepNext({ label, onClick, disabled, busy, hint }: { label: string; onClick: () => void; disabled?: boolean; busy?: boolean; hint?: string }) {
+  return (
+    <button className="btn btn-primary" style={{ flex: 'none' }} title={hint} disabled={disabled || busy} onClick={onClick} data-step-next="">
+      {busy ? <Spinner /> : null}{label} <ArrowRight size={16} />
+    </button>
+  )
+}
+
 function Building({ job }: { job: any }) {
   const lines = ['Определяю тип программы и шаблон АЦР', 'Подбираю профстандарт из реестра', 'Формулирую цель и компетенции З/У/Н', 'Разбиваю на модули и темы', 'Раскладываю часы солвером', 'Проверяю каркас по правилам']
   const [i, setI] = useState(0)
@@ -191,7 +201,7 @@ function RequestView({ doc, onNext }: { doc: Doc; onNext: () => void }) {
   return (
     <div className="grid-main">
       <div className="card card-pad stagger">
-        <h2 className="h2">Запрос методиста</h2>
+        <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Запрос методиста</h2><StepNext label="Дальше" hint="К уточняющим вопросам или сразу к каркасу" onClick={onNext} /></div>
         <div className="row" style={{ alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
           <Avatar name="Мадина" role="methodist" />
           <div className="agent-msg" style={{ background: 'var(--card)', flex: 1 }}>{doc.request}</div>
@@ -211,7 +221,6 @@ function RequestView({ doc, onNext }: { doc: Doc; onNext: () => void }) {
         <div className="progress" style={{ margin: '14px 0 6px' }}><i style={{ width: `${(filled / rows.length) * 100}%` }} /></div>
         <div className="tiny muted">{filled} из {rows.length} параметров заполнены</div>
         <p className="tiny muted">Ссылки на акты и профстандарты — только из нормативной базы. Всё остальное получает пометку «не подтверждено».</p>
-        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={onNext}>Дальше <ArrowRight size={16} /></button>
       </aside>
     </div>
   )
@@ -296,7 +305,7 @@ function HoursTable({ doc, editable, onChange, onPatch, onTopic }: { doc: Doc; e
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table">
-        <thead><tr><th>№</th><th>Модуль / тема</th><th className="num">Всего</th><th className="num">ЛК</th><th className="num">ПР</th><th className="num">ЛБ</th><th className="num">СРС</th><th>Контроль</th></tr></thead>
+        <thead><tr><th>№</th><th>Модуль / тема</th><th className="num">Всего</th>{KINDS.map((k) => <th key={k} className="num" title={KIND_TITLES[k]}>{KIND_ABBR[k]}</th>)}<th>Контроль</th></tr></thead>
         <tbody>
           {doc.modules.map((m: any) => {
             const sum = KINDS.reduce((s, k) => s + (m.hours[k] || 0), 0)
@@ -367,7 +376,7 @@ function SkeletonView({ doc, setDoc, onNext }: { doc: Doc; setDoc: (d: Doc) => v
     <div className="grid-main">
       <div className="col">
         <section className="card card-pad">
-          <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Учебный план</h2>{saving && <span className="small muted row"><Spinner /> пересчитываю</span>}<span className={`chip ${ok ? 'chip-ok' : 'chip-err'}`}>{all} из {doc.volume_h} ч</span></div>
+          <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Учебный план</h2>{saving && <span className="small muted row"><Spinner /> пересчитываю</span>}<span className={`chip ${ok ? 'chip-ok' : 'chip-err'}`}>{all} из {doc.volume_h} ч</span><StepNext label="Перейти к проверке каркаса" disabled={!ok} hint={ok ? 'Шаг 4: агент проверит каркас по правилам' : `Сначала сведите часы: сумма с аттестацией должна быть ${doc.volume_h} ч`} onClick={onNext} /></div>
           <p className="small muted">{editable ? 'Часы модулей, тем и аттестации, названия модулей и тем можно менять: итоги и проверки пересчитываются сразу. Стрелка раскрывает темы; если поменять часы темы, модуль станет суммой своих тем.' : 'Каркас утверждён: часы меняются только точечной правкой.'}</p>
           <HoursTable doc={doc} editable={editable} onChange={change} onPatch={patch} onTopic={changeTopic} />
           <div style={{ marginTop: 10 }}><Assumptions doc={doc} /></div>
@@ -415,8 +424,7 @@ function SkeletonView({ doc, setDoc, onNext }: { doc: Doc; setDoc: (d: Doc) => v
           </div>
         </section>
         <section className="card card-pad">
-          <p className="small muted" style={{ marginTop: 0 }}>Дальше агент проверит каркас: часы, шаблон, профстандарт, связь компетенций с темами и проверкой. Утверждаете каркас вы, на следующем шаге.</p>
-          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={!ok} onClick={onNext}>Перейти к проверке каркаса <ArrowRight size={16} /></button>
+          <p className="small muted" style={{ marginTop: 0 }}>Дальше агент проверит каркас: часы, шаблон, профстандарт, связь компетенций с темами и проверкой. Кнопка перехода — справа в шапке «Учебного плана».</p>
           <p className="tiny muted" style={{ marginBottom: 0 }}>Пока каркас не утверждён, содержание не генерируется.</p>
         </section>
       </aside>
@@ -533,7 +541,7 @@ function CheckView({ doc, setDoc, reload, onJob }: { doc: Doc; setDoc: (d: Doc) 
     <div className="grid-main">
       <div className="col">
         <section className="card card-pad">
-          <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Проверка каркаса</h2><span className={`chip ${fails ? 'chip-err' : 'chip-ok'}`}>{rep.blocking_passed} из {rep.blocking_total} проверок</span></div>
+          <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Проверка каркаса</h2><span className={`chip ${fails ? 'chip-err' : 'chip-ok'}`}>{rep.blocking_passed} из {rep.blocking_total} проверок</span><StepNext label="Утвердить каркас" disabled={!!busy || fails > 0} busy={busy === 'approve'} hint={fails ? 'Есть ошибки ✕ — сначала исправьте их' : 'Утвердить каркас и собрать комплект'} onClick={() => approve('approve')} /></div>
           <p className="small muted">Агент проверил каркас до генерации содержания. Решение принимаете вы. ✓ всё в порядке · ! нужно ваше решение · ✕ ошибка, утвердить нельзя</p>
           <RuleList rules={rep.rules} />
           <RuleDetails rules={rep.rules} />
@@ -568,10 +576,9 @@ function CheckView({ doc, setDoc, reload, onJob }: { doc: Doc; setDoc: (d: Doc) 
             <>
               <textarea className="field" style={{ minHeight: 80 }} placeholder="Комментарий агенту, если нужно" value={comment} onChange={(e) => setComment(e.target.value)} />
               <div className="row row-wrap" style={{ marginTop: 10 }}>
-                <button className="btn btn-primary" disabled={!!busy || fails > 0} onClick={() => approve('approve')}>{busy === 'approve' ? <Spinner /> : <><Check size={16} /> Утвердить каркас</>}</button>
                 <button className="btn btn-ghost" disabled={!!busy || !comment.trim()} onClick={() => approve('return')}><Undo2 size={16} /> Вернуть с комментарием</button>
               </div>
-              <p className="tiny muted">После утверждения агент соберёт программу, тесты, задания, лекции и слайды. Каркас можно будет поменять точечной правкой.</p>
+              <p className="tiny muted">Утвердить — кнопкой справа в шапке шага. После утверждения агент соберёт программу, тесты, задания, лекции и слайды; каркас можно будет поменять точечной правкой.</p>
               {fails > 0 && <p className="small" style={{ color: 'var(--red)' }}>Есть ошибки ✕ — сначала исправьте их.</p>}
             </>
           ) : <p className="small muted">Каркас утверждён. Агент собрал комплект по этому каркасу.</p>}
@@ -642,6 +649,20 @@ const EXPORTS = [
   { fmt: 'order_draft', label: 'Проект приказа', icon: FileText },
 ]
 
+/* Честные метрики (MET-8): где данных нет — «—» и подпись, а не нули; данные есть — показываются. */
+function MetricsParams({ doc }: { doc: Doc }) {
+  const m = programMetrics(doc)
+  return (
+    <>
+      <div className="param"><span className="k">Каркас</span><span className="v">{m.skeleton}</span></div>
+      <div className="param"><span className="k">Комплект</span><span className="v">{m.kit}</span></div>
+      <div className="param"><span className="k">Модель</span><span className="v">{m.model}</span></div>
+      <div className="param"><span className="k">Токены</span><span className="v">{m.tokens}</span></div>
+      {m.note && <p className="tiny muted" style={{ margin: '6px 0 0' }}>{m.note}</p>}
+    </>
+  )
+}
+
 function ExportBlock({ doc }: { doc: Doc }) {
   const toast = useToast()
   const [busy, setBusy] = useState('')
@@ -658,6 +679,58 @@ function ExportBlock({ doc }: { doc: Doc }) {
 }
 
 type Review = { accepted: Set<string>; busy: string; onAccept: (id: string) => void; onComment: (id: string) => void }
+
+/** Файлы комплекта, сгруппированные по темам: у каждой темы её лекции и задания; общий список с вкладками — выше (MET-13а). */
+function KitByTopic({ doc }: { doc: Doc }) {
+  const groups = useMemo(() => groupKitByTopic(doc), [doc])
+  const FILE_ICON: Record<string, any> = { lecture: FileText, task: CheckCircle2, test: FileSpreadsheet }
+  return (
+    <details style={{ marginTop: 14 }}>
+      <summary className="small" style={{ cursor: 'pointer', fontWeight: 700 }}>По темам и лекциям · {groups.reduce((s, g) => s + g.topics.reduce((x, t) => x + t.files.length, 0) + g.files.length, 0)} файлов</summary>
+      <p className="tiny muted">У каждой темы — её лекция со слайдами и задания; тесты — на уровне модуля.</p>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {groups.map((g) => (
+          <div key={g.id} style={{ border: '1px solid var(--line)', borderRadius: 14, padding: '10px 14px' }}>
+            <b className="small">Модуль {g.n}. {g.title}</b>
+            {g.files.map((f) => {
+              const Icon = FILE_ICON[f.kind]
+              return <div key={f.kind} className="row small" style={{ padding: '6px 0 0 14px' }}><Icon size={14} className="muted" /> {f.title} <span className="tiny muted">· {f.meta}</span></div>
+            })}
+            {g.topics.map((t) => (
+              <div key={t.id} style={{ padding: '6px 0 0 14px' }}>
+                <span className="small"><b>Тема {t.n}.</b> {t.title}</span>
+                {t.files.length === 0 && <span className="tiny muted"> · файлов нет</span>}
+                {t.files.map((f, i) => {
+                  const Icon = FILE_ICON[f.kind]
+                  return <div key={i} className="row small" style={{ padding: '3px 0 0 14px' }}><Icon size={14} className="muted" /> {f.label}: {f.title} <span className="tiny muted">· {f.meta}</span></div>
+                })}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+/** Что осталось проверить человеку перед утверждением: суммы часов, покрытие компетенций, источники (MET-13б). */
+function HumanChecklist({ doc }: { doc: Doc }) {
+  const items = humanChecklist(doc)
+  return (
+    <section className="card card-pad">
+      <h3 className="h3">Что проверить человеку перед утверждением</h3>
+      <div className="stagger" style={{ display: 'grid', gap: 8 }}>
+        {items.map((it) => (
+          <div key={it.label} className="check-item">
+            <span className={`check-icon ${it.ok ? 'ci-pass' : 'ci-warn'}`}>{it.ok ? '✓' : '!'}</span>
+            <div className="grow"><b>{it.label}</b><div className="small muted">{it.detail}</div></div>
+          </div>
+        ))}
+      </div>
+      <p className="tiny muted" style={{ marginBottom: 0 }}>Формальные правила агент проверил сам; эти пункты стоит просмотреть глазами — они про смысл и достоверность.</p>
+    </section>
+  )
+}
 
 const MEANS_LABEL: Record<string, string> = { test: 'тест', seminar: 'задание семинара', project: 'проект', final: 'итоговая аттестация', interview: 'собеседование' }
 
@@ -775,7 +848,8 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: (target?: strin
       <div className="grid-main">
         <section className="card card-pad">
           <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Отчёт автопроверки комплекта</h2>
-            <span className={`chip ${rep.blocking_passed === rep.blocking_total ? 'chip-ok' : 'chip-err'}`}>{rep.blocking_passed} из {rep.blocking_total} блокирующих</span></div>
+            <span className={`chip ${rep.blocking_passed === rep.blocking_total ? 'chip-ok' : 'chip-err'}`}>{rep.blocking_passed} из {rep.blocking_total} блокирующих</span>
+            <StepNext label="Перейти к согласованию" disabled={!blockingOk} hint={blockingOk ? 'Шаг 6: вычитка экспертами и утверждение' : 'Сначала пройдите все 10 блокирующих проверок'} onClick={onNext} /></div>
           <div style={{ marginTop: 14 }}><RuleList rules={rep.rules} /></div>
           <RuleDetails rules={rep.rules} />
           {rep.actions?.length > 0 && (
@@ -793,9 +867,8 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: (target?: strin
             <ExportBlock doc={doc} />
           </section>
           <section className="card card-pad">
-            <div className="param"><span className="k">Время сборки</span><span className="v">{Math.round(doc.timing_s?.kit || 0)} с</span></div>
-            <div className="param"><span className="k">Вызовов модели</span><span className="v">{doc.usage?.calls}</span></div>
-            <div className="param"><span className="k">Стоимость</span><span className="v">{(doc.usage?.cost_rub || 0).toFixed(2)} ₽</span></div>
+            <h3 className="h3">Сборка и затраты</h3>
+            <MetricsParams doc={doc} />
           </section>
           {doc.effect && (
             <section className="card card-pad">
@@ -819,12 +892,13 @@ function ReportView({ doc, onEdit, onNext }: { doc: Doc; onEdit: (target?: strin
             {doc.modules.map((x: any) => <option key={x.id} value={x.id}>Модуль {x.n}. {x.title}</option>)}
           </select></div>
         <div style={{ marginTop: 12 }}>{m && <ModuleContent doc={doc} module={m} />}</div>
+        <KitByTopic doc={doc} />
       </section>
       <ToolsPanel doc={doc} onEdit={(t, i) => onEdit(t, i)} />
+      <HumanChecklist doc={doc} />
       <section className="card card-pad row row-wrap">
-        <div className="grow"><b>Нужно поменять тему, тест или задание?</b><div className="small muted">Агент пересоберёт только связанные части.</div></div>
+        <div className="grow"><b>Нужно поменять тему, тест или задание?</b><div className="small muted">Агент пересоберёт только связанные части. Переход к согласованию — кнопка справа в шапке отчёта.</div></div>
         <button className="btn btn-ghost" onClick={() => onEdit()}><GitBranch size={16} /> Точечная правка</button>
-        <button className="btn btn-primary" disabled={!blockingOk} title={blockingOk ? '' : 'Сначала пройдите все 10 блокирующих проверок'} onClick={onNext}>Перейти к согласованию <ArrowRight size={16} /></button>
         {!blockingOk && <div className="small" style={{ width: '100%', color: 'var(--red)' }}>Комплект нельзя отправить на вычитку: пройдено {rep.blocking_passed} из {rep.blocking_total} блокирующих проверок. Исправьте ✕ точечной правкой.</div>}
       </section>
     </div>
@@ -977,6 +1051,49 @@ function Journal({ events }: { events: any[] }) {
   )
 }
 
+/* ---------------- Финал сценария: проект приказа (MET-19) ---------------- */
+
+/** Блок методиста после утверждения руководителем: выгрузка проекта приказа и чек-лист ручного заполнения.
+ * «Программа зарегистрирована» не меняет статус на сервере — только скрывает блок (отметка в localStorage). */
+function OrderDraftBlock({ doc }: { doc: Doc }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(() => isOrderRegistered(readStore(orderStorageKey(doc.id))))
+  if (doc.status !== 'approved' || done) return null
+  async function open() {
+    setBusy(true)
+    try { await download(doc.id, 'order_draft') } catch (e: any) { toast(e.message, true) } finally { setBusy(false) }
+  }
+  function registered() {
+    writeStore(orderStorageKey(doc.id), orderRegisteredValue())
+    setDone(true)
+    toast('Отмечено: программа зарегистрирована. Статус в системе не менялся')
+  }
+  return (
+    <section className="card card-pad" data-order-block="">
+      <div className="row"><h2 className="h2 grow" style={{ margin: 0 }}>Проект приказа — передано для регистрации</h2></div>
+      <p className="small muted" style={{ marginBottom: 12 }}>Руководитель утвердил программу. Скачайте проект приказа и передайте на регистрацию: поля ниже агент не заполняет — их вписывают люди.</p>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <button className="btn btn-primary" style={{ justifyContent: 'center' }} disabled={busy} onClick={open}>
+          {busy ? <Spinner /> : <><FileText size={16} /> Открыть проект приказа</>}
+        </button>
+      </div>
+      <div className="stagger" style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+        {ORDER_CHECKLIST.map((it) => (
+          <div key={it.label} className="check-item">
+            <span className="check-icon ci-warn">□</span>
+            <div className="grow"><b>{it.label}</b><div className="small muted">{it.hint} — заполнить вручную</div></div>
+          </div>
+        ))}
+      </div>
+      <div className="row row-wrap" style={{ marginTop: 14 }}>
+        <button className="btn btn-soft" onClick={registered}><CheckCircle2 size={16} /> Программа зарегистрирована</button>
+      </div>
+      <p className="tiny muted" style={{ marginBottom: 0, marginTop: 10 }}>{ORDER_NOTE}.</p>
+    </section>
+  )
+}
+
 function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void; reload: () => void }) {
   const toast = useToast()
   const [events, setEvents] = useState<any[]>([])
@@ -1035,6 +1152,7 @@ function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void;
   return (
     <div className="grid-main">
       <div className="col">
+        {doc.status === 'approved' && <OrderDraftBlock doc={doc} />}
         <section className="card card-pad">
           <h2 className="h2">Согласование комплекта</h2>
           <p className="small muted">Каждый эксперт видит только свои модули и вычитывает содержание. Когда все модули приняты, программа уходит руководителю.</p>
@@ -1186,14 +1304,12 @@ function ApproveView({ doc, reload }: { doc: Doc; reload: () => void }) {
             <div className="param"><span className="k">Примеры кода выполняются</span><span className="v">{q.code_ok_share != null ? `${q.code_ok_share}% из ${q.code_examples}` : 'кода нет'}</span></div>
           </div>
         </section>
+        <HumanChecklist doc={doc} />
       </div>
       <aside className="col col-16">
         <section className="card card-pad">
           <h3 className="h3">Срок и затраты</h3>
-          <div className="param"><span className="k">Каркас</span><span className="v">{Math.round(doc.timing_s?.skeleton || 0)} с</span></div>
-          <div className="param"><span className="k">Комплект</span><span className="v">{Math.round(doc.timing_s?.kit || 0)} с</span></div>
-          <div className="param"><span className="k">Модель</span><span className="v">{(doc.usage?.cost_rub || 0).toFixed(2)} ₽ · {doc.usage?.calls} вызовов</span></div>
-          <div className="param"><span className="k">Токены</span><span className="v">{(doc.usage?.tokens_in || 0) + (doc.usage?.tokens_out || 0)}</span></div>
+          <MetricsParams doc={doc} />
           <div className="param"><span className="k">Срок от запроса</span><span className="v">{q.work_days ?? '—'} раб. дн.</span></div>
           <div className="param"><span className="k">Решений людей</span><span className="v">{q.human_decisions ?? 0} · ≈ {Math.round((q.team_minutes_estimate || 0) / 6) / 10} ч команды</span></div>
           <p className="tiny muted" style={{ marginBottom: 0 }}>Время команды — оценка: 6 минут на одно решение человека из журнала.</p>
@@ -1294,7 +1410,7 @@ function ExpertView({ doc, reload }: { doc: Doc; reload: () => void }) {
           <p className="small muted">Вы видите только назначенные вам модули; часы, разделы шаблона и профстандарт — только для чтения. Отметьте каждый элемент как проверенный: модуль принимается, когда проверены все. Код в лекциях выполнен в песочнице, у каждого элемента указаны РО и чем они проверяются.</p>
           {m && <ModuleContent doc={doc} module={m} review={finished ? undefined : { accepted, busy, onAccept: (id) => decision('accept_item', id), onComment: (id) => setNode(id) }} />}
         </section>
-        <aside className="col col-16">
+        <aside className="col col-16 sticky-side">
           <section className="card card-pad">
             <h3 className="h3">Ваше решение</h3>
             <label className="label">К какому фрагменту</label>

@@ -1,6 +1,6 @@
 # Нормативная база и база знаний
 
-Префикс требований: `SPEC-KB`. Код: `src/app/kb/registry.py`, `src/app/kb/norms.py`, `src/app/kb/orgdocs.py`, `src/app/kb/files.py`; методы `/kb/*` и `/org/*` в `src/app/programs/extra_router.py`. Подробности — [docs/knowledge-base.md](../docs/knowledge-base.md).
+Префикс требований: `SPEC-KB`. Код: `src/app/kb/registry.py`, `src/app/kb/recognition.py`, `src/app/kb/norms.py`, `src/app/kb/orgdocs.py`, `src/app/kb/files.py`; методы `/kb/*` и `/org/*` в `src/app/programs/extra_router.py`. Подробности — [docs/knowledge-base.md](../docs/knowledge-base.md).
 
 ## Назначение
 
@@ -30,6 +30,7 @@
 | SPEC-KB-18 | WHILE часть документов организации не имеет векторов, THE SYSTEM SHALL приводить оценки к одной шкале: фрагмент, найденный только по словам, получает не больше половины лучшего косинуса запроса, чтобы совпадение слов не вытесняло найденное по смыслу. | FR-09 | `test_spec_kb_vectors.py::test_mixed_index_keeps_semantic_hits_on_top` |
 | SPEC-KB-19 | WHEN пользователь ищет в базе знаний (`POST /api/v1/kb/search`), THE SYSTEM SHALL сливать выдачу документов организации и выдачу выжимок норм по местам (reciprocal rank fusion), а не по сырым оценкам разных шкал; при равном месте документ организации идёт раньше. | FR-09 | `test_spec_kb_vectors.py::test_kb_search_fuses_org_and_norms_by_rank` |
 | SPEC-KB-20 | WHEN запрос к базе знаний содержит сокращение образования (ДО, ДПО, ДООП, ДПП, СПО, ВО, ПС, ФГОС, ОВЗ, ГИА, ДОТ и др.) целым словом в верхнем регистре, THE SYSTEM SHALL дополнить запрос расшифровкой и для поиска по словам, и для эмбеддинга; строчное «до» не расширяется. | FR-09 | `test_spec_kb_vectors.py::test_abbreviations_expanded_in_search` |
+| SPEC-KB-21 | THE SYSTEM SHALL выполнять распознавание инструментов, версий и устаревших конструкций в переиспользуемом слое `kb/recognition` на основе реестра (`registry/tools.json`, реестр передаётся параметром); WHEN текст содержит псевдоним инструмента в другом регистре, с «ё», с повторами букв или с намешанной латиницей и кириллицей («PоstgreS», «питоон»), THE SYSTEM SHALL распознать его так же, как каноническое написание, без дубликатов находок. | аудит/жюри (Доменная логика, Архитектура) | `test_extras.py::test_tool_aliases_from_registry`, `test_spec_kb_vectors.py::test_recognition_normalizes_writing` |
 
 ## Вне области
 

@@ -148,8 +148,61 @@ def test_module_accept_requires_all_items(client, kit) -> None:
     assert r.status_code == 409 and r.json()['code'] == 'ITEMS_NOT_CHECKED'
 
 
+def test_expert_accepts_every_item_type_without_500(client, kit) -> None:
+    """SPEC-API-34: эксперт отмечает проверенным элемент любого типа своего модуля — рабочую программу,
+    тему, лекцию (в том числе по слайду и пункту плана), вопрос и задание (в том числе по критерию) —
+    и ни один тип элемента не даёт 500; ожидаемое «не могу принять» — 404 с русским текстом,
+    чужой элемент модулю не приписывается, после всех элементов модуль принимается с оценкой."""
+    hm, he = _h(client, 'u-madina'), _h(client, 'u-timur')
+    full = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
+    m1 = full['modules'][0]['id']
+    assert client.put(f'/api/v1/programs/{kit}/modules/{m1}/expert', json={'expert_id': 'u-timur'}, headers=hm).status_code == 200
+    mine = client.get(f'/api/v1/programs/{kit}', headers=he).json()
+    rid = next(r['rid'] for r in client.get('/api/v1/reviews', headers=he).json() if r['module_id'] == m1)
+
+    def decide(node: str):
+        return client.post(f'/api/v1/reviews/{rid}/decision', json={'decision': 'accept_item', 'node_id': node}, headers=he)
+
+    lecs = [x for x in mine['kit']['lectures'] if x['module_id'] == m1]
+    slides = [s['id'] for lec in lecs for s in lec.get('slides') or []]
+    plan_points = [f'{lec["id"]}#p1' for lec in lecs if lec.get('plan')]
+    questions = [x['id'] for x in mine['kit']['questions'] if x.get('module_id') == m1]
+    tasks = [x['id'] for x in mine['kit']['tasks'] if x.get('module_id') == m1]
+    criteria = [f'{t}#c1' for t in tasks]
+    topics = [t['id'] for t in mine['modules'][0]['topics']]
+    foreign_q = next(q['id'] for q in full['kit']['questions'] if q.get('module_id') != m1)
+
+    # слайд и пункт плана относятся к своей лекции, тема и фрагменты — к своему элементу
+    for node in [*topics, *slides, *plan_points, *criteria, *[f'mp-{m1}'], *[lec['id'] for lec in lecs], *questions, *tasks]:
+        r = decide(node)
+        assert r.status_code == 200, f'{node}: {r.status_code} {r.text[:200]}'
+    # чужой вопрос, неизвестный и пустой идентификатор — 404 с русским текстом, не 500
+    for node in (foreign_q, 'nope-123', ''):
+        r = decide(node)
+        assert r.status_code == 404, f'{node!r}: {r.status_code} {r.text[:200]}'
+        assert r.json()['code'] == 'NOT_FOUND' and 'Элемент' in r.json()['message_ru']
+    # все элементы отмечены, модуль принимается с оценкой
+    review = next(r for r in client.get('/api/v1/reviews', headers=he).json() if r['module_id'] == m1)
+    assert review['items_done'] == review['items_total'] > 0
+    r = client.post(f'/api/v1/reviews/{rid}/decision', json={'decision': 'accept', 'score': 5}, headers=he)
+    assert r.status_code == 200, r.text
+    doc = client.get(f'/api/v1/programs/{kit}', headers=he).json()
+    assert next(m for m in doc['modules'] if m['id'] == m1)['review_status'] == 'accepted'
+    # данные комплекта в неожиданном формате (None вместо списка) — 400 с русским текстом, не 500
+    from app.agent import workflow as wf
+    from app.core.errors import BadRequest
+    from app.programs.schemas import Kit, Module, ProgramDoc, Question_
+
+    broken = ProgramDoc(id='prg-broken', request='запрос',
+                        modules=[Module(id='m1', n=1, title='Модуль', expert_id='u-timur')],
+                        kit=Kit(questions=[Question_(id='q1', assessment_id='test', module_id='m1', stem='s', options=['а', 'б'], key=0)]))
+    broken.module_by_id('m1').accepted_items = None
+    with pytest.raises(BadRequest, match='Не удалось принять решение'):
+        wf.review_decision(broken, 'm1', 'u-timur', 'accept_item', node_id='q1')
+
+
 def test_admin_profile_registry_and_expert_suggestions(client, kit) -> None:
-    """SPEC-FLOW-29, SPEC-KB-14, SPEC-KB-15, SPEC-SKILLS-09"""
+    """SPEC-FLOW-29, SPEC-API-35, SPEC-KB-14, SPEC-KB-15, SPEC-SKILLS-09"""
     ha, hm = _h(client, 'u-admin'), _h(client, 'u-madina')
     assert client.put('/api/v1/org/profile', json={'defaults': {'volume_h': 36}}, headers=hm).status_code == 403
     r = client.put('/api/v1/org/profile', json={'defaults': {'volume_h': 36, 'form': 'очная'}}, headers=ha)
@@ -165,7 +218,16 @@ def test_admin_profile_registry_and_expert_suggestions(client, kit) -> None:
     assert r.status_code == 200 and r.json()['items'] == len(ps)
     assert all(x.get('checked_at') for x in client.get('/api/v1/org/registry?kind=ps', headers=ha).json())
     sug = client.get(f'/api/v1/programs/{kit}/experts', headers=hm).json()
-    assert sug['experts'] and len(sug['suggestions']) == len(client.get(f'/api/v1/programs/{kit}', headers=hm).json()['modules'])
+    assert sug['experts'] and sug['suggestions'] == []  # MET-7: на стенде одни демо-учётки — подсказок нет
+    assert 'подходящих экспертов нет' in sug['note'].lower()
+    r = client.post('/api/v1/admin/users', json={'login': 'nina', 'name': 'Нина Смирнова', 'password': 'expert123',
+                                                 'roles': ['expert'], 'title': 'Эксперт-преподаватель'}, headers=ha)
+    assert r.status_code == 201, r.text
+    nina = r.json()['id']
+    sug = client.get(f'/api/v1/programs/{kit}/experts', headers=hm).json()
+    # MET-7 (демо-прогон 19.10): подсказывает только реального активного эксперта, демо-учётки не подсказываются
+    assert sug['suggestions'] and {s['expert_id'] for s in sug['suggestions']} == {nina}
+    assert all(s['expert_id'] not in ('u-timur', 'u-olga') for s in sug['suggestions'])
     client.put('/api/v1/org/profile', json={'defaults': {'volume_h': 72, 'form': 'очно-заочная'}}, headers=ha)
 
 

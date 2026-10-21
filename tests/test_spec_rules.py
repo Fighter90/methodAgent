@@ -138,13 +138,13 @@ def test_v08_v09_completeness() -> None:
     assert res.status == 'fail' and res.nodes == ['section:1.2. Цель реализации программы']
 
     doc = _doc(params=Params(materials=Materials(test_questions=2, slides_modules=[1])))
-    doc.kit.lectures = [Lecture(id='l1', topic_id='t1.1', module_id='m1', title='Циклы', slides=[Slide(id='s', n=1, title='x')])]
+    doc.kit.lectures = [Lecture(id='l1', topic_id='t1.1', module_id='m1', title='Циклы', slides=[Slide(id='s', n=1, title='x', bullets=['тезис'])])]
     doc.kit.questions = [Question_(id=f'q{i}', assessment_id='test-final', stem='?', options=['a', 'b'], key=0, lo_ids=['lo1']) for i in range(2)]
     assert _status(doc, 'V-09') == 'pass'
     doc.kit.questions.pop()
     assert _status(doc, 'V-09') == 'fail'  # в запросе 2 вопроса, в тесте 1
     doc = _doc(params=Params(materials=Materials(slides_modules=[2])))
-    doc.kit.lectures = [Lecture(id='l1', topic_id='t1.1', module_id='m1', title='Циклы', slides=[Slide(id='s', n=1, title='x')])]
+    doc.kit.lectures = [Lecture(id='l1', topic_id='t1.1', module_id='m1', title='Циклы', slides=[Slide(id='s', n=1, title='x', bullets=['тезис'])])]
     assert _status(doc, 'V-09') == 'fail'  # нет слайдов для модуля 2
 
 
@@ -268,6 +268,53 @@ def test_v18_v19_measurability() -> None:
     res = {r.id: r for r in R.run_rules(doc, 'kit')}
     assert res['V-18'].status == 'fail' and res['V-18'].nodes == ['k2', 'k3']
     assert res['V-19'].status == 'fail' and res['V-19'].nodes == ['q2', 'q3']
+
+
+def test_v26_latin_share_per_node() -> None:
+    """SPEC-RULES-21: доля латиницы больше 30 % в вопросе или слайде — warn V-26 с привязкой к узлу; кодом, без модели."""
+    doc = _doc()
+    doc.kit.questions = [
+        Question_(id='q1', assessment_id='a', stem='What does the len function return?', options=['length', 'type'], key=0, lo_ids=['lo1']),
+        Question_(id='q2', assessment_id='a', stem='Что возвращает функция len()?', options=['длину', 'тип'], key=0, lo_ids=['lo1']),
+    ]
+    doc.kit.lectures = [Lecture(id='l1', topic_id='t1.1', module_id='m1', title='Циклы', slides=[
+        Slide(id='s1', n=1, title='Summary', bullets=['Here is what we learned today'], notes='thanks'),
+        Slide(id='s2', n=2, title='Цикл for', bullets=['перебор элементов списка', 'range()']),
+    ])]
+    res = next(r for r in R.run_rules(doc, 'kit') if r.id == 'V-26')
+    assert res.status == 'warn'
+    assert res.nodes == ['q1', 's1']
+    assert any('q1' in m for m in res.messages) and any('s1' in m for m in res.messages)
+    # русский вопрос с латинским термином и смешанный слайд — находок нет
+    doc.kit.questions = doc.kit.questions[1:]
+    doc.kit.lectures[0].slides = doc.kit.lectures[0].slides[1:]
+    res = next(r for r in R.run_rules(doc, 'kit') if r.id == 'V-26')
+    assert res.nodes == []
+
+
+def test_v18_v25_material_quality() -> None:
+    """SPEC-RULES-22: критерий без текста — fail V-18 (проверка 9); слайд без пунктов — warn V-09;
+    дубли вопросов (в том числе с разными ключами), пунктов слайда и строк плана — warn V-25 с узлами."""
+    doc = _doc()
+    doc.kit.tasks = [Task(id='k1', assessment_id='a', title='З', statement='с', criteria=[Criterion(text='  ', points=3)])]
+    doc.kit.lectures = [Lecture(id='l1', topic_id='t1.1', module_id='m1', title='Циклы', plan=[
+        {'min': 10, 'text': 'Актуализация'}, {'min': 10, 'text': 'актуализация'}],
+        slides=[Slide(id='s1', n=1, title='Пустой'), Slide(id='s2', n=2, title='Х', bullets=['один пункт', 'Один пункт'])])]
+    res = {r.id: r for r in R.run_rules(doc, 'kit')}
+    assert res['V-18'].status == 'fail' and res['V-18'].nodes == ['k1']
+    assert res['V-09'].status == 'warn' and 's1' in res['V-09'].nodes
+    assert res['V-25'].status == 'warn' and {'s2', 'l1'} <= set(res['V-25'].nodes)
+
+    doc.kit.questions = [
+        Question_(id='q1', assessment_id='a', stem='Что делает функция len?', options=['длину', 'тип'], key=0, lo_ids=['lo1']),
+        Question_(id='q2', assessment_id='a', stem='что делает функция len?', options=['длину', 'тип'], key=1, lo_ids=['lo1']),
+        Question_(id='q3', assessment_id='a', stem='Другой вопрос про списки?', options=['раз', 'два'], key=0, lo_ids=['lo1']),
+        Question_(id='q4', assessment_id='a', stem='Другой вопрос про списки?', options=['раз', 'два'], key=0, lo_ids=['lo1']),
+    ]
+    res = {r.id: r for r in R.run_rules(doc, 'kit')}
+    assert res['V-25'].status == 'warn'
+    assert {'q1', 'q2', 'q3', 'q4'} <= set(res['V-25'].nodes)
+    assert any('разными ключами' in m for m in res['V-25'].messages) and any('повторяется' in m for m in res['V-25'].messages)
 
 
 def test_warning_only_rules(monkeypatch) -> None:

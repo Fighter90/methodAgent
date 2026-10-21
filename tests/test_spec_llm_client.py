@@ -338,3 +338,23 @@ def test_truncated_answer_salvaged_when_partial_ok(make, sleeps) -> None:
     assert c.parse_json('{"a": [1, 2', salvage=True) == {'a': [1]}
     with pytest.raises(json.JSONDecodeError):
         c.parse_json('{"a": [1, 2')
+
+
+def test_budget_checked_after_queue(make) -> None:
+    """SPEC-LLM-25"""
+    gw = Gateway(_resp('{"answer": "ok"}'))
+    llm = make(gw, llm_concurrency=1, llm_daily_budget_rub=0.01)
+
+    async def scenario() -> None:
+        async with llm._sem:
+            # вызов заходит в очередь, пока семафор удержан; pre-check бюджета ещё проходит
+            task = asyncio.create_task(llm.complete_json(skill='content', system='s', user='u', schema=Out))
+            await asyncio.sleep(0.01)
+            assert llm.spent_today() < llm.settings.llm_daily_budget_rub
+            llm._spend(0.5)  # бюджет исчерпан, пока вызов стоял в очереди
+        await task
+
+    with pytest.raises(c.LLMUnavailable) as exc:
+        _run(scenario())
+    assert 'бюджет' in str(exc.value)
+    assert gw.calls == [], 'вызов не должен уходить в шлюз после исчерпания бюджета в очереди'
