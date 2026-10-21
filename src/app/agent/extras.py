@@ -119,12 +119,19 @@ def adapt(src: ProgramDoc, new_id: str, *, volume_h: int | None, audience: str =
 
 
 # --------------------------------------------------------------------------- FR-61
-_TOOL_ALIASES = {
-    'python': r'python', 'pandas': r'pandas', 'numpy': r'numpy', 'matplotlib': r'matplotlib',
-    'scikit-learn': r'scikit-learn|sklearn', 'postgresql': r'postgresql|postgres', 'docker': r'docker',
-    'kubernetes': r'kubernetes|k8s', 'terraform': r'terraform', 'ansible-core': r'ansible(?:-core)?',
-    'prometheus': r'prometheus', 'grafana': r'grafana', 'gitlab-ci': r'gitlab(?:-ci)?', 'nginx': r'nginx', 'jupyterlab': r'jupyterlab',
-}
+# Шаблоны инструментов строятся из реестра (registry/tools.json → aliases, SPEC-SKILLS-18):
+# новый инструмент или псевдоним добавляется администратором в реестр без правки кода.
+
+
+def _tool_patterns(reg: dict) -> dict[str, str]:
+    """Регулярное выражение на инструмент из его алиасов: сначала самые длинные, чтобы «python3» не съелся «python»."""
+    out: dict[str, str] = {}
+    for tool, aliases in (reg.get('aliases') or {}).items():
+        # реестр редактируется администратором: кривой тип не должен ломать распознавание
+        alts = sorted({str(a).lower() for a in aliases if isinstance(a, str)}, key=len, reverse=True) if isinstance(aliases, list) else []
+        if alts:
+            out[tool] = '|'.join(re.escape(a) for a in alts)
+    return out
 
 
 def _ver(v: str) -> tuple[int, ...]:
@@ -149,7 +156,7 @@ def scan_text(text: str) -> list[dict[str, str]]:
         if key in low:
             _add('construct', key, msg, repl.get(key, ''))
     current, minimum = reg['current'], reg.get('min_supported', {})
-    for tool, pattern in _TOOL_ALIASES.items():
+    for tool, pattern in _tool_patterns(reg).items():
         for m in re.finditer(rf'\b(?:{pattern})\s*v?(\d+(?:\.\d+)?)\b', low):
             v = m.group(1)
             if tool not in current or (tool == 'python' and _ver(v)[0] < 2):

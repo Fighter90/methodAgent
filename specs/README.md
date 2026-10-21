@@ -100,7 +100,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | [programs-service.md](programs-service.md) | 15 | 15 | — |
 | [skill-content.md](skill-content.md) | 14 | 14 | — |
 | [skill-review-assist.md](skill-review-assist.md) | 5 | 5 | — |
-| [skills-core.md](skills-core.md) | 17 | 17 | — |
+| [skills-core.md](skills-core.md) | 18 | 18 | — |
 | [solvers.md](solvers.md) | 16 | 16 | — |
 | [validation-judge.md](validation-judge.md) | 6 | 6 | — |
 | [validation-repair.md](validation-repair.md) | 18 | 18 | — |
@@ -342,6 +342,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-SKILLS-15 | `test_spec_type_detect.py`, `test_spec_type_detect.py::test_type_from_abbreviations_and_audience` |
 | SPEC-SKILLS-16 | `test_spec_skill_schemas.py::test_schema_out_matches_models`, `test_spec_skill_schemas.py::test_export_script_check` |
 | SPEC-SKILLS-17 | `test_core.py::test_intake_reference_volume_not_program_volume` |
+| SPEC-SKILLS-18 | `test_extras.py::test_tool_aliases_from_registry` |
 | SPEC-SOLVER-01 | `test_core.py::test_largest_remainder_sums` |
 | SPEC-SOLVER-02 | `test_spec_solvers.py::test_largest_remainder_deterministic`, `test_spec_solvers.py::test_largest_remainder_tie_break` |
 | SPEC-SOLVER-03 | `test_spec_solvers.py::test_round_half_up_not_bankers` |
@@ -414,5 +415,4 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-SANDBOX-10 | `test_spec_sandbox.py::test_check_examples_limit_and_messages` |
 | SPEC-SANDBOX-11 | `test_spec_sandbox.py::test_limits_from_settings` |
 | SPEC-SANDBOX-12 | `test_spec_sandbox.py::test_limits_degrade_on_macos` |
-| SPEC-SANDBOX-13 | `test_spec_sandbox.py::test_limits_reported` |
 <!-- trace:end -->

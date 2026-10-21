@@ -87,5 +87,87 @@
     "docker-compose up": "docker compose up",
     "extensions/v1beta1": "apps/v1",
     "df.ix": "df.loc"
-  }
+  },
+  "aliases": {
+    "python": [
+      "python",
+      "python3",
+      "питон",
+      "пайтон",
+      "py3"
+    ],
+    "pandas": [
+      "pandas",
+      "пандас"
+    ],
+    "numpy": [
+      "numpy",
+      "нампи"
+    ],
+    "matplotlib": [
+      "matplotlib",
+      "мпл",
+      "matplotlib.pyplot"
+    ],
+    "scikit-learn": [
+      "scikit-learn",
+      "sklearn",
+      "сайкит-лерн"
+    ],
+    "postgresql": [
+      "postgresql",
+      "postgres",
+      "постгрес",
+      "постгре"
+    ],
+    "docker": [
+      "docker",
+      "докер"
+    ],
+    "kubernetes": [
+      "kubernetes",
+      "k8s",
+      "кубернетес",
+      "кубер"
+    ],
+    "terraform": [
+      "terraform",
+      "тераформ"
+    ],
+    "opentofu": [
+      "opentofu",
+      "опентофу"
+    ],
+    "ansible-core": [
+      "ansible-core",
+      "ansible",
+      "ансибл"
+    ],
+    "prometheus": [
+      "prometheus",
+      "прометеус"
+    ],
+    "grafana": [
+      "grafana",
+      "графана"
+    ],
+    "gitlab-ci": [
+      "gitlab-ci",
+      "gitlab"
+    ],
+    "nginx": [
+      "nginx",
+      "инджинкс"
+    ],
+    "jupyterlab": [
+      "jupyterlab",
+      "jupyter",
+      "юпитер"
+    ],
+    "fastapi": [
+      "fastapi",
+      "фастапи"
+    ]
+  },
+  "aliases_note": "Шаблоны распознавания инструментов (SPEC-SKILLS-18): имя инструмента и псевдонимы, включая разговорные и аббревиатуры. Администратор дополняет без правки кода; scan_text строит шаблоны из реестра."
 }

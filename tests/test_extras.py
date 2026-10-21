@@ -317,3 +317,24 @@ def test_kb_docx_zip_bomb_rejected_and_normal_ok() -> None:
         zf.writestr('word/document.xml', b'0' * (101 * 1024 * 1024))
     with pytest.raises(BadRequest):
         parse_reference('bomb.docx', bomb.getvalue())
+
+
+def test_tool_aliases_from_registry() -> None:
+    """SPEC-SKILLS-18"""
+    from app.agent import extras
+    from app.kb.registry import tools
+
+    reg = tools()
+    assert 'постгрес' in reg['aliases']['postgresql'] and 'k8s' in reg['aliases']['kubernetes']
+    found = {f['found'] for f in extras.scan_text('Курс на постгрес 12 и k8s 1.30, а также питон 3.8')}
+    assert any('постгрес' in x.lower() for x in found), found
+    assert any('k8s' in x.lower() for x in found), found
+    assert any('питон' in x.lower() for x in found), found
+    # Новый инструмент или псевдоним добавляется в реестр — распознавание меняется без правки кода
+    reg2 = {**reg,
+            'current': {**reg['current'], 'mynewdb': '2.0'},
+            'min_supported': {**reg.get('min_supported', {}), 'mynewdb': '1.5'},
+            'aliases': {**reg['aliases'], 'mynewdb': ['mynewdb', 'муньюдб']}}
+    monkeypatch.setattr(extras, 'tools', lambda: reg2)
+    found2 = extras.scan_text('Используем муньюдб 1.0')
+    assert any('муньюдб' in f['found'].lower() for f in found2), found2
