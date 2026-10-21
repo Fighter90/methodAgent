@@ -90,8 +90,8 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 <!-- trace:begin -->
 | Спецификация | Требований | Покрыто | Не покрыты |
 |---|---|---|---|
-| [agent-workflow.md](agent-workflow.md) | 41 | 41 | — |
-| [api.md](api.md) | 32 | 32 | — |
+| [agent-workflow.md](agent-workflow.md) | 42 | 42 | — |
+| [api.md](api.md) | 33 | 33 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 30 | 30 | — |
 | [export.md](export.md) | 14 | 14 | — |
 | [frontend.md](frontend.md) | 21 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21 |
@@ -150,6 +150,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-FLOW-39 | `test_spec_robustness.py::test_module_failure_is_isolated_and_recorded` |
 | SPEC-FLOW-40 | `test_spec_robustness.py::test_pptx_slides_without_llm`, `test_spec_robustness.py::test_pptx_slides_when_content_skill_unavailable`, `test_spec_robustness.py::test_slides_guaranteed_when_content_returns_none` |
 | SPEC-FLOW-41 | `test_spec_misc.py::test_question_edit_keeps_lo_links` |
+| SPEC-FLOW-42 | `test_spec_misc.py::test_source_url_reachability_is_not_confirmation` |
 | SPEC-API-01 | `test_access.py::test_unassigned_expert_cannot_accept_and_api_404` |
 | SPEC-API-02 | `test_access.py::test_module_accept_requires_all_items`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-API-03 | `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
@@ -182,6 +183,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-API-30 | `test_autorun_checks.py`, `test_autorun_checks.py::test_export_problems_rejects_broken_files`, `test_autorun_checks.py::test_real_exports_pass_structural_checks`, `test_autorun_checks.py::test_run_ok_when_all_checks_pass`, `test_autorun_checks.py::test_run_fails_on_http_error`, `test_autorun_checks.py::test_run_polls_202_job`, `test_autorun_checks.py::test_run_fails_on_status_check_and_broken_export`, `test_autorun_checks.py::test_case1_slides_check_requires_first_two_topics`, `test_autorun_checks.py::test_case5_interview_check_requires_interview_questions` |
 | SPEC-API-31 | `test_access.py::test_approve_atomic_capacity_first_and_idempotent_job` |
 | SPEC-API-32 | `test_access.py::test_expert_view_filters_foreign_content` |
+| SPEC-API-33 | `test_spec_constraints.py::test_constraints_check_passes` |
 | SPEC-AUTH-01 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
 | SPEC-AUTH-02 | `test_auth.py::test_login_by_login_id_and_all_demo_users`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-AUTH-03 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |

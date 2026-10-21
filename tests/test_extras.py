@@ -319,7 +319,7 @@ def test_kb_docx_zip_bomb_rejected_and_normal_ok() -> None:
         parse_reference('bomb.docx', bomb.getvalue())
 
 
-def test_tool_aliases_from_registry() -> None:
+def test_tool_aliases_from_registry(monkeypatch) -> None:
     """SPEC-SKILLS-18"""
     from app.agent import extras
     from app.kb.registry import tools

@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -22,7 +23,14 @@ from app.agent.sections import build_sections
 from app.core.config import get_settings
 from app.core.db import now_iso
 from app.core.errors import Conflict, NotFound
-from app.kb.registry import find_ps, for_school, literature_for, match_source, registry
+from app.kb.registry import (
+    find_ps,
+    for_school,
+    literature_for,
+    match_source,
+    registry,
+    registry_domains,
+)
 from app.llm.client import LIMIT_MSG, CallStats, LLMUnavailable, get_llm
 from app.programs.schemas import (
     Approval,
@@ -773,12 +781,17 @@ def _sources(doc: ProgramDoc, extra: list[str]) -> None:
 
 
 async def check_source_urls(doc: ProgramDoc) -> None:
-    """Источник не из реестра, но со ссылкой: ссылка открывается — источник подтверждён по ссылке (FR-29)."""
+    """Проверка ссылок источников, которых нет в реестре (F14, аудит 19.10).
+
+    Доступность страницы — это не подтверждённость источника: подтверждение ставится,
+    только если домен ссылки есть в реестре (`registry_domains()`). Локальные и служебные
+    адреса не опрашиваются и не подтверждаются. В режиме fixtures сетевых проверок нет.
+    """
     import re
 
     if get_settings().llm_providers == 'fixtures':
         return  # режим без сети
-    todo = [(s, m.group(0).rstrip('.,;)')) for s in doc.sources if not s.confirmed and (m := re.search(r'https?://\S+', s.bibl))]
+    todo = [(s, m.group(0).rstrip('.,;)')) for s in doc.sources if not s.confirmed and (m := re.search(r'https?://\S+', s.bibl)) and not _is_local_url(m.group(0))]
     if not todo:
         return
     import httpx
@@ -794,10 +807,53 @@ async def check_source_urls(doc: ProgramDoc) -> None:
             return False
 
     results = await asyncio.gather(*(_ok(u) for _, u in todo[:8]))
-    for (src, url), ok in zip(todo, results, strict=False):
-        if ok:
-            src.confirmed, src.kind, src.url, src.checked_at = True, 'url', url, now_iso()[:10]
-            src.bibl = src.bibl.replace(' [не подтверждено]', '') + f' (ссылка проверена {src.checked_at})'
+    _apply_source_checks(doc, {u: ok for (_, u), ok in zip(todo, results, strict=False)}, registry_domains())
+
+
+# --------------------------------------------------------------------------- источники (F14)
+_LOCAL_HOST = re.compile(r'^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|::1|\[::1\])')
+
+
+def _is_local_url(url: str) -> bool:
+    """Локальные и служебные адреса не опрашиваются: ни подтверждения, ни SSRF-щупа."""
+    import re
+
+    m = re.match(r'https?://([^/\s:@]+)', url or '')
+    if not m:
+        return True
+    host = m.group(1).lower().strip('[]').removeprefix('www.')
+    return bool(_LOCAL_HOST.match(host)) or host.endswith(('.local', '.internal'))
+
+
+def _apply_source_checks(doc: ProgramDoc, results: dict[str, bool], trusted: set[str]) -> int:
+    """F14: доступность страницы ≠ подтверждённость источника.
+
+    Подтверждение ставится, только если домен ссылки входит в доверенные домены реестра;
+    иначе фиксируется лишь проверенная ссылка, а пометка «не подтверждено» сохраняется (V-16).
+    Возвращает число реально подтверждённых источников.
+    """
+    import re
+
+    n = 0
+    for s in doc.sources:
+        if s.confirmed:
+            continue
+        m = re.search(r'https?://\S+', s.bibl)
+        if not m:
+            continue
+        url = m.group(0).rstrip('.,;)')
+        if _is_local_url(url):
+            continue
+        ok = results.get(url)
+        if ok is None:
+            continue
+        host = re.match(r'https?://([^/\s]+)', url).group(1).lower().removeprefix('www.')
+        s.url, s.checked_at = url, now_iso()[:10]
+        if ok and any(host == d or host.endswith('.' + d) for d in trusted):
+            s.confirmed, s.kind = True, 'url'
+            s.bibl = s.bibl.replace(' [не подтверждено]', '') + f' (ссылка проверена {s.checked_at})'
+            n += 1
+    return n
 
 
 # --------------------------------------------------------------------------- точечная правка

@@ -65,7 +65,7 @@
 | К-12 | Выгрузка тестов в LMS (GIFT, Moodle XML или CSV) | выполнено | `test_spec_export.py::test_gift_and_moodle_xml` | |
 | К-13 | Актуализация старой программы | выполнено | `agent/extras.py:134` (scan_text), `test_extras.py::test_actualize_text_and_program` | |
 | К-14 | Адаптация под другую аудиторию или объём | выполнено | `agent/extras.py:63` (adapt), `test_extras.py::test_adapt_keeps_competencies_and_resolves_hours` | |
-| К-15 | Только модели Cloud.ru Evolution Foundation Models | выполнено | `core/config.py` (адрес `foundation-models.api.cloud.ru`, модели GigaChat), в зависимостях нет SDK зарубежных провайдеров; SDK `openai` используется только как клиент OpenAI-совместимого API | |
+| К-15 | Только модели Cloud.ru Evolution Foundation Models | выполнено | `core/config.py` (адрес `foundation-models.api.cloud.ru`, модели GigaChat), в зависимостях нет SDK зарубежных провайдеров; транспорт — собственный httpx-клиент `llm/gateway.py` к OpenAI-совместимому эндпоинту Cloud.ru (F19: документация синхронизирована, `docs/llm.md`) | |
 | К-16 | Единый API-эндпоинт для проверки | выполнено | `POST /api/v1/programs?mode=auto`, `programs/router.py (create_program)` | |
 | К-17 | Шаги агента как навыки с инструкцией | выполнено | 11 каталогов `skills/*/` с `SKILL.md`, `schema_in.json` и `schema_out.json`; выходные схемы генерируются из моделей результата (`skills/outputs.py`, `scripts/export_skill_schemas.py --check`), `test_spec_skill_schemas.py::test_schema_out_matches_models` | |
 | К-18 | Каркас до 3 мин, комплект 72 ч до 20 мин | выполнено | живой замер 21.10 на Cloud.ru ([docs/reports/quality.md](reports/quality.md)): каркас 23,2 с (≤180 с), комплект 114,5 с (≤1200 с), полный отклик 139 с; на fixtures — меньше 1 с (`test_core.py::test_open_cases_auto`); бюджеты навыков из SKILL.md (`test_spec_llm_client.py::test_budget_from_skill_md`) | |
@@ -406,7 +406,7 @@
 | T-03 | API на FastAPI, Pydantic 2 | выполнено | `requirements.txt` | |
 | T-04 | Оркестратор как конечный автомат | выполнено | `Status` в `programs/schemas.py`, переходы в `agent/workflow.py` | |
 | T-05 | Исполнитель заданий arq и Redis, без Docker встроенная очередь | частично | встроенная очередь asyncio (`programs/service.py:258`), продолжение после перезапуска | arq и Redis не используются |
-| T-06 | Слой моделей: SDK openai, повторы, резерв, учёт | выполнено | `llm/client.py`, `test_spec_llm_client.py` | |
+| T-06 | Слой моделей: httpx-клиент шлюза без сторонних SDK, повторы, резерв, учёт | выполнено | `llm/client.py`, `llm/gateway.py`, `test_spec_llm_client.py`, `test_spec_robustness.py::test_gateway_http_errors_and_no_foreign_sdk` | |
 | T-07 | База знаний PostgreSQL и pgvector, bge-m3, реранкер | частично | `kb/orgdocs.py` (JSON-хранилище, косинус по эмбеддингам шлюза) | pgvector, bge-m3 и реранкера нет |
 | T-08 | Хранилище PostgreSQL 16, SQLAlchemy 2, Alembic | частично | SQLAlchemy 2 и SQLite (`core/db.py`) | PostgreSQL и миграций Alembic нет |
 | T-09 | Разбор файлов python-docx, PyMuPDF | выполнено | `kb/files.py` | |

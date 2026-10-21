@@ -629,3 +629,28 @@ def test_question_edit_keeps_lo_links(client, kit, monkeypatch) -> None:
     res = client.portal.call(wf.edit, doc, q.id, 'Сделать вопрос проще')
     assert res['applied']
     assert next(x for x in doc.kit.questions if x.id == q.id).lo_ids == old_lo
+
+
+def test_source_url_reachability_is_not_confirmation() -> None:
+    """SPEC-FLOW-42"""
+    from types import SimpleNamespace
+
+    from app.agent.workflow import _apply_source_checks
+    from app.programs.schemas import Source
+
+    doc = SimpleNamespace(sources=[
+        Source(id='a', kind='book', bibl='Выдуманная книга про курс. https://example.com/book [не подтверждено]'),
+        Source(id='b', kind='book', bibl='Руководство из реестра. https://docs.docker.com/manual [не подтверждено]'),
+        Source(id='c', kind='book', bibl='Служебная ссылка. http://127.0.0.1:8000/secret [не подтверждено]'),
+        Source(id='d', kind='law', bibl='Уже подтверждённый акт. https://docs.docker.com/x', confirmed=True),
+    ])
+    results = {'https://example.com/book': True, 'https://docs.docker.com/manual': True}
+    n = _apply_source_checks(doc, results, {'docs.docker.com'})
+    srcs = {s.id: s for s in doc.sources}
+    assert srcs['a'].confirmed is False, 'доступная страница не подтверждает выдуманный источник'
+    assert '[не подтверждено]' in srcs['a'].bibl
+    assert srcs['a'].url.endswith('/book') and srcs['a'].checked_at, 'доступность ссылки зафиксирована'
+    assert srcs['b'].confirmed is True and 'проверена' in srcs['b'].bibl, 'доверенный домен реестра подтверждает'
+    assert srcs['c'].confirmed is False and not srcs['c'].url, 'локальные адреса не опрашиваются'
+    assert srcs['d'].confirmed is True and not srcs['d'].checked_at, 'подтверждённые не трогаются'
+    assert n == 1

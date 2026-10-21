@@ -9,7 +9,7 @@
 | `cloudru` (по умолчанию) | Рабочий режим. Модель включена, если задан ключ (`llm_enabled = providers == 'cloudru' and api_key`). |
 | `fixtures` | Без сети. `llm_enabled` = false, поэтому навыки сразу идут в резервную генерацию (регулярные выражения, библиотека каркасов, шаблонное содержание); судья не вызывается; `check_source_urls` не ходит в сеть. Отдельных «фикстурных» ответов модели в коде нет — детерминированность обеспечивают резервы навыков. |
 
-Ключ ищется в `LLM_API_KEY` или `CLOUDRU_API_KEY`; адрес — в `LLM_BASE_URL` или `CLOUDRU_BASE_URL` (по умолчанию `https://foundation-models.api.cloud.ru/v1`). Клиент `openai.AsyncOpenAI` создаётся лениво, с `timeout=llm_timeout_s` и `max_retries=0` (повторы делает сам слой). Режим провайдера можно переключать в админке (`src/app/core/runtime.py`, поле `llm_providers`).
+Ключ ищется в `LLM_API_KEY` или `CLOUDRU_API_KEY`; адрес — в `LLM_BASE_URL` или `CLOUDRU_BASE_URL` (по умолчанию `https://foundation-models.api.cloud.ru/v1`). Транспорт — собственный HTTP-клиент на httpx (`src/app/llm/gateway.py`), без SDK сторонних провайдеров: клиент создаётся лениво, с таймаутом `llm_timeout_s` и без встроенных повторов (повторы делает сам слой). Режим провайдера можно переключать в админке (`src/app/core/runtime.py`, поле `llm_providers`).
 
 ## Модели и тарифы
 

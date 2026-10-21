@@ -3,9 +3,9 @@ PY ?= python3
 export PYTHONPATH := src
 export LLM_PROVIDERS := fixtures
 
-.PHONY: check lint test trace openapi frontend e2e
+.PHONY: check lint test trace openapi constraints frontend e2e
 
-check: lint test trace openapi frontend
+check: lint test trace openapi constraints frontend
 
 lint:
 	ruff check --isolated --select F,E9,I src tests scripts
@@ -18,6 +18,9 @@ trace:
 
 openapi:
 	$(PY) scripts/export_openapi.py --check
+
+constraints:
+	$(PY) scripts/check_constraints.py
 
 frontend:
 	cd frontend && npm ci --no-audit --no-fund && npm run check

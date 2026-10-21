@@ -131,6 +131,17 @@ def norm_base_for_level(level: str, text: str = '') -> list[Source]:
     return out
 
 
+def registry_domains() -> set[str]:
+    """Домены доверенных источников реестра — литература, НПА и ФГОС (F14, аудит 19.10)."""
+    out: set[str] = set()
+    for kind in ('literature', 'npa', 'fgos'):
+        for item in registry().get(kind) or []:
+            m = re.search(r'https?://([^/\s]+)', str(item.get('url', '')))
+            if m:
+                out.add(m.group(1).lower().removeprefix('www.'))
+    return out
+
+
 def find_ps(code: str) -> dict[str, Any] | None:
     return next((p for p in registry()['ps'] if p['code'] == code), None)
 
