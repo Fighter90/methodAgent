@@ -18,3 +18,29 @@ frontend/dist/
 .coverage
 htmlcov/
 coverage.xml
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# Ключи и локальные настройки окружения
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Системные и редакторские файлы
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Артефакты e2e (Playwright)
+test-results/
+playwright-report/
+frontend/coverage/
+
+# Локальное состояние агентов (общие правила .opencode/ и opencode.json коммитятся)
+.opencode/node_modules/
+.opencode/package-lock.json
+.claude/settings.local.json
