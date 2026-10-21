@@ -101,11 +101,15 @@ async def sandbox(program_id: str, p: Principal = Depends(require('methodist', '
 
 @router.get('/programs/{program_id}/sections', summary='Текст программы по разделам шаблона АЦР в порядке выгрузки')
 async def sections(program_id: str, p: Principal = Depends(current_principal)) -> list[dict[str, Any]]:
-    from app.programs.router import _load_for
+    from app.programs.router import EXPERT_SECTIONS, _load_for
 
     doc = await _load_for(program_id, p)
     texts = doc.kit.sections or (build_sections(doc) if doc.modules else {})
-    return [{'key': k, 'title': t, 'level': lvl, 'text': '' if k in GROUP_KEYS else texts.get(k, '')} for k, t, lvl in sections_for(doc)]
+    # F03 (аудит 19.10): эксперту — только общие разделы без содержания чужих модулей
+    visible = EXPERT_SECTIONS if p.role == 'expert' else None
+    return [{'key': k, 'title': t, 'level': lvl,
+             'text': '' if k in GROUP_KEYS or (visible is not None and k not in visible) else texts.get(k, '')}
+            for k, t, lvl in sections_for(doc)]
 
 
 @router.get('/me/tasks', summary='Число задач по каждой роли пользователя для переключателя ролей (FR-63)')

@@ -23,6 +23,8 @@
 | SPEC-SVC-11 | WHEN задание создаётся и запускается, THE SYSTEM SHALL создать его в статусе `queued`, перевести в `running`, записывать прогресс и по завершении поставить `done`; незавершённые задания SHALL быть доступны для перезапуска. | NFR-08 | `test_spec_service.py::test_jobs_lifecycle` |
 | SPEC-SVC-12 | IF задание завершилось исключением, THEN THE SYSTEM SHALL поставить статус `failed` и текст ошибки (`message_ru` или имя исключения, не длиннее 2000 символов); IF задания нет, THEN THE SYSTEM SHALL не менять ничего при обновлении и бросить `NotFound` при чтении. | NFR-08 | `test_spec_service.py::test_job_failure_recorded` |
 | SPEC-SVC-13 | IF выполняется `max_parallel_jobs` заданий, THEN THE SYSTEM SHALL отклонить новое задание с `RateLimited` (429). | ТЗ, таблица 20 | `test_spec_service.py::test_check_capacity` |
+| SPEC-SVC-14 | WHEN создаётся фоновое задание через `start_job`, THE SYSTEM SHALL сначала проверить лимит параллельных заданий (429 до создания записи) и вернуть уже активное задание программы, если оно есть, не создавая новое: на программе — один активный job. | аудит 19.10 (F05) | `test_spec_service.py::test_start_job_capacity_first_and_idempotent` |
+| SPEC-SVC-15 | WHEN действие с зарезервированным заданием прервалось до его запуска, THEN `cancel_job` SHALL закрыть задание со статусом `failed`, освобождая место для следующего задания программы. | аудит 19.10 (F05) | `test_spec_service.py::test_start_job_capacity_first_and_idempotent` |
 
 ## Вне области
 

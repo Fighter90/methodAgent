@@ -25,6 +25,7 @@ from app.programs.schemas import (
     ProgramType,
     Question_,
     Slide,
+    StepError,
     Task,
 )
 from app.skills.base import skill
@@ -195,11 +196,18 @@ def _from_llm(
     questions: list[Question_] = []
     for i, q in enumerate(data.questions[:n_questions], start=1):
         default_lo = [los[(i - 1) % len(los)].id] if los else []
-        key = q.key if 0 <= q.key < len(q.options) else 0
+        if not 0 <= q.key < len(q.options):
+            # Ключ вне диапазона — дефект вопроса (F09): нулём не подменяется, а остаётся как есть,
+            # чтобы его видели V-19 и repair; методисту пишется сообщение в step_errors
+            doc.step_errors.append(StepError(
+                step='kit', skill='content', module=m.id,
+                error=f'Вопрос q{m.n}.{i}: ключ ответа ({q.key}) вне диапазона из {len(q.options)} вариантов',
+                fallback='вопрос оставлен с дефектом для проверки V-19 и repair, нужна вычитка эксперта',
+            ))
         questions.append(
             Question_(
                 id=f'q{m.n}.{i}', assessment_id=test_id, module_id=m.id, stem=q.stem.strip(),
-                options=[o.strip() for o in q.options], key=key, lo_ids=_lo_ids(q.lo, los, default_lo),
+                options=[o.strip() for o in q.options], key=q.key, lo_ids=_lo_ids(q.lo, los, default_lo),
             )
         )
     if len(questions) < n_questions:

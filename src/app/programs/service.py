@@ -217,6 +217,35 @@ async def create_job(program_id: str, kind: str) -> str:
     return job_id
 
 
+async def start_job(program_id: str, kind: str) -> tuple[str, bool]:
+    """Ёмкость и задание резервируются до изменения состояния документа (аудит 19.10, F05).
+
+    Сначала проверяется лимит параллельных заданий: 429 приходит до того, что-либо изменилось.
+    IF у программы уже есть активное задание (queued или running), THEN возвращается оно
+    (created=False) — на программе выполняется не больше одного активного задания, а повторный
+    вызов идемпотентен.
+    """
+    check_capacity()
+    async with sessionmaker()() as s:
+        row = (await s.execute(
+            select(JobRow)
+            .where(JobRow.program_id == program_id, JobRow.status.in_(('queued', 'running')))
+            .order_by(JobRow.id.desc())
+            .limit(1)
+        )).scalars().first()
+        if row is not None:
+            return row.id, False
+        job_id = new_id('job')
+        s.add(JobRow(id=job_id, program_id=program_id, kind=kind, status='queued', progress={}))
+        await s.commit()
+        return job_id, True
+
+
+async def cancel_job(job_id: str, error: str = 'Действие не выполнено: резерв задания снят') -> None:
+    """Снимает резерв задания, если действие прервалось до его запуска: задание закрывается как failed."""
+    await update_job(job_id, status='failed', error=error)
+
+
 async def update_job(job_id: str, *, status: str | None = None, progress: dict[str, Any] | None = None, error: str | None = None) -> None:
     async with sessionmaker()() as s:
         row = await s.get(JobRow, job_id)

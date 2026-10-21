@@ -199,6 +199,18 @@
       "title": "Reference Used",
       "type": "boolean"
     },
+    "reference_volume_h": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Volume H"
+    },
     "required_topics": {
       "items": {
         "type": "string"

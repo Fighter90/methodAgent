@@ -293,3 +293,27 @@ def test_skills_list_endpoint(client) -> None:
     """SPEC-API-16, SPEC-SKILLS-01"""
     r = client.get('/api/v1/skills')
     assert r.status_code == 200 and any(s['name'] == 'skeleton' for s in r.json())
+
+
+def test_kb_docx_zip_bomb_rejected_and_normal_ok() -> None:
+    """SPEC-KB-13"""
+    import io
+    import zipfile
+
+    from docx import Document as DocxDocument
+
+    from app.core.errors import BadRequest
+    from app.kb.files import parse_reference
+
+    # Обычный маленький docx разбирается
+    ok_buf = io.BytesIO()
+    DocxDocument().save(ok_buf)
+    ref = parse_reference('normal.docx', ok_buf.getvalue())
+    assert ref.name == 'normal.docx'
+
+    # DOCX, распакованное содержимое которого больше 100 МБ, отклоняется (zip-бомба)
+    bomb = io.BytesIO()
+    with zipfile.ZipFile(bomb, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('word/document.xml', b'0' * (101 * 1024 * 1024))
+    with pytest.raises(BadRequest):
+        parse_reference('bomb.docx', bomb.getvalue())

@@ -25,6 +25,7 @@
 | SPEC-SOLVER-13 | WHEN выбран вариант разрешения конфликта, THE SYSTEM SHALL пересчитать рабочие дни, недели, недельную нагрузку и расписание. | FR-18 | `test_spec_solvers.py::test_calendar_apply_option_recomputes` |
 | SPEC-SOLVER-14 | THE SYSTEM SHALL строить расписание по неделям так, что сумма часов недель равна объёму программы, а в каждой неделе ЛК + ПР + ЛБ + СРС + ИА равны часам недели. | FR-18 | `test_skeleton.py::test_calendar_kinds_and_lecture_plans` |
 | SPEC-SOLVER-15 | WHEN методист меняет часы, THE SYSTEM SHALL пересчитывать план за доли секунды без вызова модели. | NFR-05 | `test_spec_solvers.py::test_recompute_is_fast_and_offline` |
+| SPEC-SOLVER-16 | IF рабочий график требует больше рабочих дней, чем помещается в запрошенный срок (`floor(срок × дней в неделю)`), THEN THE SYSTEM SHALL зафиксировать конфликт и предложить варианты, не округляя срок в пользу прохождения проверки (допуск `ceil(срок + 0.25)` запрещён). | FR-18, аудит 19.10 (F08) | `test_spec_solvers.py::test_calendar_conflict_strict_capacity` |
 
 ## Вне области
 

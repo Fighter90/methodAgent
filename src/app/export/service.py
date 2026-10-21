@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import xml.etree.ElementTree as ET
 from typing import Any
 from xml.sax.saxutils import escape
 
@@ -405,6 +406,11 @@ def render_gift(doc: ProgramDoc) -> bytes:
     return '\n'.join(out).encode('utf-8')
 
 
+def _cdata(s: str) -> str:
+    """Текст для CDATA-секции Moodle XML: `]]>` внутри текста разрывается на две секции (SPEC-EXPORT-14)."""
+    return f'<![CDATA[{(s or "").replace("]]>", "]]]]><![CDATA[>")}]]>'
+
+
 def render_moodle_xml(doc: ProgramDoc) -> bytes:
     parts = ['<?xml version="1.0" encoding="UTF-8"?>', '<quiz>']
     for a in doc.kit.assessments:
@@ -415,13 +421,18 @@ def render_moodle_xml(doc: ProgramDoc) -> bytes:
         for i, q in enumerate(qs, 1):
             parts.append('<question type="multichoice">')
             parts.append(f'<name><text>{escape(a.id)}-{i}</text></name>')
-            parts.append(f'<questiontext format="html"><text><![CDATA[{q.stem}]]></text></questiontext>')
+            parts.append(f'<questiontext format="html"><text>{_cdata(q.stem)}</text></questiontext>')
             parts.append('<single>true</single><shuffleanswers>true</shuffleanswers>')
             for j, o in enumerate(q.options):
-                parts.append(f'<answer fraction="{100 if j == q.key else 0}"><text><![CDATA[{o}]]></text></answer>')
+                parts.append(f'<answer fraction="{100 if j == q.key else 0}"><text>{_cdata(o)}</text></answer>')
             parts.append('</question>')
     parts.append('</quiz>')
-    return '\n'.join(parts).encode('utf-8')
+    data = '\n'.join(parts).encode('utf-8')
+    try:
+        ET.fromstring(data)  # SPEC-EXPORT-14: собранный XML валидируется парсером, битый файл не отдаётся
+    except ET.ParseError as e:
+        raise BadRequest(f'Moodle XML не прошёл проверку парсером: {e}') from e
+    return data
 
 
 def kit_json(doc: ProgramDoc) -> dict[str, Any]:

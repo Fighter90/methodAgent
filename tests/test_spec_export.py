@@ -123,6 +123,23 @@ def test_gift_and_moodle_xml() -> None:
     assert qs[1].find('questiontext/text').text == 'Выберите <b>'
 
 
+def test_moodle_xml_cdata_roundtrip() -> None:
+    """SPEC-EXPORT-14: `]]>` внутри CDATA разрывается; собранный Moodle XML парсится, тексты с `]]>`, `<`, `&`, кавычками и переносами строк читаются обратно без потерь."""
+    doc = _doc()
+    stem = 'Вопрос с ]]> внутри <тега> и & "кавычками"\nвторая строка'
+    options = [']]><&\'"', 'a & b < c > d', ']][[ — не конец секции', 'вариант\nс переносом']
+    doc.kit.questions[0].stem = stem
+    doc.kit.questions[0].options = options
+    doc.kit.questions[0].key = 3
+    data = export.render_moodle_xml(doc)
+    root = ET.fromstring(data)  # битый XML упал бы с ParseError
+    q = root.findall("question[@type='multichoice']")[0]
+    assert q.findtext('questiontext/text') == stem
+    answers = q.findall('answer')
+    assert [a.findtext('text') for a in answers] == options
+    assert [a.get('fraction') for a in answers].index('100') == 3
+
+
 def test_pptx_16x9_and_fallback() -> None:
     """SPEC-EXPORT-06: pptx 16:9 со слайдами лекций; без слайдов — слайд «Структура программы»."""
     from pptx import Presentation

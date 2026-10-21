@@ -97,6 +97,7 @@ class Params(BaseModel):
     customer_expectation: str = ''
     materials: Materials = Field(default_factory=Materials)
     reference_used: bool = False
+    reference_volume_h: int | None = None  # часы из упоминания образца/референса — не объём новой программы (F07)
     reference_structure_only: bool = True
     ps_hint: str = ''
 

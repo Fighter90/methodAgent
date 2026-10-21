@@ -177,3 +177,100 @@ describe('справочники ролей и статусов', () => {
     }
   })
 })
+
+describe('устойчивость к обрывам сети', () => {
+  it('SPEC-UI-09: GET повторяется при сетевом сбое и завершается успехом', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi.spyOn(globalThis, 'fetch')
+        .mockRejectedValueOnce(new Error('обрыв 1'))
+        .mockRejectedValueOnce(new Error('обрыв 2'))
+        .mockResolvedValueOnce(jsonResponse({ ok: 1 }))
+      const p = api('/programs')
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(await p).toEqual({ ok: 1 })
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('SPEC-UI-09: POST не повторяется — сразу понятная ошибка', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('обрыв'))
+      await expect(api('/programs', { method: 'POST', json: {} })).rejects.toThrow('Повторите действие')
+      // POST не повторяется: ровно один запрос к /programs (второй вызов — probe /health из offline-детектора)
+      expect(fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/programs')).length).toBe(1)
+      // восстанавливаем watcher: следующий probe успешен, ma:online снимает слежение
+      fetchMock.mockResolvedValue(jsonResponse({ status: 'ok' }))
+      await vi.advanceTimersByTimeAsync(4000)
+    } finally {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('SPEC-UI-10: при недоступности сервера приходит ma:offline, при восстановлении — ma:online', async () => {
+    vi.useFakeTimers()
+    const events: string[] = []
+    const on = (e: Event) => events.push(e.type)
+    window.addEventListener('ma:offline', on)
+    window.addEventListener('ma:online', on)
+    try {
+      let healthOk = false
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        if (String(url).includes('/health')) return healthOk ? jsonResponse({ status: 'ok' }) : Promise.reject(new Error('down'))
+        return Promise.reject(new Error('net'))
+      })
+      const p = api('/programs').catch((e) => e)
+      await vi.advanceTimersByTimeAsync(7000) // три повтора + probe
+      await p
+      expect(events).toEqual(['ma:offline'])
+      healthOk = true
+      await vi.advanceTimersByTimeAsync(4000) // watcher опрашивает раз в 3 с
+      expect(events).toEqual(['ma:offline', 'ma:online'])
+    } finally {
+      window.removeEventListener('ma:offline', on)
+      window.removeEventListener('ma:online', on)
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    }
+  })
+})
+
+describe('опрос задания', () => {
+  it('SPEC-UI-19: waitJob опрашивает /jobs/{id} до done и передаёт прогресс', async () => {
+    vi.useFakeTimers()
+    try {
+      const seen: any[] = []
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(jsonResponse({ status: 'running', progress: 30 }))
+        .mockResolvedValueOnce(jsonResponse({ status: 'running', progress: 70 }))
+        .mockResolvedValueOnce(jsonResponse({ status: 'done', result: { x: 1 } }))
+      const p = waitJob('j1', (p) => seen.push(p))
+      await vi.advanceTimersByTimeAsync(3000)
+      const res = await p
+      expect(res.status).toBe('done')
+      expect(seen).toEqual([30, 70, undefined])
+    } finally {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    }
+  })
+})
+
+describe('справочники ролей и статусов', () => {
+  it('SPEC-UI-14: метки ролей и матрица прав заполнены', () => {
+    expect(ROLE_LABEL.methodist).toBe('методист')
+    expect(Object.keys(ROLE_CAN).sort()).toEqual(['admin', 'api', 'expert', 'head', 'methodist'])
+    expect(ROLE_CAN.expert.cannot.length).toBeGreaterThan(0)
+  })
+
+  it('SPEC-UI-15: STATUS_LABEL покрывает статусы жизненного цикла', () => {
+    for (const s of ['draft', 'questions', 'skeleton', 'skeleton_approved', 'generating', 'kit_ready', 'on_review', 'on_approval', 'approved', 'returned']) {
+      expect(STATUS_LABEL[s]).toBeTruthy()
+    }
+  })
+})

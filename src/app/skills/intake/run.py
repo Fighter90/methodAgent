@@ -94,7 +94,9 @@ def parse_numbers(text: str) -> Params:
     if m:
         p.final_assessment_hours = int(_num(m.group(1)) or 0) or None
 
-    # Объём: числа с «час», исключая нагрузку в день/неделю, «по N часа» и часы ИА
+    # Объём: числа с «час», исключая нагрузку в день/неделю, «по N часа», часы ИА
+    # и числа из упоминаний образца/референса (F07: «36 часов по образцу 248 часов» — объём 36, а не 248)
+    _REF_MARK = re.compile(r'(стар\w+|прошл\w+|образц\w*|референс\w*|пример\w*|возьмите)[^.;!?,\n]{0,60}$')
     candidates = []
     for mm in re.finditer(_N + r'[\s-]*(?:академическ\w+\s+|астрономическ\w+\s+)?(?:час|ч\b)', low):
         start, end = mm.span()
@@ -106,6 +108,9 @@ def parse_numbers(text: str) -> Params:
             continue
         val = _num(mm.group(1))
         if val:
+            if _REF_MARK.search(low[max(0, start - 70) : start]):
+                p.reference_volume_h = int(val)
+                continue
             candidates.append(int(val))
     if candidates:
         p.volume_h = max(candidates)

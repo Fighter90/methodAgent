@@ -194,3 +194,135 @@ def test_unassigned_expert_cannot_accept_and_api_404(client, kit) -> None:
     r = client.get('/api/v1/no-such-method')
     assert r.status_code == 404 and r.headers['content-type'].startswith('application/json')
     assert client.get('/api/v1/health').json()['status'] == 'ok'
+
+
+def test_expert_node_must_belong_to_own_module(client, kit) -> None:
+    """SPEC-AUTH-30: подмена node_id чужого задания отвергается на каждом пути эксперта —
+    в комментарии, в запросе предложения агенту и в применении правки; чужой модуль не меняется."""
+    hm, he = _h(client, 'u-madina'), _h(client, 'u-timur')
+    doc = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
+    version_before = doc['version']
+    m1 = next(m['id'] for m in doc['modules'] if m['expert_id'] == 'u-timur')
+    foreign = next(q for q in doc['kit']['questions'] if q['module_id'] != m1)
+    own_q = next(q for q in doc['kit']['questions'] if q['module_id'] == m1)
+    # 1) комментарий со своим module_id и чужим node_id — 403, в том числе с запросом правки агенту
+    r = client.post(f'/api/v1/programs/{kit}/comments', json={'module_id': m1, 'text': 'Правка чужого', 'node_id': foreign['id']}, headers=he)
+    assert r.status_code == 403, r.text
+    r = client.post(f'/api/v1/programs/{kit}/comments', json={'module_id': m1, 'text': 'Правка чужого', 'node_id': foreign['id'], 'ask_agent': True}, headers=he)
+    assert r.status_code == 403, r.text
+    # 2) комментарий к своему вопросу работает
+    r = client.post(f'/api/v1/programs/{kit}/comments', json={'module_id': m1, 'text': 'Уточните формулировку', 'node_id': own_q['id']}, headers=he)
+    assert r.status_code == 200, r.text
+    # 3) применение правки по чужому node_id: комментарий методиста с чужим узлом не даёт эксперту править чужой модуль
+    r = client.post(f'/api/v1/programs/{kit}/comments', json={'module_id': m1, 'text': 'Внедрить чужое', 'node_id': foreign['id'], 'ask_agent': True}, headers=hm)
+    assert r.status_code == 200, r.text
+    cid = r.json()['comment']['id']
+    r = client.post(f'/api/v1/programs/{kit}/comments/answer', json={'comment_id': cid, 'apply_proposal': True}, headers=he)
+    assert r.status_code == 403, r.text
+    after = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
+    fq = next(q for q in after['kit']['questions'] if q['id'] == foreign['id'])
+    assert fq['stem'] == foreign['stem'] and fq['options'] == foreign['options']  # чужое задание не изменилось
+    assert after['version'] == version_before  # версия комплекта не менялась правками эксперта
+
+
+def test_expert_view_filters_foreign_content(client, kit) -> None:
+    """SPEC-API-32, SPEC-AUTH-08: во всех ответах эксперту (GET программы, разделы, приёмка элемента,
+    точечная правка) нет чужих модулей и общих текстов с их содержанием; методисту — всё как раньше."""
+    import json as _json
+
+    hm, he = _h(client, 'u-madina'), _h(client, 'u-timur')
+    full = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
+    m1 = next(m['id'] for m in full['modules'] if m['expert_id'] == 'u-timur')
+    foreign_m = next(m for m in full['modules'] if m['id'] != m1)
+    marker_q = next(q for q in full['kit']['questions'] if q['module_id'] != m1)['stem']  # уникальная метка чужого комплекта
+    marker_topic = foreign_m['topics'][0]['title']  # метка чужой темы в общих текстах
+
+    mine = client.get(f'/api/v1/programs/{kit}', headers=he)
+    assert mine.status_code == 200
+    data = mine.json()
+    assert {m['id'] for m in data['modules']} == {m1}
+    assert marker_q not in _json.dumps(data, ensure_ascii=False)
+    assert marker_topic not in _json.dumps(data, ensure_ascii=False)  # и в календарном расписании тоже
+    assert not (data['kit']['sections'].get('annotation') or data['kit']['sections'].get('content'))
+
+    secs = client.get(f'/api/v1/programs/{kit}/sections', headers=he).json()
+    texts = {s['key']: s['text'] for s in secs}
+    assert not texts.get('annotation') and not texts.get('content')
+    assert marker_topic not in ' '.join(texts.values())
+    secs_m = client.get(f'/api/v1/programs/{kit}/sections', headers=hm).json()
+    assert marker_topic in ' '.join(s['text'] for s in secs_m)  # методисту тексты остаются
+
+    review = next(r for r in client.get('/api/v1/reviews', headers=he).json() if r['module_id'] == m1)
+    own_item = next(q['id'] for q in data['kit']['questions'] if q['module_id'] == m1)
+    r = client.post(f'/api/v1/reviews/{review["rid"]}/decision', json={'decision': 'accept_item', 'node_id': own_item}, headers=he)
+    assert r.status_code == 200, r.text
+    assert marker_q not in r.text and marker_topic not in r.text
+
+    own_q = next(q for q in data['kit']['questions'] if q['module_id'] == m1)
+    r = client.post(f'/api/v1/programs/{kit}/edits', json={'target': own_q['id'], 'instruction': 'уточнить формулировку', 'dry_run': True}, headers=he)
+    assert r.status_code == 200, r.text
+    assert marker_q not in r.text
+
+    # правка по замечанию: комментарий эксперта к своему вопросу, применение — ответ без чужого содержания
+    r = client.post(f'/api/v1/programs/{kit}/comments', json={'module_id': m1, 'text': 'Поправьте формулировку', 'node_id': own_q['id'], 'ask_agent': True}, headers=he)
+    assert r.status_code == 200, r.text
+    cid = r.json()['comment']['id']
+    r = client.post(f'/api/v1/programs/{kit}/comments/answer', json={'comment_id': cid, 'apply_proposal': True}, headers=he)
+    assert r.status_code == 200, r.text
+    assert marker_q not in r.text and marker_topic not in r.text
+
+
+def test_approve_atomic_capacity_first_and_idempotent_job(client, monkeypatch) -> None:
+    """SPEC-API-31, SPEC-SVC-14: утверждение каркаса резервирует ёмкость и задание до изменения состояния:
+    при 429 каркас остаётся в предыдущем состоянии, повторное утверждение возвращает то же активное задание."""
+    import asyncio
+
+    from app.agent import workflow as wf
+    from app.core.config import get_settings
+    from app.programs import service as svc
+    from app.skills.clarify.run import DEFAULT_ANSWER
+
+    h = _h(client, 'u-madina')
+    r = client.post('/api/v1/programs', json={'request': REQ}, headers=h)
+    body = r.json()
+    assert r.status_code == 200, r.text
+    pid = body['program_id']
+    if body.get('needs_answers'):
+        ans = {q['id']: DEFAULT_ANSWER for q in body['questions']}
+        r = client.post(f'/api/v1/programs/{pid}/answers?wait=true', json={'answers': ans}, headers=h)
+        assert r.status_code == 200, r.text
+    assert client.get(f'/api/v1/programs/{pid}', headers=h).json()['status'] == 'skeleton'
+    # снимаем пункты «!», чтобы утверждение было доступно (как auto-approve в автопрогоне)
+    rep = client.get(f'/api/v1/programs/{pid}/report', headers=h).json()
+    for pr in [p for p in rep.get('proposals', []) if not p.get('decided')]:
+        client.post(f'/api/v1/programs/{pid}/skeleton/decisions',
+                    json={'rule_id': pr['rule_id'], 'decision': 'accept', 'node': pr.get('node', ''),
+                          'proposal': pr.get('proposal', ''), 'option_id': pr.get('option_id', '')}, headers=h)
+    # 1) исчерпанная ёмкость: 429 приходит до изменения состояния каркаса
+    limit = get_settings().max_parallel_jobs
+    monkeypatch.setattr(svc, '_tasks', {object() for _ in range(limit)})
+    r = client.post(f'/api/v1/programs/{pid}/skeleton/approve', json={'decision': 'approve'}, headers=h)
+    assert r.status_code == 429, r.text
+    assert client.get(f'/api/v1/programs/{pid}', headers=h).json()['status'] == 'skeleton'
+    # 2) двойное утверждение: задание одно, повтор возвращает тот же job_id (идемпотентность)
+    real_gen = wf.generate_kit
+
+    async def slow_gen(doc, progress=None):
+        await asyncio.sleep(0.4)  # задание остаётся активным на время второго запроса
+        return await real_gen(doc, progress)
+
+    monkeypatch.setattr(svc, '_tasks', set())
+    monkeypatch.setattr(wf, 'generate_kit', slow_gen)
+    r1 = client.post(f'/api/v1/programs/{pid}/skeleton/approve', json={'decision': 'approve'}, headers=h)
+    assert r1.status_code == 202, r1.text
+    job1 = r1.json()['job_id']
+    r2 = client.post(f'/api/v1/programs/{pid}/skeleton/approve', json={'decision': 'approve'}, headers=h)
+    assert r2.status_code == 202, r2.text
+    assert r2.json()['job_id'] == job1
+    for _ in range(200):
+        info = client.get(f'/api/v1/jobs/{job1}', headers=h).json()
+        if info['status'] in ('done', 'failed'):
+            break
+        time.sleep(0.05)
+    assert info['status'] == 'done', info
+    assert client.get(f'/api/v1/programs/{pid}', headers=h).json()['status'] == 'kit_ready'

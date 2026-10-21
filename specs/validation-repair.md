@@ -11,7 +11,7 @@
 | ID | Требование | Источник | Тест |
 |---|---|---|---|
 | SPEC-REPAIR-01 | IF среди результатов правил нет статуса `fail`, THEN THE SYSTEM SHALL оставить документ без изменений и вернуть пустой журнал. | FR-34 | `test_spec_repair.py::test_no_failed_rules_no_changes` |
-| SPEC-REPAIR-02 | WHEN V-19 не пройдено, THE SYSTEM SHALL убрать повторяющиеся (после обрезки пробелов) варианты ответа, добрать список до 4 вариантов «Другой вариант N», заменить ключ вне диапазона на 0 и записать каждое исправление в журнал. | FR-34, FR-26 | `test_spec_repair.py::test_v19_duplicates_removed_and_key_fixed` |
+| SPEC-REPAIR-02 | WHEN V-19 не пройдено, THE SYSTEM SHALL убрать повторяющиеся (после обрезки пробелов) варианты ответа и добрать список до 4 вариантов «Другой вариант N»; ключ вне диапазона нулём не подменяется — вопрос помечается для вычитки эксперта (SPEC-REPAIR-17), каждое действие записывается в журнал. | FR-34, FR-26, аудит 19.10 | `test_spec_repair.py::test_v19_duplicates_removed_and_key_fixed` |
 | SPEC-REPAIR-03 | WHEN V-19 убирает повторы вариантов, THE SYSTEM SHALL сохранить ключ на том же тексте верного ответа. | FR-26 | `test_spec_repair.py::test_v19_key_keeps_correct_answer` (xfail) |
 | SPEC-REPAIR-04 | WHEN V-18 не пройдено, THE SYSTEM SHALL заменить критерии задания без критериев или с баллами ≤ 0 рубрикой из трёх критериев 4 + 4 + 2 балла, не трогая корректные задания. | FR-27 | `test_spec_repair.py::test_v18_rubric_added` |
 | SPEC-REPAIR-05 | WHEN V-14 не пройдено, THE SYSTEM SHALL удалить ссылки на несуществующие РО и привязать задание без валидных РО к РО его темы, а вопрос — к одному из РО его модуля. | FR-34 | `test_spec_repair.py::test_v14_bindings_to_existing_outcomes` |
@@ -26,6 +26,8 @@
 | SPEC-REPAIR-14 | IF текста референса нет, THEN THE SYSTEM SHALL ничего не удалять по V-17. | код | `test_spec_repair.py::test_v17_without_reference_noop` |
 | SPEC-REPAIR-15 | WHEN V-08 или V-11 не пройдено, THE SYSTEM SHALL пересобрать разделы шаблона из графа программы, оставив реквизиты и ФИО полями. | FR-25, NFR-11 | `test_spec_repair.py::test_v08_v11_sections_rebuilt` |
 | SPEC-REPAIR-16 | WHEN V-16 не пройдено, THE SYSTEM SHALL пометить каждый неподтверждённый источник «[не подтверждено]» ровно один раз и не менять подтверждённые. | FR-29 | `test_spec_repair.py::test_v16_unconfirmed_sources_marked_once` |
+| SPEC-REPAIR-17 | WHEN V-19 не пройдено и ключ вопроса вне диапазона, THE SYSTEM SHALL восстановить ключ только по однозначной текстовой метке верного ответа в вопросе; IF метки нет или по ней находится не ровно один вариант, THEN THE SYSTEM SHALL оставить ключ вне диапазона и записать в журнал сообщение о необходимости вычитки, не подставляя 0. | аудит 19.10 | `test_spec_repair.py::test_v19_key_restored_by_text_only` |
+| SPEC-REPAIR-18 | WHEN V-13 добавляет РО заданию (итоговой аттестации или семинару), THE SYSTEM SHALL одновременно дополнить формулировку и критерии задания под этот РО; IF РО не найден в программе, THEN THE SYSTEM SHALL не менять lo_ids и записать, что покрытие требует эксперта. | аудит 19.10 | `test_spec_repair.py::test_v13_final_task_text_extended_for_added_lo`, `test_spec_repair.py::test_v13_seminar_task_text_extended_for_added_lo` |
 
 ## Известные расхождения
 
@@ -33,6 +35,8 @@
 
 - SPEC-REPAIR-03: при V-19 ключ пересчитывается по тексту верного ответа после удаления повторов.
 - SPEC-REPAIR-06: при V-14 индекс РО считается через `zlib.crc32(q.id)`, результат одинаков в любом процессе.
+
+По аудиту 19.10 (MET-31/MET-32) уточнены SPEC-REPAIR-02 и добавлены SPEC-REPAIR-17 (ключ вне диапазона больше не подменяется нулём) и SPEC-REPAIR-18 (добавление РО заданию сопровождается правкой формулировки и критериев).
 
 ## Вне области
 

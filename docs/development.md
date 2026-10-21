@@ -61,7 +61,7 @@ PYTHONPATH=src pytest -q --cov=src/app --cov-report=term
 3. Пишется или правится код, пока тест не станет зелёным.
 4. `python scripts/spec_trace.py` показывает требования без тестов и падает с кодом 1, если тест ссылается на несуществующий идентификатор. `--markdown` перегенерирует сводную таблицу в `specs/README.md`.
 
-Сейчас 257 требований в 16 спецификациях, 236 из них проверяются тестами. Без автотестов только требования к интерфейсу (`specs/frontend.md`) и SPEC-KB-13. Подробности процесса — в [`specs/README.md`](../specs/README.md).
+Сейчас 300+ требований в 17 спецификациях; трассировка — `python scripts/spec_trace.py --markdown`. Требования интерфейса (`specs/frontend.md`) проверяются vitest-тестами (`frontend/src/__tests__/api.test.ts`) и браузерным прогоном `e2e/ui_roles.spec.cjs`; без автотестов остались SPEC-UI-11, -13, -16, -17, -18, -20. Подробности процесса — в [`specs/README.md`](../specs/README.md).
 
 ## Линтер
 

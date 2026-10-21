@@ -233,3 +233,29 @@ def test_check_capacity(monkeypatch) -> None:
     monkeypatch.setattr(svc, '_tasks', fake)
     with pytest.raises(RateLimited):
         svc.check_capacity()
+
+
+async def test_start_job_capacity_first_and_idempotent(store, monkeypatch) -> None:
+    """SPEC-SVC-14, SPEC-SVC-15: ёмкость проверяется до создания задания (429 не оставляет записей),
+    повторный вызов возвращает то же активное задание программы, cancel_job снимает резерв."""
+    from app.core.config import get_settings
+
+    limit = get_settings().max_parallel_jobs
+    monkeypatch.setattr(svc, '_tasks', {object() for _ in range(limit)})
+    with pytest.raises(RateLimited):
+        await svc.start_job('p-1', 'kit')
+    assert await svc.unfinished_jobs() == []  # 429 пришёл до изменения состояния: заданий нет
+
+    monkeypatch.setattr(svc, '_tasks', set())
+    j1, created = await svc.start_job('p-1', 'kit')
+    assert created
+    j2, created = await svc.start_job('p-1', 'kit')
+    assert not created and j1 == j2  # один активный job на программу (идемпотентность)
+    assert (await svc.get_job(j1))['status'] == 'queued'
+    other, created = await svc.start_job('p-2', 'kit')
+    assert created and other != j1  # другая программа — своё задание
+
+    await svc.cancel_job(j1, 'утверждение не состоялось')
+    assert (await svc.get_job(j1))['status'] == 'failed'
+    j3, created = await svc.start_job('p-1', 'kit')
+    assert created and j3 != j1  # резерв снят — задание можно создать снова

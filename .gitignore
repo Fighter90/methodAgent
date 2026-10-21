@@ -1,46 +1,67 @@
+# Python
 .venv/
 venv/
 __pycache__/
-*.pyc
-.env
-ai.env
-logs/*.log
-logs/autorun/
-data/runtime/
-.idea/
-.vscode/
-node_modules/
-frontend/node_modules/
-.pytest_cache/
-.ruff_cache/
-.hypothesis/
-frontend/dist/
-.coverage
-htmlcov/
-coverage.xml
-.mypy_cache/
+*.py[cod]
 *.egg-info/
 build/
 dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
-# Ключи и локальные настройки окружения
+# Frontend
+node_modules/
+frontend/dist/
+frontend/coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# Секреты и локальное окружение (шаблон .env.example хранится в git)
+.env
 .env.*
 !.env.example
+ai.env
+.tochka.env
 *.pem
 *.key
 
-# Системные и редакторские файлы
+# Данные и логи стенда
+data/runtime/
+logs/*.log
+logs/autorun/
+*.log
+
+# Поставки и временные архивы
+*.b64.txt
+*.tar.xz
+*.tar.gz
+*.zip
+tmp/
+
+# macOS
 .DS_Store
-Thumbs.db
+._*
+.AppleDouble
+.Spotlight-V100
+.Trashes
+
+# Редакторы
+.idea/
+.vscode/
 *.swp
 *~
 
-# Артефакты e2e (Playwright)
-test-results/
-playwright-report/
-frontend/coverage/
-
-# Локальное состояние агентов (общие правила .opencode/ и opencode.json коммитятся)
+# Агенты: общие настройки (AGENTS.md, opencode.json, .opencode/commands, .opencode/agents) в git, локальное — нет
 .opencode/node_modules/
+.opencode/package.json
+.opencode/bun.lock
 .opencode/package-lock.json
 .claude/settings.local.json

@@ -120,7 +120,10 @@ def test_expert_comment_proposal_needs_expert_confirmation(client) -> None:
     r = client.post(f'/api/v1/programs/{pid}/comments/answer', json={'comment_id': c['id'], 'apply_proposal': True}, headers=he)
     assert r.status_code == 200 and r.json()['comment']['status'] == 'applied'
     after = r.json()['program']
-    assert [m['hours'] for m in after['modules']] == [m['hours'] for m in before['modules']]
+    # SPEC-API-32 (аудит F03): ответ эксперту отфильтрован — только его модуль; часы всех модулей сверяем по виду методиста
+    assert [m['id'] for m in after['modules']] == [m1]
+    full_after = client.get(f'/api/v1/programs/{pid}', headers=hm).json()
+    assert [m['hours'] for m in full_after['modules']] == [m['hours'] for m in before['modules']]
     assert [c2['indicators'] for c2 in after['competencies']] == [c2['indicators'] for c2 in before['competencies']]
 
 

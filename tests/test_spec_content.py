@@ -135,15 +135,28 @@ LLM_DATA = {
 
 
 async def test_llm_content_mapped(monkeypatch) -> None:
-    """SPEC-CONTENT-06: ответ модели переводится в комплект: source=llm, ключ вне диапазона → 0, коды РО → id (иначе по кругу), недостающие вопросы добираются шаблоном."""
+    """SPEC-CONTENT-06, SPEC-CONTENT-14: ответ модели переводится в комплект: source=llm, ключ вне диапазона сохраняется как видимый дефект (не 0), коды РО → id (иначе по кругу), недостающие вопросы добираются шаблоном."""
     mc = await _run(monkeypatch, FakeLLM(LLM_DATA), n=4)
     assert mc.source == 'llm'
     assert mc.program.annotation == 'Модуль «Основы Python».'
     assert [c['text'] for c in mc.program.content] == ['Текст про циклы', 'Аргументы']
     q1, q2, *rest = mc.questions
-    assert q1.stem == 'Что делает for?' and q1.options[0] == 'перебирает' and q1.key == 0 and q1.lo_ids == ['lo1']
+    assert q1.stem == 'Что делает for?' and q1.options[0] == 'перебирает' and q1.lo_ids == ['lo1']
+    assert q1.key == 9 and not 0 <= q1.key < len(q1.options)  # дефект не маскируется нулём — его видят V-19 и repair
     assert q2.lo_ids == ['lo2']
     assert len(mc.questions) == 4 and [q.id for q in mc.questions] == ['q1.1', 'q1.2', 'q1.3', 'q1.4'] and len(rest) == 2
+
+
+async def test_llm_invalid_key_not_zeroed(monkeypatch) -> None:
+    """SPEC-CONTENT-14: IF модель вернула ключ ответа вне диапазона вариантов, THEN THE SYSTEM SHALL не подставлять 0: вопрос остаётся с этим ключом как с видимым дефектом (его ловят V-19 и repair), а в doc.step_errors пишется сообщение о вычитке."""
+    doc = _doc()
+    data = {'questions': [{'stem': 'Сколько будет 2+2?', 'options': ['3', '4', '5'], 'key': 99}]}
+    mc = await _run(monkeypatch, FakeLLM(data), doc=doc, n=1)
+    q = mc.questions[0]
+    assert q.id == 'q1.1' and q.key == 99 and not 0 <= q.key < len(q.options)
+    assert [e.skill for e in doc.step_errors if e.step == 'kit' and e.module == 'm1'] == ['content']
+    msg = doc.step_errors[-1].error
+    assert 'q1.1' in msg and '99' in msg and 'из 3 вариантов' in msg
 
 
 async def test_llm_tasks_criteria(monkeypatch) -> None:

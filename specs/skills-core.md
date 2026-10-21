@@ -26,6 +26,7 @@
 | SPEC-SKILLS-14 | THE SYSTEM SHALL связывать каждый РО хотя бы с одной темой и каждую тему хотя бы с одним РО. | FR-34 | `test_spec_misc.py::test_link_outcomes_both_ways` |
 | SPEC-SKILLS-15 | WHEN в запросе есть сокращения «ДООП», «ДПП», «ПК», «ПП» или аудитория-дети («школьники», «подростки», «N класс», возраст до 17 лет), THE SYSTEM SHALL определять тип программы без модели: ДООП для детей и «ДООП», ДПП ПК для «ДПП», «ПК», «ПП»; IF ни одного признака нет, THEN тип остаётся пустым и агент задаёт вопрос. | FR-06 | `test_spec_type_detect.py::test_type_from_abbreviations_and_audience` |
 | SPEC-SKILLS-16 | THE SYSTEM SHALL хранить у каждого навыка `schema_out.json`, на который ссылается его SKILL.md, сгенерированный из типа результата навыка (`skills/outputs.py`) и совпадающий с ним (`scripts/export_skill_schemas.py --check`). | К-17, Н-12 | `test_spec_skill_schemas.py::test_schema_out_matches_models`, `test_spec_skill_schemas.py::test_export_script_check` |
+| SPEC-SKILLS-17 | WHEN в запросе упомянуты часы образца или референса («по образцу 248 часов», «прошлую программу на 248 часов»), THE SYSTEM SHALL не считать их объёмом новой программы: объём берётся из собственного числа запроса, часы образца сохраняются в `reference_volume_h`. | аудит 19.10 (F07) | `test_core.py::test_intake_reference_volume_not_program_volume` |
 
 ## Вне области
 

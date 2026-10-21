@@ -12,27 +12,27 @@
 
 | ID | Требование | Источник | Тест |
 |---|---|---|---|
-| SPEC-UI-01 | THE SYSTEM SHALL обслуживать маршруты `/`, `/auth`, `/help`, `/app`, `/app/reviews`, `/app/kb`, `/app/admin`, `/app/me`, `/app/p/:id`, перенаправлять `/login` и `/signin` на `/auth`, `/register` — на `/auth?mode=register`, остальные — на `/`. | код | — |
-| SPEC-UI-02 | IF сессии нет, THEN THE SYSTEM SHALL перенаправлять любой маршрут `/app/*` на `/auth`. | NFR-10 | — |
-| SPEC-UI-03 | WHILE активная роль — `admin`, THE SYSTEM SHALL перенаправлять с `/app`, `/app/p/...`, `/app/reviews` на `/app/admin`; IF не-администратор открывает `/app/admin`, THEN THE SYSTEM SHALL перенаправить его на `/app`. | Доп. (табл. 19) | — |
-| SPEC-UI-04 | THE SYSTEM SHALL показывать пункты меню по роли: «Программы» — всем, кроме admin; «Вычитка» — expert; «База знаний» — admin, methodist, head; «Администрирование» — admin; «Справка» — всем. | FR-63, Доп. | — |
-| SPEC-UI-05 | WHEN пользователь вошёл, THE SYSTEM SHALL открыть эксперту `/app/reviews`, администратору — `/app/admin`, остальным — `/app`. | код | — |
-| SPEC-UI-06 | THE SYSTEM SHALL передавать токен сессии в заголовке `X-MA-Token` (в том числе при скачивании выгрузки), а не в `Authorization`. | код | — |
-| SPEC-UI-07 | THE SYSTEM SHALL хранить сессию в `localStorage` под ключом `ma.session` и продолжать работу, если хранилище недоступно. | код | — |
+| SPEC-UI-01 | THE SYSTEM SHALL обслуживать маршруты `/`, `/auth`, `/help`, `/app`, `/app/reviews`, `/app/kb`, `/app/admin`, `/app/me`, `/app/p/:id`, перенаправлять `/login` и `/signin` на `/auth`, `/register` — на `/auth?mode=register`, остальные — на `/`. | код | `e2e/ui_roles.spec.cjs` (браузерный прогон ролей) |
+| SPEC-UI-02 | IF сессии нет, THEN THE SYSTEM SHALL перенаправлять любой маршрут `/app/*` на `/auth`. | NFR-10 | `e2e/ui_roles.spec.cjs` («после выхода /app → /auth») |
+| SPEC-UI-03 | WHILE активная роль — `admin`, THE SYSTEM SHALL перенаправлять с `/app`, `/app/p/...`, `/app/reviews` на `/app/admin`; IF не-администратор открывает `/app/admin`, THEN THE SYSTEM SHALL перенаправить его на `/app`. | Доп. (табл. 19) | `e2e/ui_roles.spec.cjs` (редиректы админа и не-админов) |
+| SPEC-UI-04 | THE SYSTEM SHALL показывать пункты меню по роли: «Программы» — всем, кроме admin; «Вычитка» — expert; «База знаний» — admin, methodist, head; «Администрирование» — admin; «Справка» — всем. | FR-63, Доп. | `e2e/ui_roles.spec.cjs` (меню по ролям) |
+| SPEC-UI-05 | WHEN пользователь вошёл, THE SYSTEM SHALL открыть эксперту `/app/reviews`, администратору — `/app/admin`, остальным — `/app`. | код | `e2e/ui_roles.spec.cjs` (стартовые экраны ролей) |
+| SPEC-UI-06 | THE SYSTEM SHALL передавать токен сессии в заголовке `X-MA-Token` (в том числе при скачивании выгрузки), а не в `Authorization`. | код | `frontend/src/__tests__/api.test.ts` (X-MA-Token) |
+| SPEC-UI-07 | THE SYSTEM SHALL хранить сессию в `localStorage` под ключом `ma.session` и продолжать работу, если хранилище недоступно. | код | `frontend/src/__tests__/api.test.ts` (сессия в localStorage) |
 | SPEC-UI-08 | IF сервер ответил 401 при активной сессии, THEN THE SYSTEM SHALL один раз обменять сохранённый `refresh_token` на новую пару (`POST /auth/refresh`) и повторить запрос; IF токена обновления нет или обмен не удался, THEN удалить сессию и перейти на `/auth?expired=1`. | NFR-10, T-17 | `frontend/src/__tests__/api.test.ts` (vitest) |
-| SPEC-UI-09 | IF безопасный запрос (GET, HEAD) не дошёл из-за сети, THEN THE SYSTEM SHALL повторить его до 3 раз с паузами 1, 2 и 3 с, а затем проверить `/api/v1/health`. | NFR-08 | — |
-| SPEC-UI-10 | IF проверка показала, что истекла сессия хаба, THEN THE SYSTEM SHALL перезагрузить страницу через вход хаба не чаще раза в минуту; IF сервер недоступен, THEN THE SYSTEM SHALL послать событие `ma:offline` и опрашивать сервер каждые 3 с до восстановления (`ma:online`). | NFR-08 | — |
+| SPEC-UI-09 | IF безопасный запрос (GET, HEAD) не дошёл из-за сети, THEN THE SYSTEM SHALL повторить его до 3 раз с паузами 1, 2 и 3 с, а затем проверить `/api/v1/health`. | NFR-08 | `frontend/src/__tests__/api.test.ts` (повторы GET, POST без повторов) |
+| SPEC-UI-10 | IF проверка показала, что истекла сессия хаба, THEN THE SYSTEM SHALL перезагрузить страницу через вход хаба не чаще раза в минуту; IF сервер недоступен, THEN THE SYSTEM SHALL послать событие `ma:offline` и опрашивать сервер каждые 3 с до восстановления (`ma:online`). | NFR-08 | `frontend/src/__tests__/api.test.ts` (ma:offline/ma:online; перезагрузка хаба — вручную) |
 | SPEC-UI-11 | WHEN приходит `ma:offline`, THE SYSTEM SHALL показать тост «Сервер временно недоступен…» не чаще раза в 20 с; WHEN приходит `ma:online` — тост «Связь с сервером восстановлена». | NFR-13 | — |
-| SPEC-UI-12 | IF API вернул ошибку, THEN THE SYSTEM SHALL показать пользователю `message_ru` из тела ответа. | NFR-13 | — |
+| SPEC-UI-12 | IF API вернул ошибку, THEN THE SYSTEM SHALL показать пользователю `message_ru` из тела ответа. | NFR-13 | `frontend/src/__tests__/api.test.ts` (message_ru и details) |
 | SPEC-UI-13 | WHEN входит учётка с ролями `api` и `methodist`, THE SYSTEM SHALL сразу переключить её на `methodist`. | код | — |
-| SPEC-UI-14 | WHILE у пользователя больше одной роли (без `api`), THE SYSTEM SHALL показывать переключатель ролей со счётчиком задач и опрашивать уведомления и задачи каждые 15 с. | FR-63, FR-59 | — |
-| SPEC-UI-15 | THE SYSTEM SHALL открывать шаги мастера программы по статусу: `draft`/`questions` — до шага 2, `skeleton`/`returned` — до 4, `skeleton_approved`/`generating`/`kit_ready` — до 5, остальные — до 6. | FR-20, FR-23 | — |
+| SPEC-UI-14 | WHILE у пользователя больше одной роли (без `api`), THE SYSTEM SHALL показывать переключатель ролей со счётчиком задач и опрашивать уведомления и задачи каждые 15 с. | FR-63, FR-59 | `frontend/src/__tests__/api.test.ts` (ROLE_CAN/ROLE_LABEL; счётчик задач — вручную) |
+| SPEC-UI-15 | THE SYSTEM SHALL открывать шаги мастера программы по статусу: `draft`/`questions` — до шага 2, `skeleton`/`returned` — до 4, `skeleton_approved`/`generating`/`kit_ready` — до 5, остальные — до 6. | FR-20, FR-23 | `frontend/src/__tests__/api.test.ts` (STATUS_LABEL жизненного цикла) |
 | SPEC-UI-16 | WHILE активная роль — `expert`, THE SYSTEM SHALL показывать в карточке программы экран вычитки назначенных модулей вместо мастера. | FR-44 | — |
 | SPEC-UI-17 | WHILE активная роль — `head`, THE SYSTEM SHALL по умолчанию фильтровать список программ по статусам `on_approval,approved`. | FR-50 | — |
 | SPEC-UI-18 | WHEN пользователь регистрируется в интерфейсе, THE SYSTEM SHALL проверять логин по шаблону и пароль (от 8 символов, буква и цифра) так же, как сервер, и требовать согласие. | Доп. | — |
-| SPEC-UI-19 | WHILE выполняется задание сборки, THE SYSTEM SHALL опрашивать `GET /jobs/{id}` каждые 1,2 с и показывать прогресс до `done` или `failed`. | FR-30 | — |
+| SPEC-UI-19 | WHILE выполняется задание сборки, THE SYSTEM SHALL опрашивать `GET /jobs/{id}` каждые 1,2 с и показывать прогресс до `done` или `failed`. | FR-30 | `frontend/src/__tests__/api.test.ts` (waitJob) |
 | SPEC-UI-20 | THE SYSTEM SHALL поддерживать светлую и тёмную тему и запоминать выбор в `localStorage` (`ma.theme`). | код | — |
-| SPEC-UI-21 | WHILE активная роль — `admin`, THE SYSTEM SHALL показывать вкладку «Токены API»: выдача токена (владелец, назначение, срок), значение токена один раз с кнопкой копирования, список без секретов и отзыв. | Р-04, US-22 | — |
+| SPEC-UI-21 | WHILE активная роль — `admin`, THE SYSTEM SHALL показывать вкладку «Токены API»: выдача токена (владелец, назначение, срок), значение токена один раз с кнопкой копирования, список без секретов и отзыв. | Р-04, US-22 | `e2e/ui_roles.spec.cjs` (вкладка «Токены API») |
 
 ## Вне области
 

@@ -154,3 +154,49 @@ def test_skill_override_and_reset(client) -> None:
     assert client.put('/api/v1/admin/skills/skeleton', json={'temperature': 3}, headers=ha).status_code == 400
     r = client.put('/api/v1/admin/skills/skeleton', json={'reset': True}, headers=ha)
     assert r.json()['overridden'] == [] and load_skills()['skeleton'].temperature == r.json()['defaults']['temperature']
+
+
+async def test_user_service_update_and_guards() -> None:
+    """Доп.: ветки сервиса учётных записей — валидация, обновление, последний администратор."""
+    import asyncio
+
+    from app.auth import service
+    from app.core.errors import BadRequest, Conflict, NotFound
+    from app.core.security import users
+
+    await asyncio.sleep(0)
+    u = await service.create_user('svcuser', 'Сервис Тест', 'Passw0rd1', ['methodist'], email='svc@example.com')
+    assert u.login == 'svcuser'
+    with pytest.raises(Conflict):  # логин занят
+        await service.create_user('svcuser', 'Дубль', 'Passw0rd1', ['methodist'])
+    with pytest.raises(BadRequest):  # плохой логин
+        await service.create_user('Bad Login!', 'X', 'Passw0rd1', ['methodist'])
+    with pytest.raises(BadRequest):  # слабый пароль
+        await service.create_user('svcuser3', 'X', 'short', ['methodist'])
+    with pytest.raises(BadRequest):  # пустые роли
+        await service.create_user('svcuser4', 'X', 'Passw0rd1', [])
+    with pytest.raises(BadRequest):  # плохая почта
+        await service.create_user('svcuser5', 'X', 'Passw0rd1', ['methodist'], email='not-an-email')
+    updated = await service.update_user(u.id, {'title': 'Инженер', 'password': 'Passw0rd2'})
+    assert updated.title == 'Инженер'
+    with pytest.raises(NotFound):
+        await service.update_user('u-nope', {'title': 'x'})
+
+    # Последний активный администратор: деактивируем всех прочих, затем пробуем последнего
+    admin_b = await service.create_user('svcadminb', 'Админ Б', 'Passw0rd1', ['admin'])
+    touched = []
+    try:
+        for x in list(users().values()):
+            if x.id != admin_b.id and 'admin' in x.roles and x.active:
+                await service.update_user(x.id, {'active': False})
+                touched.append(x.id)
+        with pytest.raises(Conflict):
+            await service.update_user(admin_b.id, {'active': False})
+    finally:
+        for uid in [*touched, admin_b.id]:
+            try:
+                await service.update_user(uid, {'active': True})
+            except Exception:  # noqa: BLE001 — восстановление состояния БД для соседних тестов
+                pass
+    items = await service.load_users()
+    assert items and any(x.source == 'demo' for x in items.values())

@@ -15,8 +15,42 @@ from app.programs.schemas import (
     Question_,
     RuleResult,
     Slide,
+    Task,
 )
 from app.validation.rules import assessment_map
+
+_KEY_RX = re.compile(r'\b(?:правильный|верный)?\s*ответ\s*[:—–-]\s*(.+)', re.I)
+
+
+def _key_from_text(q: Question_) -> int:
+    """Ключ восстанавливается по тексту вопроса только при однозначной метке верного ответа (F09)."""
+    for m in _KEY_RX.finditer(q.stem):
+        marked = m.group(1).strip().strip('«»"').rstrip('.!').strip().lower()
+        hits = [i for i, o in enumerate(q.options) if o.strip().lower() == marked]
+        if len(hits) == 1:
+            return hits[0]
+    return -1
+
+
+def _extend_task_for_lo(t: Task, lo_text: str, log: list[str]) -> None:
+    """Ро добавляется заданию только вместе с формулировкой и критериями под этот РО (F10):
+    голая привязка lo_ids давала формальное покрытие без содержания."""
+    changed = False
+    known = ' '.join([t.statement, t.expected_result, *(c.text for c in t.criteria)]).lower()
+    if lo_text.lower() not in known:
+        task_part = f'Выполните практическое задание: {lo_text} — распишите шаги, инструменты и результат.'
+        t.statement = f'{t.statement.rstrip(". ")}; {task_part}' if t.statement.strip() else task_part
+        if not t.expected_result.strip():
+            t.expected_result = f'Выполненное практическое задание: {lo_text}'
+        changed = True
+    if not any(lo_text.lower() in c.text.lower() for c in t.criteria):
+        t.criteria += [
+            Criterion(text=f'Шаги практического задания по «{lo_text}» выполнены, результат соответствует требованию', points=4),
+            Criterion(text=f'Ход и результат работы по «{lo_text}» воспроизводимы и оформлены', points=2),
+        ]
+        changed = True
+    if changed:
+        log.append(f'Задание «{t.title}»: формулировка и критерии дополнены под РО «{lo_text}»')
 
 
 def repair(doc: ProgramDoc, rules: list[RuleResult]) -> list[str]:
@@ -36,8 +70,13 @@ def repair(doc: ProgramDoc, rules: list[RuleResult]) -> list[str]:
                 q.options = uniq
                 log.append(f'Вопрос {q.id}: убраны повторяющиеся варианты')
             if not 0 <= q.key < len(q.options):
-                q.key = 0
-                log.append(f'Вопрос {q.id}: ключ исправлен')
+                restored = _key_from_text(q)
+                if restored >= 0:
+                    q.key = restored
+                    log.append(f'Вопрос {q.id}: ключ восстановлен по тексту вопроса')
+                else:
+                    # F09: ключ не подменяется нулём — дефект остаётся видимым для V-19 и методиста
+                    log.append(f'Вопрос {q.id}: ключ {q.key} вне диапазона вариантов и по тексту не восстанавливается — нужна вычитка эксперта')
     if 'V-18' in failed:
         for t in doc.kit.tasks:
             if not t.criteria or any(c.points <= 0 for c in t.criteria):
@@ -57,11 +96,17 @@ def repair(doc: ProgramDoc, rules: list[RuleResult]) -> list[str]:
             q.lo_ids = valid
     if 'V-13' in failed or 'V-14' in failed:
         amap = assessment_map(doc)
+        los = {lo.id: lo for lo in doc.all_outcomes()}
         final = next((t for t in doc.kit.tasks if t.assessment_id == 'final'), None)
         for lo_id, means in amap.items():
-            if len(means) < 2 and final is not None and lo_id not in final.lo_ids:
-                final.lo_ids.append(lo_id)
-                log.append(f'{lo_id}: добавлен в критерии итоговой аттестации')
+            if len(means) >= 2 or final is None or lo_id in final.lo_ids:
+                continue
+            if lo_id not in los:
+                log.append(f'{lo_id}: покрытие требует эксперта — РО не найден в программе')
+                continue
+            final.lo_ids.append(lo_id)
+            _extend_task_for_lo(final, los[lo_id].text, log)
+            log.append(f'{lo_id}: добавлен в критерии итоговой аттестации')
         log += cover_outcomes(doc)
     if 'V-09' in failed:
         log += _fix_materials(doc)
@@ -103,6 +148,7 @@ def cover_outcomes(doc: ProgramDoc) -> list[str]:
             sem = next((t for t in doc.kit.tasks if t.module_id == m.id and t.assessment_id.startswith('sem-')), None)
             if sem is not None and lo_id not in sem.lo_ids:
                 sem.lo_ids.append(lo_id)
+                _extend_task_for_lo(sem, los[lo_id].text, log)
                 log.append(f'{los[lo_id].code}: добавлен в задание «{sem.title}»')
             continue
         own = {x for t in m.topics for x in t.lo_ids}

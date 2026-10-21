@@ -59,14 +59,64 @@ def expert_modules(doc: ProgramDoc, p: Principal) -> set[str]:
     return {m.id for m in doc.modules if m.expert_id == p.user_id}
 
 
+# Общие разделы шаблона АЦР, не раскрывающие содержание чужих модулей (аудит 19.10, F03):
+# «annotation» перечисляет все модули программы, «content» — темы всех модулей, эксперту они не отдаются.
+EXPERT_SECTIONS = frozenset({
+    'approval', 'authors', 'regime', 'relevance', 'goal', 'results', 'ps', 'competencies_list', 'audience',
+    'form', 'volume', 'document', 'curriculum', 'utp', 'calendar', 'assessment', 'attestation_forms',
+    'assessment_materials', 'quality', 'final', 'conditions_mt', 'conditions_it', 'lit_npa', 'lit_main',
+    'lit_extra', 'lit_web', 'software', 'process', 'conditions_org', 'methodical', 'app1', 'app2',
+    'norm', 'literature',
+})
+
+
+def node_module_id(doc: ProgramDoc, node_id: str) -> str | None:
+    """Модуль, которому принадлежит узел графа: рабочая программа, тема, лекция, слайд, вопрос или задание."""
+    base = (node_id or '').partition('#')[0]
+    if not base:
+        return None
+    if base.startswith('mp-'):
+        return base[3:]
+    lec = wf._lecture_of(doc, base)
+    if lec:
+        return lec.module_id
+    for m in doc.modules:
+        if any(t.id == base for t in m.topics):
+            return m.id
+    for x in (*doc.kit.questions, *doc.kit.tasks):
+        if x.id == base:
+            return x.module_id
+    return None
+
+
+def ensure_node_in_module(doc: ProgramDoc, module_id: str, node_id: str) -> None:
+    """F02 (аудит 19.10): ссылка эксперта на узел чужого модуля запрещена — и в комментарии,
+    и в предложении агента, и в применении правки. Проверка одна для всех путей."""
+    owner = node_module_id(doc, node_id)
+    if owner is not None and owner != module_id:
+        raise ForbiddenRole('Элемент принадлежит другому модулю: эксперт работает только со своим модулем')
+
+
 def expert_view(doc: ProgramDoc, p: Principal, data: dict[str, Any]) -> dict[str, Any]:
-    """FR-44: эксперт видит только назначенные модули и их элементы комплекта."""
+    """F03 (аудит 19.10): единое представление эксперта — свои модули, свои элементы,
+    общие секции из EXPERT_SECTIONS (без annotation/content с чужими темами) и календарь
+    без расписания чужих модулей. Применяется во всех ответах роли expert."""
+    """FR-44, F03 (аудит 19.10): эксперт видит только назначенные модули, их элементы комплекта,
+    общие разделы программы без содержания чужих модулей и расписание без чужих тем. Один фильтр для всех ответов."""
     mine = expert_modules(doc, p)
     data['modules'] = [m for m in data['modules'] if m['id'] in mine]
     kit = data.get('kit') or {}
     for key in ('module_programs', 'questions', 'tasks', 'lectures', 'assessments'):
         kit[key] = [x for x in kit.get(key) or [] if x.get('module_id') in mine]
     data['comments'] = [c for c in data.get('comments') or [] if c.get('module_id') in mine]
+    kit['sections'] = {k: v for k, v in (kit.get('sections') or {}).items() if k in EXPERT_SECTIONS}
+    data['kit'] = kit
+    calendar = data.get('calendar') or {}
+    own_topics = {f'Тема {t.n}. {t.title}' for m in doc.modules if m.id in mine for t in m.topics}
+    for week in calendar.get('schedule') or []:
+        if isinstance(week.get('items'), list):
+            week['items'] = [x for x in week['items'] if x in own_topics or not str(x).startswith('Тема ')]
+    data['calendar'] = calendar
     return data
 
 
@@ -478,17 +528,35 @@ class ApproveIn(BaseModel):
 async def approve(program_id: str, body: ApproveIn, p: Principal = Depends(require('methodist'))) -> dict[str, Any]:
     doc = await svc.load(program_id)
     if body.decision == 'return':
-        wf.return_skeleton(doc, p.user_id, body.comment)
-        await svc.save(doc, p.user_id)
-        job_id = await svc.create_job(program_id, 'skeleton')
+        # F05 (аудит 19.10): резерв задания до изменения состояния; повторный возврат при активном задании — то же задание
+        job_id, created = await svc.start_job(program_id, 'skeleton')
+        if not created:
+            return {'job_id': job_id, 'status': 'queued'}
+        try:
+            wf.return_skeleton(doc, p.user_id, body.comment)
+            await svc.save(doc, p.user_id)
+        except Exception:
+            await svc.cancel_job(job_id)
+            raise
         svc.run_job(job_id, _skeleton_job(program_id, p.user_id, body.comment))
         await svc.log_event(program_id, p.user_id, 'skeleton_returned', body.comment)
         return {'job_id': job_id, 'status': 'queued'}
-    wf.approve_skeleton(doc, p.user_id)
-    await svc.save(doc, p.user_id, reason='каркас утверждён', snapshot=True)
+    # F05 (аудит 19.10): 429 по ёмкости и идемпотентность проверяются до изменения состояния каркаса
+    job_id, created = await svc.start_job(program_id, 'kit')
+    if not created:
+        # Каркас уже утверждён и комплект собирается: повторное утверждение возвращает то же активное задание
+        return {'job_id': job_id, 'status': 'queued'}
+    try:
+        wf.approve_skeleton(doc, p.user_id)
+        await svc.save(doc, p.user_id, reason='каркас утверждён', snapshot=True)
+    except Exception:
+        # Утверждение не состоялось: резерв задания снимается, документ остаётся в прежнем состоянии
+        try:
+            await svc.cancel_job(job_id)
+        except Exception:  # noqa: BLE001 — сбой снятия резерва не должен затирать исходную ошибку
+            logging.getLogger(__name__).exception('резерв задания %s не снят', job_id)
+        raise
     await svc.log_event(program_id, p.user_id, 'skeleton_approved', 'Каркас утверждён методистом', version=doc.version)
-    svc.check_capacity()
-    job_id = await svc.create_job(program_id, 'kit')
     svc.run_job(job_id, _kit_job(program_id, p.user_id))
     return {'job_id': job_id, 'status': 'queued'}
 
@@ -537,7 +605,11 @@ async def edits(program_id: str, body: EditIn, p: Principal = Depends(require('m
             if m.id in was_accepted and m.review_status != 'accepted' and m.expert_id and m.expert_id != p.user_id:
                 # US-15, FR-43: принятый модуль изменён и вернулся на вычитку, эксперт получает уведомление
                 await svc.notify(m.expert_id, program_id, f'Модуль {m.n} «{m.title}» изменён после приёмки и вернулся на вычитку')
-    return {**result, 'program': doc.model_dump(mode='json')}
+    program = doc.model_dump(mode='json')
+    if p.role == 'expert':
+        # F03 (аудит 19.10): ответ эксперту — только представление эксперта, без чужих модулей
+        program = expert_view(doc, p, program)
+    return {**result, 'program': program}
 
 
 @router.get('/{program_id}/versions', summary='Версии комплекта')
@@ -583,8 +655,11 @@ async def comment(program_id: str, body: CommentIn, p: Principal = Depends(requi
     from app.skills.review_assist.run import propose_full
 
     doc = await svc.load(program_id)
-    if p.role == 'expert' and body.module_id not in expert_modules(doc, p):
-        raise ForbiddenRole('Эксперт комментирует только свои модули')
+    if p.role == 'expert':
+        if body.module_id not in expert_modules(doc, p):
+            raise ForbiddenRole('Эксперт комментирует только свои модули')
+        # F02 (аудит 19.10): узел комментария обязан принадлежать своему модулю, а не только module_id
+        ensure_node_in_module(doc, body.module_id, body.node_id)
     prop = await propose_full(doc, body.module_id, body.node_id, body.text) if body.ask_agent else None
     c = wf.add_comment(doc, body.module_id, p.user_id, body.text, body.node_id, prop.proposal if prop else '', prop.affected if prop else None)
     if prop and p.role == 'expert':
@@ -610,8 +685,12 @@ async def answer_comment(program_id: str, body: AnswerIn, p: Principal = Depends
     c = next((x for x in doc.comments if x.id == body.comment_id), None)
     if c is None:
         raise BadRequest('Комментарий не найден')
-    if p.role == 'expert' and c.module_id not in expert_modules(doc, p):
-        raise ForbiddenRole('Эксперт работает только со своими модулями')
+    if p.role == 'expert':
+        if c.module_id not in expert_modules(doc, p):
+            raise ForbiddenRole('Эксперт работает только со своими модулями')
+        # F02 (аудит 19.10): и запрос предложения агенту, и применение правки идут по c.node_id —
+        # узел обязан принадлежать модулю эксперта на каждом из этих путей
+        ensure_node_in_module(doc, c.module_id, c.node_id)
     applied = False
     if body.ask_agent:
         # FR-41: методист передаёт вопрос агенту — предложение и затрагиваемые элементы
@@ -638,7 +717,11 @@ async def answer_comment(program_id: str, body: AnswerIn, p: Principal = Depends
     await svc.log_event(program_id, p.user_id, 'comment_answer', body.answer or ('Правка агента применена' if applied else 'Предложение агента'), node_id=c.node_id)
     if c.author and c.author != p.user_id and c.status == 'answered':
         await svc.notify(c.author, program_id, f'Ответ на ваш вопрос: {body.answer}')
-    return {'program': doc.model_dump(mode='json'), 'comment': c.model_dump()}
+    program = doc.model_dump(mode='json')
+    if p.role == 'expert':
+        # F03 (аудит 19.10): ответ эксперту — только представление эксперта, без чужих модулей
+        program = expert_view(doc, p, program)
+    return {'program': program, 'comment': c.model_dump()}
 
 
 class ReviewIn(BaseModel):
@@ -659,11 +742,13 @@ async def review_decision(program_id: str, body: ReviewIn, p: Principal = Depend
     text = f'Эксперт {what} {m.n if m else body.module_id}' + (f' · оценка {body.score} из 5' if body.score and body.decision == 'accept' else '') + (f': {body.comment}' if body.comment else '')
     await svc.log_event(program_id, p.user_id, f'review_{body.decision}', text, node_id=body.node_id or body.module_id)
     m = doc.module_by_id(body.module_id)
+    # F03 (аудит 19.10): эксперт получает только представление эксперта — и при приёмке элемента, и при решении по модулю
+    program = expert_view(doc, p, doc.model_dump(mode='json'))
     if body.decision == 'accept_item' and m and m.review_status != 'accepted':
-        return {'program': doc.model_dump(mode='json')}
+        return {'program': program}
     verdict = {'accept': 'принят', 'accept_item': 'принят', 'return': 'возвращён', 'question': 'вопрос'}[body.decision]
     await svc.notify(await svc.owner_of(program_id), program_id, f'{p.name}: модуль {m.n if m else body.module_id} «{m.title if m else ""}» — {verdict}')
-    return {'program': doc.model_dump(mode='json')}
+    return {'program': program}
 
 
 @router.post('/{program_id}/submit', summary='Отправить программу на утверждение')

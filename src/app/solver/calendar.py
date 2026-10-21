@@ -81,7 +81,9 @@ def plan_calendar(
             requested_weeks=requested_weeks,
         )
 
-    if requested_weeks and cal.weeks > math.ceil(requested_weeks + 0.25):
+    # Конфликт срока: строгая проверка вместимости (F08). Допуск скрывал бы
+    # реальную невыполнимость: 72 ч / 3 недели / 4 ч в день требуют 18 дней при 15 доступных.
+    if requested_weeks and cal.work_days > math.floor(requested_weeks * cal.days_per_week):
         hpd = cal.hours_per_day
         need_days = cal.work_days
         avail_days = math.floor(requested_weeks * cal.days_per_week)

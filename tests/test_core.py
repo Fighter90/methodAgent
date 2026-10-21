@@ -64,3 +64,18 @@ def test_roles(client) -> None:
     tok = client.post('/api/v1/auth/login', json={'user_id': 'u-timur', 'password': 'demo'}).json()['access_token']
     r = client.post('/api/v1/programs', json={'request': 'Курс Python 16 часов для школьников'}, headers={'Authorization': f'Bearer {tok}'})
     assert r.status_code == 403
+
+
+def test_intake_reference_volume_not_program_volume() -> None:
+    """SPEC-SKILLS-17"""
+    from app.skills.intake.run import parse_numbers
+
+    p = parse_numbers('Создай 36 часов по образцу 248 часов, аттестация 2 часа, до 4 часов в день')
+    assert p.volume_h == 36, 'часы образца не должны стать объёмом новой программы'
+    assert p.final_assessment_hours == 2
+    assert p.max_hours_per_day == 4
+    assert p.reference_volume_h == 248
+
+    p2 = parse_numbers('Нужна программа повышения квалификации на 72 часа «Анализ данных». Прикладываю прошлую программу на 248 часов')
+    assert p2.volume_h == 72
+    assert p2.reference_volume_h == 248

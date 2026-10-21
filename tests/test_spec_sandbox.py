@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import resource
 import subprocess
+import sys
 
 import pytest
 
@@ -27,9 +29,20 @@ def test_empty_code_skipped() -> None:
     assert r['ok'] and r['mode'] == 'skip' and r['error'] == ''
 
 
-@pytest.mark.parametrize('code', ['import os\nprint(os.getcwd())', 'open("x.txt")', 'print(__import__("sys"))', 'eval("1+1")', 'import socket'])
+@pytest.mark.parametrize('code', [
+    'import os\nprint(os.getcwd())',
+    'open("x.txt")',
+    'print(__import__("sys"))',
+    'eval("1+1")',
+    'import socket',
+    'import io\nprint(io.DEFAULT_BUFFER_SIZE)',
+    'from io import StringIO',
+    'import runpy\nprint(runpy)',
+    'import code\nprint(code)',
+    'import operator\nprint(operator.add(1, 2))',
+])
 def test_system_access_not_run(code: str, monkeypatch) -> None:
-    """SPEC-SANDBOX-02: пример, обращающийся к системе, сети, файлам или eval, не запускается и помечается для ручной проверки."""
+    """SPEC-SANDBOX-02: пример, обращающийся к системе, сети, файлам, dunder-атрибутам, eval или модулям io/runpy/code/operator (аудит 19.10), не запускается и помечается для ручной проверки."""
     monkeypatch.setattr(sandbox.subprocess, 'run', lambda *a, **k: pytest.fail('не должен запускаться'))
     r = sandbox.run_detailed(code)
     assert r['mode'] == 'skip' and r['ok'] and 'проверьте вручную' in r['error']
@@ -135,3 +148,47 @@ def test_check_examples_limit_and_messages(monkeypatch) -> None:
     ]
     assert sandbox.check_examples(doc, limit=3) == ['Пример к лекции Циклы: упал', 'Пример к лекции Функции: упал']
     assert seen == ['ok1', 'bad1', 'bad2']
+
+
+LEGIT_EXAMPLES = [
+    'print(1)',
+    'import math\nprint(math.sqrt(16))',
+    'import random\nprint(random.randint(1, 5))',
+    'a = int(input())\nprint([x * 2 for x in range(a)])',
+    'word = "привет"\nprint(word.upper(), len(word))',
+]
+
+
+@pytest.mark.parametrize('code', LEGIT_EXAMPLES)
+def test_legit_examples_still_run(runtime, code) -> None:
+    """SPEC-SANDBOX-02: учебные примеры (print, input, math, random, списки, строки) не считаются обращением к системе и выполняются в песочнице."""
+    r = sandbox.run_detailed(code)
+    assert r['ok'] and r['mode'] == 'run', r['error']
+
+
+def test_limits_degrade_on_macos(monkeypatch, runtime) -> None:
+    """SPEC-SANDBOX-12: WHEN платформа отвергает setrlimit (как RLIMIT_AS на macOS — ValueError «current limit exceeds maximum limit»), THEN лимит пропускается, пример всё равно выполняется (ok, режим run), а отвергнутые лимиты попадают в skipped_limits."""
+
+    def deny(limit, pair):
+        raise ValueError('current limit exceeds maximum limit')
+
+    monkeypatch.setattr(resource, 'setrlimit', deny)
+    r = sandbox.run_detailed('print(1)')
+    assert r['ok'] and r['mode'] == 'run' and r['stdout'].strip() == '1'
+    assert r['applied_limits'] == []
+    assert set(r['skipped_limits']) == {'RLIMIT_CPU', 'RLIMIT_AS', 'RLIMIT_NPROC'}
+
+
+def test_limits_reported(runtime) -> None:
+    """SPEC-SANDBOX-13: run_detailed возвращает applied_limits и skipped_limits — имена констант resource, отражающие фактические лимиты дочернего процесса."""
+    r = sandbox.run_detailed('print(1)')
+    assert r['ok'] and r['mode'] == 'run'
+    applied, skipped = set(r['applied_limits']), set(r['skipped_limits'])
+    assert not applied & skipped
+    if os.name != 'posix':
+        assert not applied and skipped == {'RLIMIT_CPU', 'RLIMIT_AS', 'RLIMIT_NPROC'}
+        return
+    assert applied | skipped == {'RLIMIT_CPU', 'RLIMIT_AS', 'RLIMIT_NPROC'}
+    assert 'RLIMIT_CPU' in applied
+    if sys.platform == 'darwin':
+        assert 'RLIMIT_AS' in skipped  # MET-17: macOS не даёт понизить RLIMIT_AS

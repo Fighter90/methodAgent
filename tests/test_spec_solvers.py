@@ -157,3 +157,18 @@ def test_recompute_is_fast_and_offline(monkeypatch) -> None:
     assert time.perf_counter() - started < 0.5
     m = doc.modules[0]
     assert m.hours.total == m.hours.kinds_sum() and sum(t.hours.total for t in m.topics) == m.hours.total
+
+
+def test_calendar_conflict_strict_capacity() -> None:
+    """SPEC-SOLVER-16"""
+    # Контрпример аудита F08: 72 ч / 3 недели / 4 ч в день / 5 дней в неделю —
+    # нужно 18 дней, доступно 15. Раньше допуск ceil(3 + 0.25) скрывал конфликт.
+    cal = plan_calendar(volume=72, requested_weeks=3, hours_per_day=4, days_per_week=5)
+    assert cal.conflict, 'невыполнимый срок должен давать конфликт'
+    assert {o.id for o in cal.options} == {'extend', 'six_days', 'raise_load'}
+    # Точный срок 4 недели при той же нагрузке выполним (18 дней ≤ 20) — конфликта нет.
+    ok = plan_calendar(volume=72, requested_weeks=4, hours_per_day=4, days_per_week=5)
+    assert not ok.conflict
+    # Режим занятий: 36 занятий по 2 ч при 2 занятиях в неделю в срок 3 недели — конфликт.
+    ses = plan_calendar(volume=72, requested_weeks=3, hours_per_day=None, days_per_week=None, sessions_per_week=2, session_hours=2)
+    assert ses.conflict

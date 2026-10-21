@@ -69,7 +69,7 @@ def test_no_failed_rules_no_changes() -> None:
 
 
 def test_v19_duplicates_removed_and_key_fixed() -> None:
-    """SPEC-REPAIR-02: V-19 — повторяющиеся варианты убираются, список добирается до 4, ключ вне диапазона становится 0."""
+    """SPEC-REPAIR-02: V-19 — повторяющиеся варианты убираются и список добирается до 4; ключ вне диапазона нулём не подменяется — вопрос помечается для вычитки эксперта."""
     doc = _doc()
     doc.kit.questions = [
         Question_(id='q1', assessment_id='test-m1', stem='?', options=['a', 'a ', 'b'], key=7),
@@ -77,10 +77,25 @@ def test_v19_duplicates_removed_and_key_fixed() -> None:
     ]
     log = repair(doc, _fail('V-19'))
     q1, q2 = doc.kit.questions
-    assert q1.options == ['a', 'b', 'Другой вариант 3', 'Другой вариант 4'] and q1.key == 0
+    assert q1.options == ['a', 'b', 'Другой вариант 3', 'Другой вариант 4'] and q1.key == 7  # дефект остался, а не заменён нулём
     assert q2.options == ['a', 'b', 'c', 'd'] and q2.key == 1
-    assert 'Вопрос q1: убраны повторяющиеся варианты' in log and 'Вопрос q1: ключ исправлен' in log
+    assert 'Вопрос q1: убраны повторяющиеся варианты' in log
+    assert any('q1' in x and 'вычитк' in x for x in log)
     assert not any('q2' in x for x in log)
+
+
+def test_v19_key_restored_by_text_only() -> None:
+    """SPEC-REPAIR-17: ключ вне диапазона восстанавливается только по однозначной текстовой метке верного ответа; без метки дефект остаётся с сообщением для методиста, ноль не подставляется."""
+    doc = _doc()
+    doc.kit.questions = [
+        Question_(id='q1', assessment_id='test-m1', stem='Сколько будет 2+2? Правильный ответ: 4', options=['3', '4', '5'], key=99),
+        Question_(id='q2', assessment_id='test-m1', stem='Сколько будет 2+2?', options=['3', '4', '5'], key=5),
+    ]
+    log = repair(doc, _fail('V-19'))
+    q1, q2 = doc.kit.questions
+    assert q1.key == 1 and 'Вопрос q1: ключ восстановлен по тексту вопроса' in log
+    assert q2.key == 5 and any('q2' in x and 'вычитк' in x for x in log)
+    assert not any('q2' in x and 'восстановлен' in x for x in log)
 
 
 def test_v19_key_keeps_correct_answer() -> None:
@@ -153,6 +168,44 @@ def test_v13_final_and_question_cover_outcome() -> None:
     assert set(doc.kit.tasks[0].lo_ids) == {'lo1', 'lo2', 'lo3'}
     assert any('добавлен в критерии итоговой аттестации' in x for x in log)
     assert {a.id for a in doc.kit.assessments} >= {'test-m1', 'test-m2'}
+
+
+def test_v13_final_task_text_extended_for_added_lo() -> None:
+    """SPEC-REPAIR-18: WHEN V-13 добавляет РО в итоговую аттестацию, THE SYSTEM SHALL дополнить формулировку и критерии задания под этот РО: связка «Нарисуйте круг» ↔ «Резервное копирование PostgreSQL» получает осмысленный текст, а не голую привязку lo_ids."""
+    doc = ProgramDoc(
+        id='p', request='x', title='Администрирование БД',
+        competencies=[Competency(id='c1', code='ПК-1', title='К', indicators=[Indicator(id='i1', kind='can', text='x', outcomes=[_lo(1, 'Резервное копирование PostgreSQL')])])],
+        modules=[Module(id='m1', n=1, title='Базы данных', topics=[Topic(id='t1.1', n='1.1', title='Бэкап', hours=Hours(total=4, pr=4), lo_ids=['lo1'])])],
+    )
+    doc.kit.tasks = [Task(id='fin', assessment_id='final', title='Итог', statement='Нарисуйте круг')]
+    log = repair(doc, _fail('V-13'))
+    fin = doc.kit.tasks[0]
+    assert fin.lo_ids == ['lo1']
+    assert 'Нарисуйте круг' in fin.statement and 'Резервное копирование PostgreSQL' in fin.statement
+    assert any('Резервное копирование PostgreSQL' in c.text and c.points > 0 for c in fin.criteria)
+    assert any('дополнены под РО «Резервное копирование PostgreSQL»' in x for x in log)
+    assert repair(doc, _fail('V-13')) == []  # повторный проход идемпотентен: текст и критерии не дублируются
+
+
+def test_v13_seminar_task_text_extended_for_added_lo() -> None:
+    """SPEC-REPAIR-18: WHEN cover_outcomes добавляет РО в задание семинара (РО уже проверяется тестом модуля), THE SYSTEM SHALL дополнить формулировку и критерии задания под этот РО."""
+    doc = ProgramDoc(
+        id='p', request='x', title='Курсы',
+        competencies=[Competency(id='c1', code='ПК-1', title='К', indicators=[Indicator(id='i1', kind='can', text='x', outcomes=[
+            _lo(1, 'Нарисовать круг от руки'), _lo(2, 'Резервное копирование PostgreSQL')])])],
+        modules=[Module(id='m1', n=1, title='Модуль', topics=[
+            Topic(id='t1.1', n='1.1', title='Круги', hours=Hours(total=4, lk=2, pr=2), lo_ids=['lo1']),
+            Topic(id='t1.2', n='1.2', title='Базы данных', hours=Hours(total=2, pr=2), lo_ids=['lo2']),
+        ])],
+    )
+    doc.kit.questions = [Question_(id='q1.1', assessment_id='test-m1', module_id='m1', stem='?', options=list('abcd'), key=0, lo_ids=['lo2'])]
+    doc.kit.tasks = [Task(id='s1', assessment_id='sem-m1', module_id='m1', title='Семинар', statement='Нарисуйте круг', criteria=[Criterion(text='Круг нарисован', points=3)])]
+    log = cover_outcomes(doc)
+    sem = doc.kit.tasks[0]
+    assert 'lo2' in sem.lo_ids
+    assert 'Нарисуйте круг' in sem.statement and 'Резервное копирование PostgreSQL' in sem.statement
+    assert any('Резервное копирование PostgreSQL' in c.text for c in sem.criteria)
+    assert 'РО 2: добавлен в задание «Семинар»' in log
 
 
 def test_cover_outcomes_question_shape() -> None:

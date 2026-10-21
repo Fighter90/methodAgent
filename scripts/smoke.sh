@@ -3,11 +3,18 @@
 #   /health → вход madina/demo → автопрогон одного кейса testset → статус и проверки → все ссылки выгрузки отдают 200.
 #   bash scripts/smoke.sh                              # http://127.0.0.1:8000, кейс 1
 #   BASE_URL=http://127.0.0.1:8765 CASE=3 bash scripts/smoke.sh
+#   bash scripts/smoke.sh --strict                     # строгий режим (или STRICT=1): статус обязан быть done
+#                                                      # (done_with_errors — провал), выгрузки проверяются структурно
+#                                                      # (нужны python-docx и python-pptx из requirements.lock)
 # Нужны curl и python3 (только стандартная библиотека). Код выхода 0 — всё прошло.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BASE="${BASE_URL:-http://127.0.0.1:8000}"
 CASE="${CASE:-1}"
+STRICT="${STRICT:-0}"
+if [ "${1:-}" = "--strict" ]; then
+  STRICT=1
+fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 PY="${PYTHON:-python3}"
@@ -40,16 +47,17 @@ t0=$(date +%s)
 code=$(curl -sS -o "$TMP/run.json" -w '%{http_code}' --max-time 1800 -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" --data-binary @"$TMP/req.json" "$BASE/api/v1/programs?mode=auto")
 [ "$code" = 200 ] || { head -c 600 "$TMP/run.json"; echo; fail "автопрогон: HTTP $code"; }
-"$PY" - "$TMP/run.json" "$(( $(date +%s) - t0 ))" <<'EOF'
+"$PY" - "$TMP/run.json" "$(( $(date +%s) - t0 ))" "$STRICT" <<'EOF'
 import json, sys
 r = json.load(open(sys.argv[1]))
+strict = sys.argv[3] == '1'
 sk, rep = r['skeleton'], r['report']
 print(f"   id={r.get('id') or r.get('program_id')} status={r['status']} за {sys.argv[2]} с")
 print(f"   «{sk['title']}», тип {sk['type']}, {sk['totals']['all']} ч, модулей {len(sk['modules'])}")
 print(f"   блокирующие проверки {rep['blocking_checks']}, правил пройдено {rep['rules_passed']}/{rep['rules_total']}")
 print(f"   токены {r['tokens']['in']}+{r['tokens']['out']}, {r['tokens']['cost_rub']} ₽; выгрузки: {', '.join(r['files'])}")
 bad = []
-if r['status'] in ('error', 'failed'):
+if r['status'] in ('error', 'failed') or (strict and r['status'] != 'done'):
     bad.append(f"status={r['status']}")
 done, total = rep['blocking_checks'].split('/')
 if done != total:
@@ -69,6 +77,18 @@ while read -r fmt url; do
   size=$(wc -c < "$TMP/out.$fmt")
   printf '   %-14s HTTP %s  %8s байт\n' "$fmt" "$code" "$size"
   [ "$code" = 200 ] && [ "$size" -gt 0 ] || fail "выгрузка $fmt: HTTP $code"
+  if [ "$STRICT" = 1 ]; then
+    "$PY" - "$fmt" "$TMP/out.$fmt" <<'PYEOF' || fail "выгрузка $fmt: структурная проверка не пройдена"
+import sys
+
+sys.path.insert(0, 'scripts')
+from autorun import export_problems
+
+problems = export_problems(sys.argv[1], open(sys.argv[2], 'rb').read())
+if problems:
+    sys.exit('   ' + '; '.join(problems))
+PYEOF
+  fi
 done < "$TMP/files.txt"
 
 echo "OK: основной сценарий пройден"
