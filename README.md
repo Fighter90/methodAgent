@@ -110,7 +110,18 @@ flowchart LR
 
 ## Быстрый старт
 
-Нужны **Python 3.12** и **Node 22** с npm 10+ (версии записаны в `.python-version`, `.nvmrc` и `frontend/package.json → engines`); `make` не обязателен (`make check` повторяет CI одной командой). Зависимости ставятся из lock-файлов с точными версиями и sha256 всех пакетов, включая транзитивные: `requirements.lock` (сервис) и `requirements-dev.lock` (плюс тесты). Для интерфейса используется `frontend/package-lock.json` и `npm ci`. Базовые образы Docker закреплены по digest. Основной сценарий можно повторить тремя способами. Пошагово, с ожидаемым выводом: [развёртывание](docs/deployment.md#воспроизведение-основного-сценария).
+Нужны **Python 3.12** и **Node 22** с npm 10+ (версии записаны в `.python-version`, `.nvmrc` и `frontend/package.json → engines`); `make` не обязателен (`make check` повторяет CI одной командой, включая контроль ограничений кейса `scripts/check_constraints.py`). Зависимости ставятся из lock-файлов с точными версиями и sha256 всех пакетов, включая транзитивные: `requirements.lock` (сервис) и `requirements-dev.lock` (плюс тесты). Для интерфейса используется `frontend/package-lock.json` и `npm ci`. Базовые образы Docker закреплены по digest. Основной сценарий можно повторить тремя способами. Пошагово, с ожидаемым выводом: [развёртывание](docs/deployment.md#воспроизведение-основного-сценария).
+
+## Проверка за 5 минут
+
+```bash
+python3.12 -m venv .venv && . .venv/bin/activate
+pip install --require-hashes -r requirements-dev.lock      # сервис + тесты
+cd frontend && npm ci && npm run build && cd ..            # интерфейс собирается в frontend/dist
+make demo                                                  # поднимет сервер на фикстурах и соберёт комплект кейса 1
+```
+
+`make demo` делает всё сам: поднимает API на `http://127.0.0.1:8765` (режим `fixtures`, без сети и без ключа), ждёт `/health`, прогоняет кейс 1 через `POST /api/v1/programs?mode=auto` и печатает итог: статус `done`, блокирующие проверки `10/10`, время и ссылки на выгрузки `.docx/.pptx/JSON`. Ожидаемый результат — `PASS` по всем пунктам и код выхода 0.
 
 **А. Без Docker и без ключа LLM.** Генерация детерминированная (`LLM_PROVIDERS=fixtures`), сеть нужна только для установки пакетов.
 

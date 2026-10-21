@@ -3,7 +3,7 @@ PY ?= python3
 export PYTHONPATH := src
 export LLM_PROVIDERS := fixtures
 
-.PHONY: check lint test trace openapi constraints frontend e2e
+.PHONY: check lint test trace openapi constraints frontend e2e demo
 
 check: lint test trace openapi constraints frontend
 
@@ -27,6 +27,9 @@ frontend:
 
 # Сквозной регресс по всем ролям на поднятом сервисе: make e2e BASE=http://127.0.0.1:8000
 BASE ?= http://127.0.0.1:8000
+demo:
+	bash scripts/demo.sh
+
 e2e:
 	$(PY) scripts/e2e_regression.py --base $(BASE) --all-cases
 	BASE_URL=$(BASE) bash scripts/smoke.sh
