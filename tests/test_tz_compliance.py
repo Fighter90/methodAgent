@@ -174,3 +174,25 @@ def test_changed_accepted_module_returns_to_review_and_notifies_expert(client) -
     assert next(m for m in r.json()['program']['modules'] if m['id'] == m1['id'])['review_status'] == 'in_review'
     notes = client.get('/api/v1/notifications', headers=he).json()
     assert any('вернулся на вычитку' in n['text'] and not n.get('read') for n in notes)
+
+
+def test_expert_comment_without_fragment_stays_open(client) -> None:
+    """SPEC-API-46: замечание эксперта без фрагмента с запросом правки агенту остаётся «ждёт ответа» — его закрывает методист;
+    с фрагментом правка ждёт подтверждения эксперта. «Передать агенту» без фрагмента тоже не уводит замечание в подтверждение."""
+    hm, he = _h(client, 'u-madina'), _h(client, 'u-timur')
+    req = ('Нужна программа повышения квалификации на 36 часов «Excel и Power BI для экономистов», '
+           'очно-заочно, 2 недели. Итоговая аттестация — защита проекта.')
+    j = client.post('/api/v1/programs?mode=auto', json={'request': req}, headers=hm).json()
+    pid, m1 = j['program_id'], j['kit']['program']['modules'][0]['id']
+    assert client.put(f'/api/v1/programs/{pid}/modules/{m1}/expert', json={'expert_id': 'u-timur'}, headers=hm).status_code == 200
+    r = client.post(f'/api/v1/programs/{pid}/comments', json={'module_id': m1, 'text': 'Сделайте модуль практичнее', 'ask_agent': True}, headers=he)
+    assert r.status_code == 200, r.text
+    c = r.json()['comment']
+    assert c['status'] == 'open' and c['agent_proposal'] and not c['node_id']
+    r = client.post(f'/api/v1/programs/{pid}/comments/answer', json={'comment_id': c['id'], 'ask_agent': True}, headers=hm)
+    assert r.json()['comment']['status'] == 'open'
+    r = client.post(f'/api/v1/programs/{pid}/comments/answer', json={'comment_id': c['id'], 'answer': 'Учтём в следующей версии'}, headers=hm)
+    assert r.json()['comment']['status'] == 'answered'
+    q = next(x for x in j['kit']['program']['questions'] if x['module_id'] == m1)
+    r = client.post(f'/api/v1/programs/{pid}/comments', json={'module_id': m1, 'node_id': q['id'], 'text': 'Вопрос на применение', 'ask_agent': True}, headers=he)
+    assert r.json()['comment']['status'] == 'proposed'

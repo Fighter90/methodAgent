@@ -1374,7 +1374,7 @@ function ExpertView({ doc, reload }: { doc: Doc; reload: () => void }) {
     setBusy('ask')
     try {
       await api(`/programs/${doc.id}/comments`, { method: 'POST', json: { module_id: mid, text, node_id: node, ask_agent: agent } })
-      toast(agent ? 'Агент подготовил правку — подтвердите её ниже' : 'Вопрос отправлен методисту'); setText(''); reload()
+      toast(agent ? (node ? 'Агент подготовил правку — подтвердите её ниже' : 'Агент дал рекомендацию; замечание передано методисту') : 'Вопрос отправлен методисту'); setText(''); reload()
     } catch (e: any) { toast(e.message, true) } finally { setBusy('') }
   }
   async function confirm(c: any) {
@@ -1435,6 +1435,7 @@ function ExpertView({ doc, reload }: { doc: Doc; reload: () => void }) {
               <button className="btn btn-primary" style={{ justifyContent: 'center' }} disabled={!!busy || !allChecked || finished} title={allChecked ? '' : 'Сначала отметьте все элементы модуля'} onClick={() => decision('accept')}>{busy === 'accept' ? <Spinner /> : <><Check size={16} /> Принять модуль</>}</button>
               {!allChecked && !finished && <div className="tiny muted">Принять модуль можно, когда проверены все {total} элементов.</div>}
               <button className="btn btn-soft" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim()} onClick={() => ask(true)}><Sparkles size={16} /> Попросить агента о правке</button>
+              {!node && <div className="tiny muted">Чтобы агент переписал текст, выберите элемент в «К какому фрагменту»</div>}
               <button className="btn btn-ghost" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim()} onClick={() => ask(false)}><MessageSquare size={16} /> Задать вопрос методисту</button>
               <button className="btn btn-danger" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim() || finished} onClick={() => decision('return')}><X size={16} /> Вернуть с комментарием</button>
             </div>

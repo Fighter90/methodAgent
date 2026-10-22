@@ -851,8 +851,10 @@ async def comment(program_id: str, body: CommentIn, p: Principal = Depends(requi
         ensure_node_in_module(doc, body.module_id, body.node_id)
     prop = await propose_full(doc, body.module_id, body.node_id, body.text) if body.ask_agent else None
     c = wf.add_comment(doc, body.module_id, p.user_id, body.text, body.node_id, prop.proposal if prop else '', prop.affected if prop else None)
-    if prop and p.role == 'expert':
-        c.status = 'proposed'  # эксперт сам попросил агента: правка ждёт его подтверждения (FR-48)
+    if prop and p.role == 'expert' and body.node_id:
+        # эксперт сам попросил агента: правка ждёт его подтверждения (FR-48); без фрагмента применять нечего —
+        # замечание остаётся «ждёт ответа», его закрывает методист (SPEC-API-46)
+        c.status = 'proposed'
     await svc.save(doc, p.user_id)
     await svc.log_event(program_id, p.user_id, 'comment', body.text, node_id=body.node_id)
     await svc.notify(await svc.owner_of(program_id), program_id, f'{p.name}: {body.text[:120]}')
@@ -886,7 +888,7 @@ async def answer_comment(program_id: str, body: AnswerIn, p: Principal = Depends
         prop = await propose_full(doc, c.module_id, c.node_id, c.text)
         c.agent_proposal, c.affected = prop.proposal, prop.affected
         author_role = users()[c.author].roles[0] if c.author in users() else ''
-        c.status = 'proposed' if author_role == 'expert' else 'open'
+        c.status = 'proposed' if author_role == 'expert' and c.node_id else 'open'  # SPEC-API-46
         if author_role == 'expert':
             await svc.notify(c.author, program_id, f'Агент предложил правку по вашему замечанию — подтвердите в модуле: {prop.proposal[:120]}')
     elif body.apply_proposal and c.node_id:
