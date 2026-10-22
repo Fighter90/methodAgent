@@ -56,6 +56,8 @@
 | 403 | `FORBIDDEN_ROLE` | `ForbiddenRole` | Роль не допущена к методу; `details.allowed` — список допустимых ролей (для `require`). Частный код: `REGISTRATION_CLOSED` |
 | 404 | `NOT_FOUND` | `NotFound` | Программа, версия, задание, пользователь, навык или документ не найдены |
 | 409 | `STATE_CONFLICT` | `Conflict` | Действие недоступно в текущем состоянии программы; частные коды `LOGIN_TAKEN`, `EMAIL_TAKEN`, `LAST_ADMIN` |
+| 413 | `PAYLOAD_TOO_LARGE` | `PayloadTooLarge`, слой `BodyLimit` (`core/uploads.py`) | Тело запроса больше предела (все вложения в base64 плюс 1 МБ) или файл больше `MAX_FILE_SIZE_MB`; проверяется до разбора JSON/multipart и до декодирования base64 |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | `UnsupportedMedia` | Расширение вложения вне `.docx`, `.pdf`, `.txt`, `.md` или содержимое по сигнатуре не соответствует расширению |
 | 422 | `VALIDATION_ERROR` | `RequestValidationError` | Тело или параметры не соответствуют схеме; `details.errors` — список `{loc, msg}` |
 | 429 | `RATE_LIMIT` | `RateLimited` | Лимит автопрогонов без токена, неудачных входов (5 в минуту с IP), регистраций (10 в час с IP), новых программ (`PROGRAMS_PER_HOUR`, по умолчанию 30 в час на пользователя; для роли `api` — `API_PROGRAMS_PER_HOUR`) или параллельных заданий (`MAX_PARALLEL_JOBS`, по умолчанию 4) |
 | 500 | `INTERNAL_ERROR` | любое необработанное исключение | Внутренние детали не раскрываются |

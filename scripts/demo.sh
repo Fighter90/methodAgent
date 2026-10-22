@@ -5,6 +5,9 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 PORT="${PORT:-8765}"
 
+if curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/" 2>/dev/null; then
+  echo "FAIL: порт $PORT уже занят другим процессом — запустите с другим портом: PORT=8799 make demo"; exit 1
+fi
 ( cd frontend && npm run build >/dev/null 2>&1 ) || { echo "FAIL: не собрался интерфейс"; exit 1; }
 
 LLM_PROVIDERS=fixtures DATA_DIR="$(mktemp -d)" PYTHONPATH=src \
