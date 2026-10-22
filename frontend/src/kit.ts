@@ -1,7 +1,7 @@
 /* Чистые функции карточки программы: расшифровки видов работ и шаблонов (MET-16),
  * группировка файлов комплекта по темам (MET-13) и чек-лист «что проверить человеку» (MET-13б),
- * структурированная форма запроса (MET-15), чек-лист проекта приказа (MET-19)
- * и честные метрики времени и затрат (MET-8).
+ * структурированная форма запроса и сборка params для POST /programs (MET-15, MET-53/R09),
+ * чек-лист проекта приказа (MET-19) и честные метрики времени и затрат (MET-8).
  * Модуль без JSX — покрывается vitest-тестами на чистых функциях (__tests__/kit.test.ts, form.test.ts). */
 
 export type Doc = any
@@ -107,48 +107,47 @@ export const REQUEST_FORM_FINAL_OPTIONS: RequestFormFields['final_assessment'][]
 
 export const REQUEST_FORM_FORM_OPTIONS: RequestFormFields['form'][] = ['очная', 'очно-заочная', 'заочная', 'дистанционная']
 
-/** Русское число с существительным: ruPlural(3, 'неделя', 'недели', 'недель') — «3 недели». */
-export function ruPlural(n: number, one: string, few: string, many: string): string {
-  const a = Math.abs(Math.round(n)) % 100
-  if (a > 10 && a < 20) return many
-  const b = a % 10
-  if (b === 1) return one
-  return b >= 2 && b <= 4 ? few : many
+/** Поля формы в формате `params` запроса `POST /programs` (R09/MET-53): имена совпадают с моделью Params бэкенда. */
+export interface RequestFormParams {
+  title?: string
+  program_type?: 'dpp_pk' | 'doop'
+  audience?: string
+  entry_level?: string
+  volume_h?: number
+  form?: string
+  duration_weeks?: number
+  final_assessment_form?: string
 }
 
-const TYPE_PREFIX: Record<string, string> = { dpp_pk: 'повышение квалификации', doop: 'общеразвивающая программа' }
+/** Свободный текст-заглушка, когда поля формы заполнены, а текст запроса пуст:
+ * бэкенд требует в `request` не меньше 5 символов, реальное описание несёт `params`. */
+export const FORM_ONLY_REQUEST = 'Параметры программы заданы в полях формы'
 
-function durationText(f: RequestFormFields): string {
-  const n = Number(f.duration_value)
-  const unit = f.duration_unit === 'months'
-    ? ruPlural(n, 'месяц', 'месяца', 'месяцев')
-    : ruPlural(n, 'неделя', 'недели', 'недель')
-  return `Срок: примерно ${n} ${unit}`
-}
-
-/** Структурированный префикс из заполненных полей формы («Тип: …; Объём: 72 ч; …»); пустая форма — пустая строка. */
-export function buildStructuredPrefix(f: RequestFormFields): string {
-  const parts: string[] = []
+/** Структура `params` только из заполненных полей формы (R09/MET-53): «предложит агент» и пустые
+ * строки не отправляются; срок в месяцах переводится в недели так же, как в intake бэкенда
+ * (1 месяц ≈ 4.3 недели). */
+export function buildRequestParams(f: RequestFormFields): RequestFormParams {
+  const p: RequestFormParams = {}
   const title = (f.title || '').trim()
-  if (title) parts.push(`Тема: «${title}»`)
-  if (TYPE_PREFIX[f.program_type]) parts.push(`Тип: ${TYPE_PREFIX[f.program_type]}`)
+  if (title) p.title = title
+  if (f.program_type) p.program_type = f.program_type
   const audience = (f.audience || '').trim()
-  if (audience) parts.push(`Аудитория: ${audience}`)
+  if (audience) p.audience = audience
   const entry = (f.entry_level || '').trim()
-  if (entry) parts.push(`Слушатели уже знают ${entry}`)
-  if (f.volume_h !== '' && Number(f.volume_h) > 0) parts.push(`Объём: ${Number(f.volume_h)} ч`)
-  if (f.form) parts.push(`Форма обучения: ${f.form}`)
-  if (f.duration_value !== '' && Number(f.duration_value) > 0) parts.push(durationText(f))
-  if (f.final_assessment) parts.push(`Итоговая аттестация: ${f.final_assessment.toLowerCase()}`)
-  return parts.join('; ') + (parts.length ? '.' : '')
+  if (entry) p.entry_level = entry
+  if (f.volume_h !== '' && Number(f.volume_h) > 0) p.volume_h = Number(f.volume_h)
+  if (f.form) p.form = f.form
+  if (f.duration_value !== '' && Number(f.duration_value) > 0) {
+    const n = Number(f.duration_value)
+    p.duration_weeks = f.duration_unit === 'months' ? Math.round(n * 4.3 * 10) / 10 : n
+  }
+  if (f.final_assessment) p.final_assessment_form = f.final_assessment
+  return p
 }
 
-/** Текст запроса с префиксом формы: заполненные поля — структурированной строкой в начале, свободный текст — после неё. */
-export function applyRequestForm(f: RequestFormFields, text: string): string {
-  const prefix = buildStructuredPrefix(f)
-  const body = text.trim()
-  if (!prefix) return body
-  return body ? `${prefix}\n\n${body}` : prefix
+/** Есть ли в структуре хоть одно заполненное поле: пустая форма идёт старым multipart-путём. */
+export function hasRequestParams(p: RequestFormParams): boolean {
+  return Object.keys(p).length > 0
 }
 
 /* ---------------- Чек-лист проекта приказа (MET-19) ---------------- */

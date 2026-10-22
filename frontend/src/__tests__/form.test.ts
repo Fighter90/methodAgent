@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  applyRequestForm, buildStructuredPrefix, EMPTY_REQUEST_FORM, isOrderRegistered, ORDER_CHECKLIST, ORDER_NOTE,
-  orderRegisteredValue, orderStorageKey, programMetrics, ruPlural, type RequestFormFields,
+  buildRequestParams, EMPTY_REQUEST_FORM, FORM_ONLY_REQUEST, hasRequestParams, isOrderRegistered,
+  ORDER_CHECKLIST, ORDER_NOTE, orderRegisteredValue, orderStorageKey, programMetrics,
+  VOLUME_PRESETS, type RequestFormFields,
 } from '../kit'
 
-/* SPEC-UI-28, SPEC-UI-29, SPEC-UI-30: чистые функции формы запроса, чек-листа приказа и честных метрик */
+/* SPEC-UI-28, SPEC-UI-29, SPEC-UI-30: чистые функции формы запроса (сборка params для POST /programs),
+ * чек-листа приказа и честных метрик */
 
 const FULL: RequestFormFields = {
   title: 'Анализ данных на Python',
@@ -18,53 +20,55 @@ const FULL: RequestFormFields = {
   final_assessment: 'Защита проекта',
 }
 
-describe('buildStructuredPrefix — префикс формы запроса (MET-15)', () => {
-  it('склеивает только заполненные поля в порядке формы', () => {
-    const p = buildStructuredPrefix(FULL)
-    expect(p).toContain('Тема: «Анализ данных на Python»')
-    expect(p).toContain('Тип: повышение квалификации')
-    expect(p).toContain('Аудитория: сотрудники банков')
-    expect(p).toContain('Слушатели уже знают работу в Excel')
-    expect(p).toContain('Объём: 36 ч')
-    expect(p).toContain('Форма обучения: очно-заочная')
-    expect(p).toContain('Срок: примерно 4 недели')
-    expect(p).toContain('Итоговая аттестация: защита проекта')
-    expect(p.indexOf('Тема')).toBeLessThan(p.indexOf('Объём'))
-    expect(p.endsWith('.')).toBe(true)
+describe('buildRequestParams — сборка params для POST /programs (MET-53/R09)', () => {
+  it('заполненные поля уходят с именами модели Params бэкенда', () => {
+    expect(buildRequestParams(FULL)).toEqual({
+      title: 'Анализ данных на Python',
+      program_type: 'dpp_pk',
+      audience: 'сотрудники банков',
+      entry_level: 'работу в Excel',
+      volume_h: 36,
+      form: 'очно-заочная',
+      duration_weeks: 4,
+      final_assessment_form: 'Защита проекта',
+    })
   })
 
-  it('пустая форма — пустая строка, «предложит агент» в префикс не попадает', () => {
-    expect(buildStructuredPrefix({ ...EMPTY_REQUEST_FORM })).toBe('')
-    expect(buildStructuredPrefix({ ...FULL, program_type: '', final_assessment: '', title: '', audience: '', entry_level: '' }))
-      .toBe('Объём: 36 ч; Форма обучения: очно-заочная; Срок: примерно 4 недели.')
+  it('«предложит агент» и пустые поля в params не попадают, пробелы по краям обрезаются', () => {
+    expect(buildRequestParams({ ...EMPTY_REQUEST_FORM })).toEqual({})
+    expect(buildRequestParams({
+      ...FULL, title: '  ', audience: ' учителя школ ', entry_level: '', program_type: '', form: '', final_assessment: '',
+    })).toEqual({ audience: 'учителя школ', volume_h: 36, duration_weeks: 4 })
   })
 
-  it('срок в месяцах склоняется и помечается как примерный', () => {
-    expect(buildStructuredPrefix({ ...EMPTY_REQUEST_FORM, duration_value: 2, duration_unit: 'months' })).toContain('Срок: примерно 2 месяца')
-    expect(buildStructuredPrefix({ ...EMPTY_REQUEST_FORM, duration_value: 1, duration_unit: 'months' })).toContain('Срок: примерно 1 месяц')
-    expect(buildStructuredPrefix({ ...EMPTY_REQUEST_FORM, duration_value: 6, duration_unit: 'months' })).toContain('Срок: примерно 6 месяцев')
-    expect(buildStructuredPrefix({ ...EMPTY_REQUEST_FORM, duration_value: 1, duration_unit: 'weeks' })).toContain('Срок: примерно 1 неделя')
-    expect(buildStructuredPrefix({ ...EMPTY_REQUEST_FORM, duration_value: 3, duration_unit: 'weeks' })).toContain('Срок: примерно 3 недели')
+  it('пресеты объёма 16/36/72/256 отправляются полем volume_h и только им', () => {
+    expect(VOLUME_PRESETS).toEqual([16, 36, 72, 256])
+    for (const v of VOLUME_PRESETS) {
+      expect(buildRequestParams({ ...EMPTY_REQUEST_FORM, volume_h: v })).toEqual({ volume_h: v })
+    }
   })
 
-  it('нулевые и отрицательные числа объёма и срока игнорируются', () => {
-    expect(buildStructuredPrefix({ ...FULL, volume_h: 0, duration_value: 0 })).not.toContain('Объём')
-    expect(buildStructuredPrefix({ ...FULL, volume_h: 0, duration_value: 0 })).not.toContain('Срок')
-  })
-})
-
-describe('applyRequestForm — склейка с текстом запроса', () => {
-  it('префикс идёт в начале, свободный текст — после пустой строки', () => {
-    const t = applyRequestForm(FULL, 'Нужны слайды для модуля про pandas.')
-    expect(t.startsWith(buildStructuredPrefix(FULL))).toBe(true)
-    expect(t.endsWith('Нужны слайды для модуля про pandas.')).toBe(true)
-    expect(t).toContain('.\n\nНужны')
+  it('срок в месяцах переводится в недели как в intake бэкенда (1 месяц ≈ 4.3 недели)', () => {
+    expect(buildRequestParams({ ...EMPTY_REQUEST_FORM, duration_value: 1, duration_unit: 'months' }).duration_weeks).toBe(4.3)
+    expect(buildRequestParams({ ...EMPTY_REQUEST_FORM, duration_value: 2, duration_unit: 'months' }).duration_weeks).toBe(8.6)
+    expect(buildRequestParams({ ...EMPTY_REQUEST_FORM, duration_value: 3, duration_unit: 'weeks' }).duration_weeks).toBe(3)
   })
 
-  it('пустая форма не меняет текст, форма без текста остаётся полноценным запросом', () => {
-    expect(applyRequestForm({ ...EMPTY_REQUEST_FORM }, '  Описал словами  ')).toBe('Описал словами')
-    expect(applyRequestForm(FULL, '')).toBe(buildStructuredPrefix(FULL))
-    expect(applyRequestForm(FULL, '').length).toBeGreaterThanOrEqual(5)
+  it('нулевые и отрицательные объём и срок не отправляются', () => {
+    expect(buildRequestParams({ ...FULL, volume_h: 0 })).not.toHaveProperty('volume_h')
+    expect(buildRequestParams({ ...FULL, volume_h: -16 })).not.toHaveProperty('volume_h')
+    expect(buildRequestParams({ ...FULL, duration_value: 0 })).not.toHaveProperty('duration_weeks')
+  })
+
+  it('заглушка текста для отправки формы без текста удовлетворяет минимуму request бэкенда (5 символов)', () => {
+    expect(FORM_ONLY_REQUEST.length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('hasRequestParams отличает пустую форму от формы с хоть одним полем', () => {
+    expect(hasRequestParams({})).toBe(false)
+    expect(hasRequestParams(buildRequestParams(EMPTY_REQUEST_FORM))).toBe(false)
+    expect(hasRequestParams(buildRequestParams(FULL))).toBe(true)
+    expect(hasRequestParams({ volume_h: 16 })).toBe(true)
   })
 })
 
@@ -117,13 +121,6 @@ describe('programMetrics — нули не выдаются за результ�
     expect(m.note).toBe('')
     expect(m.model).toBe('—')
     expect(m.tokens).toBe('—')
-  })
-})
-
-describe('ruPlural — русские формы числа', () => {
-  it('один/две-четыре/пять-двадцать и исключения 11–14', () => {
-    expect([1, 2, 5, 11, 21, 22, 25].map((n) => ruPlural(n, 'неделя', 'недели', 'недель')))
-      .toEqual(['неделя', 'недели', 'недель', 'недель', 'неделя', 'недели', 'недель'])
   })
 })
 

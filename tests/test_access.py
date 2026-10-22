@@ -597,3 +597,43 @@ def test_form_params_override_text_with_conflict_note(client) -> None:
     assert all(a['value'] in (36, 'очная', 'Банки') for a in conflicts)
     q = next(q for q in doc['questions'] if q['field'] == 'volume_h' and 'Уточните объём' in q['text'])
     assert '36' in q['text'] and '72' in q['text'] and q['options'] == ['36', '72']
+
+
+def test_kit_status_done_on_fixtures(client) -> None:
+    """SPEC-API-40: MET-50/R06 — в режиме fixtures резервная генерация без модели штатна:
+    статус автопрогона остаётся done, сводка degraded пустая (регресс честного статуса)."""
+    r = client.post('/api/v1/programs?mode=auto', json={'request': REQ}, headers=_h(client, 'u-madina'))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body['status'] == 'done', body['status']
+    assert body['degraded'] == {}
+    assert not any('добрано шаблоном' in n for n in body['agent_notes'])
+
+
+def test_kit_status_degraded_on_partial_llm(client, monkeypatch) -> None:
+    """SPEC-API-40: MET-50/R06 — частичный ответ модели (модуль собран ею, source=llm, но вопросы
+    добраны шаблоном, а задания есть не на все практические темы) при зелёных структурных правилах
+    даёт статус done_with_errors с честной сводкой degraded, а не безмолвный done."""
+    from app.skills.content import run as content_run
+
+    async def partial(doc, m, *, n_questions, test_id, slide_topics, stats=None, instruction_extra=''):
+        # модель ответила (source=llm), но неполно: всё добрано шаблоном (origin=template по умолчанию)
+        base = content_run.fallback(doc, m, content_run._module_los(doc, m), n_questions, test_id, slide_topics)
+        base.source = 'llm'
+        base.tasks = base.tasks[:1]  # из двух практических тем модуля задание только на первую
+        return base
+
+    monkeypatch.setattr(content_run, 'run', partial)
+    r = client.post('/api/v1/programs?mode=auto', json={'request': REQ}, headers=_h(client, 'u-madina'))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body['status'] == 'done_with_errors', body['status']
+    deg = body['degraded']
+    assert deg['template_elements'] > 0 and 'добрано шаблоном' in deg['text']
+    assert len(deg['topics_without_task']) >= 1 and 'темы без заданий' in deg['text']
+    assert deg['draft_modules'] == []  # модель отвечала: целиком шаблонных модулей нет
+    assert body['report']['blocking_checks'] == '10/10', body['report']['blocking_checks']  # правила зелёные — деградацию видно только в degraded
+    # сводка сохранилась в документе: заметка агента и состав комплекта
+    doc = client.get(f"/api/v1/programs/{body['program_id']}", headers=_h(client, 'u-madina')).json()
+    assert any('темы без заданий' in n for n in doc['agent_notes'])
+    assert doc['status'] == 'kit_ready'  # статус документа прежний, честный статус — в ответе автопрогона

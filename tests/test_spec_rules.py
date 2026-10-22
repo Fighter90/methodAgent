@@ -148,6 +148,47 @@ def test_v08_v09_completeness() -> None:
     assert _status(doc, 'V-09') == 'fail'  # нет слайдов для модуля 2
 
 
+def test_v09_slides_belong_to_requested_module() -> None:
+    """SPEC-RULES-24: слайды засчитываются, только если лекция стоит в теме запрошенного модуля, а не в чужой."""
+    slide = [Slide(id='s', n=1, title='x', bullets=['тезис'])]
+    doc = _doc(params=Params(materials=Materials(slides_modules=[1])))
+    doc.modules[0].title = 'Pandas'
+    # лекция чужого предмета живёт в теме модуля 2, но притворяется лекцией модуля 1 (module_id переключён)
+    doc.kit.lectures = [Lecture(id='l1', topic_id='t2.1', module_id='m1', title='Безопасность полётов', slides=slide)]
+    res = next(r for r in R.run_rules(doc, 'kit') if r.id == 'V-09')
+    assert res.status == 'fail'
+    assert any('Слайды модуля 1 не найдены' in m for m in res.messages), res.messages
+
+    doc = _doc(params=Params(materials=Materials(slides_modules=[1, 2])))
+    doc.kit.lectures = [
+        Lecture(id='l1', topic_id='t1.1', module_id='m1', title='Циклы', slides=slide),
+        Lecture(id='l2', topic_id='t2.1', module_id='m2', title='Работа с файлами', slides=slide),
+    ]
+    assert _status(doc, 'V-09') == 'pass'  # обе лекции в своих темах
+    doc.kit.lectures.pop()  # осталась одна лекция из двух — модуль 2 не покрыт
+    res = next(r for r in R.run_rules(doc, 'kit') if r.id == 'V-09')
+    assert res.status == 'fail'
+    assert any('Слайды модуля 2 не найдены' in m for m in res.messages), res.messages
+
+
+def test_v09_requested_lessons_need_own_topic_slides() -> None:
+    """SPEC-RULES-24: каждое запрошенное занятие покрыто лекцией со слайдами именно в своей теме УТП."""
+    slide = [Slide(id='s', n=1, title='x', bullets=['тезис'])]
+    doc = _doc(params=Params(materials=Materials(slides_lessons=[1, 2])))
+    for m in doc.modules:  # тема = занятие (2 ч): занятие 1 — тема 1.1, занятие 2 — тема 1.2
+        for t in m.topics:
+            t.hours = Hours(total=2)
+    doc.kit.lectures = [
+        Lecture(id='l1', topic_id='t1.1', module_id='m1', title='Циклы', slides=slide),
+        Lecture(id='l2', topic_id='t1.2', module_id='m1', title='Функции', slides=slide),
+    ]
+    assert _status(doc, 'V-09') == 'pass'
+    doc.kit.lectures[1].slides = []
+    res = next(r for r in R.run_rules(doc, 'kit') if r.id == 'V-09')
+    assert res.status == 'fail'
+    assert any('Слайды занятия 2 не найдены' in m for m in res.messages), res.messages
+
+
 def test_v10_calendar() -> None:
     """SPEC-RULES-08: пока конфликт календаря не решён или нагрузка выше ограничения (V-10) — fail проверки 3."""
     assert _check_of('V-10') == 3

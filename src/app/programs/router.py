@@ -30,6 +30,7 @@ from app.programs.schemas import (
     Assumption,
     Params,
     ProgramDoc,
+    ProgramType,
     Question,
     ReferenceInfo,
     Status,
@@ -181,11 +182,71 @@ def _parse_files(files: list[tuple[str, bytes]]) -> tuple[list[ReferenceInfo], s
     return refs, '\n'.join(texts)
 
 
+def _kit_degraded(doc: ProgramDoc) -> dict[str, Any]:
+    """MET-50 / R06 (аудит 22.10): честная сводка деградации собранного комплекта.
+
+    Считается только при реальном участии модели: в doc.progress['content_source'] этап
+    content помечает модули, собранные живой моделью (source=llm, в том числе частично —
+    с добором шаблоном), а при настроенном шлюзе (llm_providers=cloudru) шаблонные модули
+    и отказы навыков тоже означают деградацию. В режиме fixtures резервная генерация
+    штатна, ни один модуль моделью не отвечал — сводка пустая, статус остаётся done.
+    """
+    s = get_settings()
+    sources = doc.progress.get('content_source') or {}
+    model_answered = any(v == 'llm' for v in sources.values())
+    if s.llm_providers == 'fixtures' and not model_answered:
+        return {}
+    kit = doc.kit
+    template_q = sum(1 for q in kit.questions if q.origin == 'template')
+    template_t = sum(1 for t in kit.tasks if t.origin == 'template')
+    internship = doc.type == ProgramType.DPP_PK_INTERNSHIP
+    without_task = [
+        f'М{m.n}. Тема {t.n}. {t.title}'
+        for m in doc.modules for t in m.topics
+        if (internship or t.hours.pr + t.hours.lb > 0) and not any(x.topic_id == t.id for x in kit.tasks)
+    ]
+    drafts = list(kit.drafts)
+    errors = len(doc.step_errors)
+    if not (template_q or template_t or without_task or drafts or errors):
+        return {}
+    parts: list[str] = []
+    if template_q or template_t:
+        parts.append(f'добрано шаблоном: {template_q} вопросов, {template_t} заданий')
+    if without_task:
+        shown = '; '.join(without_task[:4])
+        more = f' … (+{len(without_task) - 4})' if len(without_task) > 4 else ''
+        parts.append(f'темы без заданий: {shown}{more}')
+    if drafts:
+        names = [(f'М{doc.module_by_id(mid).n}' if doc.module_by_id(mid) else mid) for mid in drafts]
+        parts.append('модули без ответа модели: ' + ', '.join(names))
+    if errors:
+        parts.append(f'отказов навыков: {errors}')
+    return {
+        'template_elements': template_q + template_t,
+        'repaired_elements': sum(1 for x in (*kit.questions, *kit.tasks, *kit.lectures) if x.origin == 'repaired'),
+        'step_errors': errors,
+        'topics_without_task': without_task,
+        'draft_modules': drafts,
+        'text': '; '.join(parts),
+    }
+
+
+def _note_degraded(doc: ProgramDoc) -> None:
+    """MET-50 (аудит 22.10, R06): сводка деградации комплекта — в заметки агента документа,
+    чтобы она сохранилась в программе и попала в agent_notes ответа автопрогона."""
+    degraded = _kit_degraded(doc)
+    if degraded and degraded['text'] not in doc.agent_notes:
+        doc.agent_notes.append(degraded['text'])
+
+
 def _auto_response(doc: ProgramDoc, base: str) -> dict[str, Any]:
     """Поля ответа автопрогона (ТЗ, таблица 21)."""
     rep = doc.report
     failed = [r.id for r in rep.rules if r.status == 'fail'] if rep else []
-    status = 'done' if doc.status == Status.KIT_READY and not failed else ('done_with_errors' if doc.kit.questions else 'failed')
+    # MET-50 (аудит 22.10, R06): частичный ответ модели с добором шаблоном, шаблонные модули,
+    # отказы шагов и темы без заданий — не чистый done, а done_with_errors со сводкой degraded.
+    degraded = _kit_degraded(doc)
+    status = 'done' if doc.status == Status.KIT_READY and not failed and not degraded else ('done_with_errors' if doc.kit.questions else 'failed')
     tot = doc.totals()
     return {
         'program_id': doc.id,
@@ -196,6 +257,7 @@ def _auto_response(doc: ProgramDoc, base: str) -> dict[str, Any]:
         # Вопросы, на которые вызывающий не ответил: поле заполнено значением профиля (см. assumptions)
         'questions_skipped': [q.model_dump() for q in doc.questions if not q.answer or q.answer == DEFAULT_ANSWER],
         'step_errors': [e.model_dump() for e in doc.step_errors],
+        'degraded': degraded,
         'skeleton': {
             'template': doc.template,
             'type': doc.type.value if doc.type else None,
@@ -349,6 +411,7 @@ async def _auto_pipeline(doc: ProgramDoc, owner: str) -> ProgramDoc:
             break
     await svc.save(doc, owner, reason='каркас', snapshot=True)
     await wf.generate_kit(doc)
+    _note_degraded(doc)
     await svc.save(doc, owner, reason='комплект', snapshot=True)
     await svc.log_event(doc.id, 'agent', 'kit_ready', f'Блокирующие проверки {doc.report.blocking_passed}/10' if doc.report else '')
     return doc
@@ -432,6 +495,7 @@ def _kit_job(program_id: str, owner: str):
     async def _job(progress):
         d = await svc.load(program_id)
         await wf.generate_kit(d, progress)
+        _note_degraded(d)
         await svc.save(d, owner, reason='комплект', snapshot=True)
         await svc.log_event(program_id, 'agent', 'kit_ready', f'Блокирующие проверки {d.report.blocking_passed}/10' if d.report else '', version=d.version)
 
@@ -444,6 +508,7 @@ def _auto_job(program_id: str, owner: str):
         if d.status in (Status.SKELETON_APPROVED, Status.GENERATING):
             # перезапуск после рестарта: каркас уже сохранён, собирается только комплект
             await wf.generate_kit(d, progress)
+            _note_degraded(d)
             await svc.save(d, owner, reason='комплект', snapshot=True)
         else:
             await _auto_pipeline(d, owner)

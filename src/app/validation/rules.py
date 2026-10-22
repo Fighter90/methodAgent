@@ -216,6 +216,19 @@ def v08(doc: ProgramDoc, stage: str):
     return ('fail' if missing else 'pass'), [f'Не заполнен раздел «{x}»' for x in missing], [f'section:{x}' for x in missing]
 
 
+def _lesson_topics(doc: ProgramDoc) -> dict[int, str]:
+    """MET-58: номер занятия → id темы УТП (накопление часов тем, занятие = session_hours календаря)."""
+    session = doc.calendar.session_hours or 2
+    mapping: dict[int, str] = {}
+    acc = 0
+    for t in doc.all_topics():
+        first, last = acc // session + 1, (acc + max(t.hours.total, 1) - 1) // session + 1
+        for n in range(first, last + 1):
+            mapping.setdefault(n, t.id)
+        acc += t.hours.total
+    return mapping
+
+
 def v09(doc: ProgramDoc, stage: str):
     # Блокирующая часть — отсутствие запрошенных материалов; пустые пункты слайда — только предупреждение (SPEC-RULES-22)
     hard, warns, nodes = [], [], []
@@ -238,10 +251,19 @@ def v09(doc: ProgramDoc, stage: str):
             if not any(str(b).strip() for b in sl.bullets):
                 warns.append(f'Слайд {sl.id} «{sl.title[:40]}» без пунктов')
                 nodes.append(sl.id)
+    # MET-58-доп: слайды покрывают запрошенный материал, только если лекция с непустыми
+    # слайдами стоит именно в теме УТП этого модуля/занятия (а не в чужой теме и не по
+    # полю module_id); каждый запрошенный модуль и занятие покрывается своей лекцией.
     for mod_n in mat.slides_modules:
         mod = next((m for m in doc.modules if m.n == mod_n), None)
-        if mod and not any(lec.module_id == mod.id and lec.slides for lec in doc.kit.lectures):
-            hard.append(f'Нет слайдов для модуля {mod_n}, указанного в запросе')
+        own = {t.id for t in mod.topics} if mod else set()
+        if mod and not any(lec.topic_id in own and lec.slides for lec in doc.kit.lectures):
+            hard.append(f'Слайды модуля {mod_n} не найдены: нет лекции со слайдами в его темах')
+    lesson_topics = _lesson_topics(doc) if mat.slides_lessons else {}
+    for n in mat.slides_lessons:
+        tid = lesson_topics.get(n)
+        if tid and not any(lec.topic_id == tid and lec.slides for lec in doc.kit.lectures):
+            hard.append(f'Слайды занятия {n} не найдены: нет лекции со слайдами в его теме')
     status = 'fail' if hard else ('warn' if warns else 'pass')
     return status, hard + warns, nodes
 

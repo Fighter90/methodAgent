@@ -90,8 +90,8 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 <!-- trace:begin -->
 | Спецификация | Требований | Покрыто | Не покрыты |
 |---|---|---|---|
-| [agent-workflow.md](agent-workflow.md) | 50 | 50 | — |
-| [api.md](api.md) | 39 | 39 | — |
+| [agent-workflow.md](agent-workflow.md) | 52 | 52 | — |
+| [api.md](api.md) | 40 | 40 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 31 | 31 | — |
 | [export.md](export.md) | 14 | 14 | — |
 | [frontend.md](frontend.md) | 30 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30 |
@@ -105,7 +105,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | [solvers.md](solvers.md) | 16 | 16 | — |
 | [validation-judge.md](validation-judge.md) | 12 | 12 | — |
 | [validation-repair.md](validation-repair.md) | 20 | 20 | — |
-| [validation-rules.md](validation-rules.md) | 23 | 23 | — |
+| [validation-rules.md](validation-rules.md) | 24 | 24 | — |
 | [validation-sandbox.md](validation-sandbox.md) | 14 | 14 | — |
 
 | Требование | Тесты |
@@ -160,6 +160,8 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-FLOW-48 | `test_spec_misc.py::test_final_task_follows_course_subject` |
 | SPEC-FLOW-49 | `test_spec_misc.py::test_v21_explicit_prerequisites_survive_reorder` |
 | SPEC-FLOW-50 | `test_e2e_regressions.py::test_skeleton_return_blocked_after_approval` |
+| SPEC-FLOW-51 | `test_spec_misc.py::test_source_confirmation_needs_record_match` |
+| SPEC-FLOW-52 | `test_spec_misc.py::test_local_and_ssrf_urls_not_probed` |
 | SPEC-API-01 | `test_access.py::test_unassigned_expert_cannot_accept_and_api_404` |
 | SPEC-API-02 | `test_access.py::test_module_accept_requires_all_items`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-API-03 | `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
@@ -199,6 +201,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-API-37 | `test_access.py::test_expert_actualize_hides_foreign_modules` |
 | SPEC-API-38 | `test_access.py::test_return_rejected_for_approved_program` |
 | SPEC-API-39 | `test_access.py::test_form_params_override_text_with_conflict_note` |
+| SPEC-API-40 | `test_access.py::test_kit_status_done_on_fixtures`, `test_access.py::test_kit_status_degraded_on_partial_llm` |
 | SPEC-AUTH-01 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
 | SPEC-AUTH-02 | `test_auth.py::test_login_by_login_id_and_all_demo_users`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-AUTH-03 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
@@ -455,6 +458,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-RULES-21 | `test_spec_rules.py::test_v26_latin_share_per_node` |
 | SPEC-RULES-22 | `test_spec_rules.py::test_v18_v25_material_quality` |
 | SPEC-RULES-23 | `test_spec_rules.py::test_v16_registry_freshness_warn` |
+| SPEC-RULES-24 | `test_spec_rules.py::test_v09_slides_belong_to_requested_module`, `test_spec_rules.py::test_v09_requested_lessons_need_own_topic_slides` |
 | SPEC-SANDBOX-01 | `test_spec_sandbox.py::test_empty_code_skipped` |
 | SPEC-SANDBOX-02 | `test_spec_sandbox.py::test_system_access_not_run`, `test_spec_sandbox.py::test_legit_examples_still_run` |
 | SPEC-SANDBOX-03 | `test_spec_sandbox.py::test_heavy_libraries_syntax_only` |

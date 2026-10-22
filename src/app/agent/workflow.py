@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import json
 import logging
 import re
@@ -16,6 +17,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
@@ -852,6 +854,9 @@ async def generate_kit(doc: ProgramDoc, progress: ProgressFn = _noop) -> None:
         stats.merge(r.stats)
     per_module.clear()  # уже в stats: прогресс дальше считает только общий учёт
     results = [(r.module, r.content) for r in runs]
+    # MET-50 (аудит 22.10, R06): маркер этапа content для честного статуса комплекта —
+    # какие модули собрала живая модель (source=llm), а какие ушли в шаблон без ответа модели.
+    doc.progress['content_source'] = {m.id: res.source for m, res in results}
     extra_sources: list[str] = []
     internship = doc.type == ProgramType.DPP_PK_INTERNSHIP
     for m, res in results:
@@ -1157,11 +1162,12 @@ def _sources(doc: ProgramDoc, extra: list[str]) -> None:
 
 
 async def check_source_urls(doc: ProgramDoc) -> None:
-    """Проверка ссылок источников, которых нет в реестре (F14, аудит 19.10).
+    """Проверка ссылок источников, которых нет в реестре (F14, аудит 19.10; аудит 22.10, R11/R12).
 
-    Доступность страницы — это не подтверждённость источника: подтверждение ставится,
-    только если домен ссылки есть в реестре (`registry_domains()`). Локальные и служебные
-    адреса не опрашиваются и не подтверждаются. В режиме fixtures сетевых проверок нет.
+    Страница опрашивается GET-запросом (не HEAD) без follow_redirects: «открывается» —
+    только прямой 200 на исходном хосте, текст читается до 50К символов. Локальные и
+    служебные адреса не опрашиваются вовсе (SSRF, R12). Подтверждение ставится по трём
+    уровням в `_apply_source_checks` (R11). В режиме fixtures сетевых проверок нет.
     """
 
     if get_settings().llm_providers == 'fixtures':
@@ -1171,39 +1177,72 @@ async def check_source_urls(doc: ProgramDoc) -> None:
         return
     import httpx
 
-    async def _ok(url: str) -> bool:
+    async def _fetch(url: str) -> tuple[bool, str]:
         try:
-            async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as c:
-                r = await c.head(url)
-                if r.status_code in (403, 405):
-                    r = await c.get(url)
-                return r.status_code < 400
+            async with httpx.AsyncClient(timeout=4.0, follow_redirects=False) as c:
+                r = await c.get(url)  # GET, а не HEAD: для сверки заголовка нужен текст страницы (R11)
         except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError):  # нет сети или сайта: источник остаётся неподтверждённым
-            return False
+            return False, ''
+        if r.status_code != 200:  # редирект не следуем: «открывается» — только прямой 200 на исходном хосте
+            return False, ''
+        return True, (r.text or '')[:50_000]
 
-    results = await asyncio.gather(*(_ok(u) for _, u in todo[:8]))
-    _apply_source_checks(doc, {u: ok for (_, u), ok in zip(todo, results, strict=False)}, registry_domains())
+    picked = todo[:8]
+    results = {u: res for (_, u), res in zip(picked, await asyncio.gather(*(_fetch(u) for _, u in picked)), strict=False)}
+    _apply_source_checks(doc, results, registry_domains())
 
 
 # --------------------------------------------------------------------------- источники (F14)
 _LOCAL_HOST = re.compile(r'^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|::1|\[::1\])')
+_NUMERIC_HOST = re.compile(r'^(?:0[xX][0-9a-fA-F]+|\d+)$')
 
 
 def _is_local_url(url: str) -> bool:
-    """Локальные и служебные адреса не опрашиваются: ни подтверждения, ни SSRF-щупа."""
+    """Локальные и служебные адреса не опрашиваются: ни подтверждения, ни SSRF-щупа
+    (F14; аудит 22.10, R12: URL разбирается через `urlsplit`, запрещены userinfo
+    (user:pass@), hostname — IP из приватных, loopback, link-local, multicast диапазонов
+    и 0.0.0.0 (через `ipaddress`), а также числовые записи адреса вроде 2130706433)."""
 
-    m = re.match(r'https?://([^/\s:@]+)', url or '')
-    if not m:
+    try:
+        parts = urlsplit(url or '')
+    except ValueError:
         return True
-    host = m.group(1).lower().strip('[]').removeprefix('www.')
-    return bool(_LOCAL_HOST.match(host)) or host.endswith(('.local', '.internal'))
+    if parts.scheme not in ('http', 'https') or '@' in parts.netloc:
+        return True  # не-http схемы и userinfo (user:pass@host) наружу не опрашиваем
+    host = (parts.hostname or '').lower().rstrip('.')
+    if not host or _LOCAL_HOST.match(host) or host.endswith(('.local', '.internal', '.localhost')):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        labels = host.split('.')
+        return len(labels) <= 4 and all(_NUMERIC_HOST.fullmatch(lb) for lb in labels)  # 2130706433, 0x7f.1 — та же петля другим синтаксисом
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved
 
 
-def _apply_source_checks(doc: ProgramDoc, results: dict[str, bool], trusted: set[str]) -> int:
-    """F14: доступность страницы ≠ подтверждённость источника.
+def _source_title_words(bibl: str) -> list[str]:
+    """Значимые слова заголовка библиографической записи — часть bibl до ссылки (R11)."""
 
-    Подтверждение ставится, только если домен ссылки входит в доверенные домены реестра;
-    иначе фиксируется лишь проверенная ссылка, а пометка «не подтверждено» сохраняется (V-16).
+    title = re.split(r'https?://', bibl, maxsplit=1)[0].replace('[не подтверждено]', ' ')
+    return [w for w in re.findall(r'[а-яёa-z0-9]+', title.lower()) if len(w) >= 5]
+
+
+def _unconfirmed_bibl(bibl: str) -> str:
+    """Bibl без дублей пометки: «не подтверждено» сохраняется, добавляется «ссылка проверена» (R11)."""
+
+    base = bibl.replace(' [не подтверждено]', '').replace('[не подтверждено] ', '')
+    return base if '(ссылка проверена' in base else f'{base} [не подтверждено] (ссылка проверена, источник не подтверждён)'
+
+
+def _apply_source_checks(doc: ProgramDoc, results: dict[str, tuple[bool, str]], trusted: set[str]) -> int:
+    """F14 + аудит 22.10 (R11): доступность страницы ≠ подтверждённость источника.
+
+    Три уровня: (а) link_ok — ссылка открылась прямым 200; (б) domain_trusted — домен
+    входит в доверенные домены реестра; (в) подтверждение (confirmed=True) — только при
+    совпадении записи: не меньше двух значимых слов заголовка bibl встречаются в тексте
+    страницы (если текст получен) или источник матчится реестром по реквизитам
+    (`match_source`). Иначе confirmed=False: пометка «не подтверждено» сохраняется, а к
+    bibl открывшейся ссылки добавляется «(ссылка проверена, источник не подтверждён)».
     Возвращает число реально подтверждённых источников.
     """
 
@@ -1217,15 +1256,24 @@ def _apply_source_checks(doc: ProgramDoc, results: dict[str, bool], trusted: set
         url = m.group(0).rstrip('.,;)')
         if _is_local_url(url):
             continue
-        ok = results.get(url)
-        if ok is None:
+        res = results.get(url)
+        if res is None:
             continue
-        host = re.match(r'https?://([^/\s]+)', url).group(1).lower().removeprefix('www.')
+        ok, text = res
+        host = (urlsplit(url).hostname or '').lower().removeprefix('www.')
         s.url, s.checked_at = url, now_iso()[:10]
-        if ok and any(host == d or host.endswith('.' + d) for d in trusted):
+        low, words = (text or '').lower(), _source_title_words(s.bibl)
+        # Подтверждение: (а) match_source нашёл источник в реестре по реквизитам — домен не важен,
+        # или (б) домен доверенный + слова заголовка встречаются в тексте страницы.
+        record_match = match_source(s.bibl)
+        title_match = bool(low) and sum(1 for w in words if w in low) >= 2
+        domain_trusted = any(host == d or host.endswith('.' + d) for d in trusted)
+        if ok and (record_match or (domain_trusted and title_match)):
             s.confirmed, s.kind = True, 'url'
             s.bibl = s.bibl.replace(' [не подтверждено]', '') + f' (ссылка проверена {s.checked_at})'
             n += 1
+        elif ok:  # страница открылась, но совпадения записи нет: доверенный домен не подтверждает выдуманный источник
+            s.bibl = _unconfirmed_bibl(s.bibl)
     return n
 
 

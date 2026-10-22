@@ -4,7 +4,8 @@ import { ArrowRight, FileText, ListChecks, Paperclip, Plus, RefreshCw, Sparkles,
 import { api, getSession, STATUS_LABEL } from '../api'
 import { Spinner, useToast } from '../components/ui'
 import {
-  applyRequestForm, EMPTY_REQUEST_FORM, REQUEST_FORM_FINAL_OPTIONS, REQUEST_FORM_FORM_OPTIONS,
+  buildRequestParams, EMPTY_REQUEST_FORM, FORM_ONLY_REQUEST, hasRequestParams,
+  REQUEST_FORM_FINAL_OPTIONS, REQUEST_FORM_FORM_OPTIONS,
   REQUEST_FORM_TYPE_LABEL, VOLUME_PRESETS, type RequestFormFields,
 } from '../kit'
 import { FindingsList } from './ProgramTools'
@@ -45,16 +46,40 @@ export default function Programs() {
     api(`/programs${q.toString() ? `?${q}` : ''}`).then(setList).catch((e) => { setList([]); toast(e.message, true) })
   }, [toast, filter, since, until])
 
+  /** Файл → вложение JSON-запроса: имя и base64 без префикса data: (бэкенд валидирует размер до декодирования). */
+  function fileToAttachment(f: File): Promise<{ name: string; content_base64: string }> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader()
+      r.onerror = () => reject(new Error(`Не удалось прочитать файл «${f.name}»`))
+      r.onload = () => resolve({ name: f.name, content_base64: String(r.result).split(',')[1] || '' })
+      r.readAsDataURL(f)
+    })
+  }
+
   async function create() {
-    const full = applyRequestForm(form, text)
-    if (full.trim().length < 5) return toast('Опишите программу хотя бы в одном предложении или заполните поля формы', true)
+    const params = buildRequestParams(form)
+    const structured = hasRequestParams(params)
+    const body = text.trim()
+    // R09/MET-53: заполненные поля формы уходят структурой params в POST /programs —
+    // бэкенд применяет их приоритетно над разбором текста и фиксирует расхождения в assumptions.
+    // Свободный текст при этом не трогаем: без префикса, как написал методист.
+    const request = structured && !body ? FORM_ONLY_REQUEST : body
+    if (request.length < 5) return toast('Опишите программу хотя бы в одном предложении или заполните поля формы', true)
     setBusy(true)
     try {
-      const fd = new FormData()
-      fd.append('text', full)
-      fd.append('norm_mode', norm)
-      files.forEach((f) => fd.append('files', f))
-      const r = await api('/programs/upload', { method: 'POST', body: fd })
+      let r: any
+      if (structured) {
+        r = await api('/programs', {
+          method: 'POST',
+          json: { request, norm_mode: norm, params, attachments: await Promise.all(files.map(fileToAttachment)) },
+        })
+      } else {
+        const fd = new FormData()
+        fd.append('text', request)
+        fd.append('norm_mode', norm)
+        files.forEach((f) => fd.append('files', f))
+        r = await api('/programs/upload', { method: 'POST', body: fd })
+      }
       if (r.job_id) sessionStorage.setItem(`ma.job.${r.program_id}`, r.job_id)
       nav(`/app/p/${r.program_id}`)
     } catch (e: any) {
@@ -171,7 +196,8 @@ export default function Programs() {
 }
 
 /* Панель «Известные параметры» над свободным текстом: 8 необязательных полей (MET-15).
- * Заполненное попадает в начало запроса строкой «Тип: …; Объём: 72 ч; …», пустое агент уточнит вопросами. */
+ * Заполненное уходит в POST /programs структурой params (R09/MET-53) — приоритетнее разбора текста,
+ * пустое агент уточнит вопросами. */
 function RequestForm({ form, setField }: { form: RequestFormFields; setField: (k: keyof RequestFormFields, v: string | number) => void }) {
   return (
     <details style={{ margin: '10px 0', border: '1px solid var(--line)', borderRadius: 14, padding: '10px 14px', background: 'var(--bg-2)' }}>
@@ -179,7 +205,7 @@ function RequestForm({ form, setField }: { form: RequestFormFields; setField: (k
         <ListChecks size={15} style={{ verticalAlign: -3 }} /> Известные параметры — необязательно
       </summary>
       <p className="tiny muted" style={{ margin: '8px 0 12px' }}>
-        Заполненные поля добавятся в начало запроса строкой вида «Тип: …; Объём: 72 ч; …». Пустые оставьте — агент спросит или предложит сам.
+        Заполненные поля уйдут агенту структурированно и будут главнее текста запроса: если текст и поля расходятся, агент примет значение поля и отметит это в допущениях. Пустые оставьте — агент спросит или предложит сам.
       </p>
       <div className="grid-2" style={{ gap: 10 }}>
         <label className="label">Тема / название

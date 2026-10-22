@@ -868,27 +868,104 @@ def test_question_edit_keeps_lo_links(client, kit, monkeypatch) -> None:
 
 def test_source_url_reachability_is_not_confirmation() -> None:
     """SPEC-FLOW-42"""
-    from types import SimpleNamespace
-
     from app.agent.workflow import _apply_source_checks
     from app.programs.schemas import Source
 
     doc = SimpleNamespace(sources=[
         Source(id='a', kind='book', bibl='Выдуманная книга про курс. https://example.com/book [не подтверждено]'),
-        Source(id='b', kind='book', bibl='Руководство из реестра. https://docs.docker.com/manual [не подтверждено]'),
-        Source(id='c', kind='book', bibl='Служебная ссылка. http://127.0.0.1:8000/secret [не подтверждено]'),
-        Source(id='d', kind='law', bibl='Уже подтверждённый акт. https://docs.docker.com/x', confirmed=True),
+        Source(id='b', kind='book', bibl='Служебная ссылка. http://127.0.0.1:8000/secret [не подтверждено]'),
+        Source(id='c', kind='law', bibl='Уже подтверждённый акт. https://docs.docker.com/x', confirmed=True),
+        Source(id='d', kind='book', bibl='Мёртвая ссылка. https://example.com/dead [не подтверждено]'),
     ])
-    results = {'https://example.com/book': True, 'https://docs.docker.com/manual': True}
+    results = {'https://example.com/book': (True, 'Программа курса и расписание занятий.'), 'https://example.com/dead': (False, '')}
     n = _apply_source_checks(doc, results, {'docs.docker.com'})
     srcs = {s.id: s for s in doc.sources}
     assert srcs['a'].confirmed is False, 'доступная страница не подтверждает выдуманный источник'
     assert '[не подтверждено]' in srcs['a'].bibl
+    assert '(ссылка проверена, источник не подтверждён)' in srcs['a'].bibl, 'живая страница чужого домена помечена'
     assert srcs['a'].url.endswith('/book') and srcs['a'].checked_at, 'доступность ссылки зафиксирована'
-    assert srcs['b'].confirmed is True and 'проверена' in srcs['b'].bibl, 'доверенный домен реестра подтверждает'
-    assert srcs['c'].confirmed is False and not srcs['c'].url, 'локальные адреса не опрашиваются'
-    assert srcs['d'].confirmed is True and not srcs['d'].checked_at, 'подтверждённые не трогаются'
-    assert n == 1
+    assert srcs['b'].confirmed is False and not srcs['b'].url, 'локальные адреса не опрашиваются'
+    assert srcs['c'].confirmed is True and not srcs['c'].checked_at, 'подтверждённые не трогаются'
+    assert srcs['d'].confirmed is False and srcs['d'].checked_at and '(ссылка проверена' not in srcs['d'].bibl, 'битый URL просто не подтверждает'
+    assert n == 0
+
+
+def test_source_confirmation_needs_record_match() -> None:
+    """SPEC-FLOW-51"""
+    from app.agent.workflow import _apply_source_checks
+    from app.kb.registry import registry_domains
+    from app.programs.schemas import Source
+
+    doc = SimpleNamespace(sources=[
+        Source(id='fake', kind='book', bibl='Вымышленное руководство по драконьей магии. http://www.consultant.ru/fake/dragon-book [не подтверждено]'),
+        Source(id='match', kind='book', bibl='Методическое руководство по драконьей магии для начинающих. http://www.consultant.ru/docs/dragon-magic [не подтверждено]'),
+        Source(id='reg', kind='book', bibl='Официальная документация Docker. https://example.com/mirror-docker [не подтверждено]'),
+        Source(id='reg-ok', kind='book', bibl='Docker Documentation, официальное руководство. https://docs.docker.com/manual [не подтверждено]'),
+    ])
+    results = {
+        'http://www.consultant.ru/fake/dragon-book': (True, 'Портал правовой информации. Официальное опубликование нормативных актов.'),
+        'http://www.consultant.ru/docs/dragon-magic': (True, 'Библиотека методических изданий: полное руководство по драконьей магии для начинающих и продолжающих.'),
+        'https://example.com/mirror-docker': (True, 'Зеркало чужой библиотеки без выходных данных.'),
+        'https://docs.docker.com/manual': (True, 'Справочник команд и примеры запуска контейнеров.'),
+    }
+    # consultant.ru добавлен в доверенные — тест проверяет совпадение записи, а не доверенность домена
+    n = _apply_source_checks(doc, results, registry_domains() | {'consultant.ru'})
+    srcs = {s.id: s for s in doc.sources}
+    assert srcs['fake'].confirmed is False, 'доверенный домен реестра не подтверждает вымышленную книгу'
+    assert '[не подтверждено]' in srcs['fake'].bibl and '(ссылка проверена, источник не подтверждён)' in srcs['fake'].bibl
+    assert srcs['fake'].url.endswith('dragon-book') and srcs['fake'].checked_at
+    assert srcs['match'].confirmed is True and srcs['match'].kind == 'url', 'совпадение записи подтверждает'
+    assert '(ссылка проверена' in srcs['match'].bibl and '[не подтверждено]' not in srcs['match'].bibl
+    assert srcs['reg'].confirmed is True, 'источник, матчащийся реестром по реквизитам, подтверждается и без доверенного домена'
+    assert srcs['reg-ok'].confirmed is True, 'на доверенном домене совпадение записи через match_source подтверждает и без слов заголовка в тексте'
+    assert n == 3
+
+
+def test_local_and_ssrf_urls_not_probed(monkeypatch) -> None:
+    """SPEC-FLOW-52"""
+    import httpx
+
+    from app.agent import workflow as wf
+    from app.programs.schemas import Source
+
+    assert wf._is_local_url('http://user:pass@127.0.0.1/x'), 'userinfo запрещён'
+    assert wf._is_local_url('http://169.254.169.254/latest/meta-data/'), 'link-local'
+    assert wf._is_local_url('http://0.0.0.0/admin') and wf._is_local_url('http://127.0.0.1:8000/')
+    assert wf._is_local_url('http://10.1.2.3/') and wf._is_local_url('http://192.168.1.1/') and wf._is_local_url('http://172.16.0.9/')
+    assert wf._is_local_url('http://224.0.0.1/'), 'multicast'
+    assert wf._is_local_url('http://[::1]/') and wf._is_local_url('http://localhost/x')
+    assert wf._is_local_url('http://2130706433/'), 'числовая запись 127.0.0.1 тоже блокируется'
+    assert not wf._is_local_url('https://docs.python.org/3/')
+
+    doc = SimpleNamespace(sources=[
+        Source(id='meta', kind='book', bibl='Метаданные облака. http://169.254.169.254/latest/meta-data/ [не подтверждено]'),
+        Source(id='auth', kind='book', bibl='Локальный стенд. http://user:pass@127.0.0.1:8000/x [не подтверждено]'),
+        Source(id='open', kind='book', bibl='Руководство по драконьей магии. http://www.consultant.ru/docs/dragon-magic [не подтверждено]'),
+    ])
+    requested: list[str] = []
+
+    class FakeClient:
+        def __init__(self, **kw) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url: str):
+            requested.append(url)
+            return SimpleNamespace(status_code=302, headers={'location': 'http://169.254.169.254/'}, text='')
+
+    monkeypatch.setattr(wf, 'get_settings', lambda: SimpleNamespace(llm_providers='http'))
+    monkeypatch.setattr(httpx, 'AsyncClient', FakeClient)
+    asyncio.run(wf.check_source_urls(doc))
+    assert requested == ['http://www.consultant.ru/docs/dragon-magic'], 'локальные и userinfo-адреса не опрашиваются, сеть зовётся только для публичного URL'
+    srcs = {s.id: s for s in doc.sources}
+    assert srcs['meta'].confirmed is False and not srcs['meta'].url, '169.254.169.254 не опрашивается'
+    assert srcs['auth'].confirmed is False and not srcs['auth'].url, 'userinfo-адрес не опрашивается'
+    assert srcs['open'].confirmed is False and srcs['open'].checked_at, 'редирект не считается открытием ссылки'
 
 
 def test_llm_status_cache_and_admin_live(client, monkeypatch) -> None:
