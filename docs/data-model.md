@@ -119,7 +119,7 @@
 | `Approval` | `stage` (`skeleton` \| `module` \| `program`), `actor`, `decision` (`approve` \| `return`), `comment`, `module_id`, `score` (1–5, оценка модуля экспертом), `at` |
 | `Usage` | `tokens_in`, `tokens_out`, `cost_rub`, `calls`, `by_skill` |
 
-`Comment.status = proposed` означает, что правка агента по замечанию эксперта ждёт подтверждения самого эксперта.
+`Comment.status = proposed` означает, что правка агента по замечанию к конкретному элементу ждёт подтверждения самого эксперта. Замечание к модулю целиком («Модуль целиком») в `proposed` не переходит: агент даёт рекомендацию, замечание остаётся `open` («ждёт ответа»), и отвечает методист (SPEC-API-46).
 
 ## Версии
 

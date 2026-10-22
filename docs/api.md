@@ -170,6 +170,12 @@ curl -s -X POST https://<host>/api/v1/auth/refresh -H 'Content-Type: application
 | `POST /programs/{id}/reviews/decision` | expert | `module_id`, `decision` (`accept`/`return`/`question`/`accept_item`), `comment`, `node_id`, `score` (1–5) | `program` |
 | `POST /programs/{id}/submit` | methodist | — | `status`; руководители получают уведомления |
 | `POST /programs/{id}/approval` | head | `decision` (`approve`/`return`), `comment` | `status`; владелец получает уведомление |
+| `POST /programs/{id}/archive` | methodist (владелец) | — | `archived_at`, `archived_by`; 403 для остальных ролей и не владельца, 409 — программа на утверждении, в сборке или уже в архиве. Версия не меняется, событие `archive` в журнале |
+| `POST /programs/{id}/unarchive` | methodist (владелец) | — | `archived_at: ''`; программа возвращается с прежним статусом |
+
+Замечание эксперта с `ask_agent=true`: при указанном `node_id` статус `proposed` (правку подтверждает эксперт), без `node_id` — `open` с рекомендацией агента для методиста (SPEC-API-46).
+
+Архив (SPEC-SVC-18…21): `GET /programs?archived=false|true|all` — по умолчанию `false` у методиста и эксперта, `all` у руководителя и API-клиента; в строке списка поле `archived_at`. Любое изменяющее действие с архивной программой — 409 `ARCHIVED` «Программа в архиве: верните её из архива, чтобы изменять»; просмотр и выгрузки работают.
 
 ## 8. Задания, вычитка, уведомления (`misc`)
 
