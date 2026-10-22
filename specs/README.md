@@ -94,7 +94,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | [api.md](api.md) | 46 | 46 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 31 | 31 | — |
 | [export.md](export.md) | 15 | 15 | — |
-| [frontend.md](frontend.md) | 32 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30, SPEC-UI-31, SPEC-UI-32 |
+| [frontend.md](frontend.md) | 33 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30, SPEC-UI-31, SPEC-UI-32, SPEC-UI-33 |
 | [knowledge-base.md](knowledge-base.md) | 23 | 23 | — |
 | [llm-client.md](llm-client.md) | 28 | 28 | — |
 | [programs-service.md](programs-service.md) | 17 | 17 | — |
@@ -288,6 +288,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-UI-30 | — |
 | SPEC-UI-31 | — |
 | SPEC-UI-32 | — |
+| SPEC-UI-33 | — |
 | SPEC-KB-01 | `test_norms.py::test_repealed_acts_are_not_used` |
 | SPEC-KB-02 | `test_norms.py::test_repealed_acts_are_not_used` |
 | SPEC-KB-03 | `test_norms.py::test_core_and_keyword_acts` |

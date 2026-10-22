@@ -116,6 +116,9 @@ code, .mono { font-family: var(--mono); }
 .btn-stack { display: grid; gap: 8px; min-width: 0; }
 .btn-stack > .btn, .btn-block { width: 100%; min-width: 0; box-sizing: border-box; justify-content: center; text-align: center; white-space: normal; }
 .card .btn { max-width: 100%; }
+.route-badge { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 14px; border-radius: 12px; font-weight: 700; font-size: 14px; text-align: center; }
+.route-badge.ok { background: var(--accent-soft); color: var(--accent-deep); }
+.route-badge.wait { background: var(--blue-soft); color: var(--blue); }
 .spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }

@@ -223,3 +223,24 @@ export function programMetrics(doc: Doc): ProgramMetrics {
       : 'Метрики времени и затрат собираются в режиме автопрогона — для этой программы данных нет',
   }
 }
+
+/** Плашка вместо кнопки «Отправить на утверждение» в «Маршрут программы» (SPEC-UI-33):
+ * на утверждении — «На утверждении у руководителя», утверждена — «Утверждена руководителем · дата»,
+ * после отметки регистрации — «Зарегистрирована · дата». Для остальных статусов плашки нет — видна кнопка. */
+export function routeBadge(
+  status: string,
+  approvals: { stage: string; decision: string; at: string }[] = [],
+  registeredRaw?: string | null,
+): { text: string; tone: 'ok' | 'wait' } | null {
+  const day = (iso?: string) => (iso ? iso.slice(0, 10).split('-').reverse().join('.') : '')
+  const withDate = (t: string, iso?: string) => (day(iso) ? `${t} · ${day(iso)}` : t)
+  if (status === 'on_approval') return { text: 'На утверждении у руководителя', tone: 'wait' }
+  if (status !== 'approved') return null
+  if (isOrderRegistered(registeredRaw)) {
+    let at: string | undefined
+    try { at = JSON.parse(registeredRaw as string)?.at } catch { /* отметка без даты */ }
+    return { text: withDate('Зарегистрирована', at), tone: 'ok' }
+  }
+  const approval = [...approvals].reverse().find((a) => a.stage === 'program' && a.decision === 'approve')
+  return { text: withDate('Утверждена руководителем', approval?.at), tone: 'ok' }
+}

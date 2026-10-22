@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { api, download, getSession, STATUS_LABEL, waitJob } from '../api'
 import { Avatar, Spinner, useToast } from '../components/ui'
-import { groupKitByTopic, humanChecklist, isOrderRegistered, KIND_ABBR, KIND_TITLES, ORDER_CHECKLIST, ORDER_NOTE, orderRegisteredValue, orderStorageKey, programMetrics, readStore, TYPE_HINTS, writeStore } from '../kit'
+import { groupKitByTopic, humanChecklist, isOrderRegistered, KIND_ABBR, KIND_TITLES, ORDER_CHECKLIST, ORDER_NOTE, orderRegisteredValue, orderStorageKey, programMetrics, readStore, routeBadge, TYPE_HINTS, writeStore } from '../kit'
 import { REVIEW_LABEL } from './Reviews'
 import { EditableText, TemplateSwitch, ToolsPanel } from './ProgramTools'
 
@@ -1110,6 +1110,7 @@ function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void;
   const blockingOk = rd.blocking === 10
   const locked = ['on_approval', 'approved'].includes(doc.status)
   const canSubmit = blockingOk && accepted === doc.modules.length && !locked
+  const badge = routeBadge(doc.status, doc.approvals || [], readStore(orderStorageKey(doc.id)))
   useEffect(() => { api(`/programs/${doc.id}/events`).then(setEvents).catch(() => {}) }, [doc.id, doc.version])
 
   async function assign(mid: string, expert: string, quiet = false) {
@@ -1231,7 +1232,11 @@ function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void;
             <div className={`tl-item ${doc.status === 'approved' ? 'done' : doc.status === 'on_approval' ? 'now' : ''}`}><b>Руководитель утверждает</b><div className="tiny muted">Видит готовность, решения людей, срок и затраты</div></div>
             <div className={`tl-item ${doc.status === 'approved' ? 'done' : ''}`}><b>Проект приказа</b><div className="tiny muted">Номер, дату, ФИО и подписи заполняют люди</div></div>
           </div>
-          <button className="btn btn-primary btn-block" disabled={!canSubmit || !!busy} onClick={submit}>{busy === 'submit' ? <Spinner /> : <><Send size={16} /> Отправить на утверждение</>}</button>
+          {badge ? (
+            <div className={`route-badge ${badge.tone}`}><CheckCircle2 size={16} /> {badge.text}</div>
+          ) : (
+            <button className="btn btn-primary btn-block" disabled={!canSubmit || !!busy} onClick={submit}>{busy === 'submit' ? <Spinner /> : <><Send size={16} /> Отправить на утверждение</>}</button>
+          )}
           {!canSubmit && !locked && <p className="tiny muted">Станет доступна, когда все {doc.modules.length} модулей приняты и пройдены 10 из 10 проверок.</p>}
           {rd.open?.length > 0 && <div className="small" style={{ marginTop: 10 }}><b>Не закрыто:</b><ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{rd.open.map((o: any, i: number) => <li key={i}>{o.title} — <span className="muted">{o.owner}</span></li>)}</ul></div>}
         </section>

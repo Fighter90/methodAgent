@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupKitByTopic, humanChecklist, KIND_ABBR, KIND_TITLES, TYPE_HINTS } from '../kit'
+import { groupKitByTopic, humanChecklist, KIND_ABBR, KIND_TITLES, orderRegisteredValue, routeBadge, TYPE_HINTS } from '../kit'
 
 /* SPEC-UI-26, SPEC-UI-27, SPEC-UI-25: чистые функции карточки программы */
 
@@ -93,5 +93,16 @@ describe('humanChecklist — что проверить человеку пере
   it('без отчёта о покрытии пункта о компетенциях нет', () => {
     expect(humanChecklist({ volume_h: 16, totals: { total: 14 }, final_assessment: { hours: 2 } }).map((i) => i.label))
       .toEqual(['Суммы часов', 'Источники'])
+  })
+})
+
+describe('routeBadge', () => {
+  it('SPEC-UI-33: плашка статуса вместо неактивной кнопки отправки', () => {
+    expect(routeBadge('kit_ready')).toBeNull()
+    expect(routeBadge('returned')).toBeNull()
+    expect(routeBadge('on_approval')).toEqual({ text: 'На утверждении у руководителя', tone: 'wait' })
+    const approvals = [{ stage: 'skeleton', decision: 'approve', at: '2026-10-20T10:00:00' }, { stage: 'program', decision: 'approve', at: '2026-10-23T01:10:00' }]
+    expect(routeBadge('approved', approvals)).toEqual({ text: 'Утверждена руководителем · 23.10.2026', tone: 'ok' })
+    expect(routeBadge('approved', approvals, orderRegisteredValue('2026-10-24T09:00:00Z'))).toEqual({ text: 'Зарегистрирована · 24.10.2026', tone: 'ok' })
   })
 })
