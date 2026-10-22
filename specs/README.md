@@ -90,7 +90,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 <!-- trace:begin -->
 | Спецификация | Требований | Покрыто | Не покрыты |
 |---|---|---|---|
-| [agent-workflow.md](agent-workflow.md) | 46 | 46 | — |
+| [agent-workflow.md](agent-workflow.md) | 47 | 47 | — |
 | [api.md](api.md) | 36 | 36 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 30 | 30 | — |
 | [export.md](export.md) | 14 | 14 | — |
@@ -155,6 +155,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-FLOW-44 | `test_spec_misc.py::test_v21_swap_reorders_by_dependency_graph`, `test_spec_misc.py::test_v21_cycle_blocks_silent_approval` |
 | SPEC-FLOW-45 | `test_spec_misc.py::test_slide_hint_finds_module_by_any_topic` |
 | SPEC-FLOW-46 | `test_e2e_regressions.py::test_return_with_comment_reports_changes`, `test_spec_misc.py::test_return_rebuild_lists_changes` |
+| SPEC-FLOW-47 | `test_access.py::test_skeleton_decision_rejected_after_build` |
 | SPEC-API-01 | `test_access.py::test_unassigned_expert_cannot_accept_and_api_404` |
 | SPEC-API-02 | `test_access.py::test_module_accept_requires_all_items`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-API-03 | `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
@@ -430,8 +431,8 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-RULES-19 | `test_spec_rules.py::test_originality_by_8grams` |
 | SPEC-RULES-20 | `test_core.py::test_open_cases_auto` |
 | SPEC-RULES-21 | `test_spec_rules.py::test_v26_latin_share_per_node` |
-| SPEC-RULES-23 | `test_spec_rules.py::test_v16_registry_freshness_warn` |
 | SPEC-RULES-22 | `test_spec_rules.py::test_v18_v25_material_quality` |
+| SPEC-RULES-23 | `test_spec_rules.py::test_v16_registry_freshness_warn` |
 | SPEC-SANDBOX-01 | `test_spec_sandbox.py::test_empty_code_skipped` |
 | SPEC-SANDBOX-02 | `test_spec_sandbox.py::test_system_access_not_run`, `test_spec_sandbox.py::test_legit_examples_still_run` |
 | SPEC-SANDBOX-03 | `test_spec_sandbox.py::test_heavy_libraries_syntax_only` |

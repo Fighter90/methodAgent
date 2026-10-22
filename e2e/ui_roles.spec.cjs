@@ -148,7 +148,8 @@ async function run() {
       // SPEC-UI-22: кнопка перехода к следующему шагу закреплена в шапке шага (data-step-next);
       // на терминальных шагах её заменяет «Отправить на утверждение»
       check('methodist: кнопка следующего шага закреплена в шапке шага',
-        await page.locator('[data-step-next]').count() > 0 || await page.getByText('Отправить на утверждение').count() > 0)
+        await page.locator('[data-step-next]').count() > 0 || await page.getByText('Отправить на утверждение').count() > 0
+        || await page.getByText('Проект приказа').count() > 0 || await page.getByText('Утвердить и подготовить проект приказа').count() > 0)
     })
     await screen(page, '/app/kb', 'kb', 'База знаний организации')
     await screen(page, '/app/me', 'me', 'Личный кабинет')

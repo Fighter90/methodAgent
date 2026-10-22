@@ -522,6 +522,10 @@ class DecisionIn(BaseModel):
 @router.post('/{program_id}/skeleton/decisions', summary='Решение методиста по пункту «!»')
 async def skeleton_decision(program_id: str, body: DecisionIn, p: Principal = Depends(require('methodist'))) -> dict[str, Any]:
     doc = await svc.load(program_id)
+    # F04 (аудит 19.10): решения по «!» меняют каркас — после утверждения или сборки комплекта
+    # они незаметно ломали согласованность; допустимы только на шагах каркаса и возврата
+    if doc.status not in (Status.SKELETON, Status.RETURNED):
+        raise Conflict('Каркас уже утверждён или комплект собран: решения по «!» недоступны — используйте точечную правку', code='BAD_STATE')
     wf.decide(doc, body.rule_id, body.decision, p.user_id, body.node, body.proposal, body.option_id)
     await svc.save(doc, p.user_id)
     await svc.log_event(program_id, p.user_id, 'decision', f'{body.rule_id}: {"принято" if body.decision == "accept" else "оставлено"} {body.proposal}')

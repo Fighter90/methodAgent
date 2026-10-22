@@ -412,3 +412,19 @@ def test_attachment_validated_before_decode(client, monkeypatch) -> None:
     broken = b64.b64encode('PK\x03\x04 это не zip-архив'.encode()).decode()
     r = client.post('/api/v1/programs', json={'request': 'тест вложений', 'attachments': [{'name': 'broken.docx', 'content_base64': broken}]}, headers=ha)
     assert r.status_code == 400 and 'повреждён' in r.json()['message_ru']
+
+
+def test_skeleton_decision_rejected_after_build(client, kit) -> None:
+    """SPEC-FLOW-47: F04 — после утверждения каркаса и сборки комплекта решения по «!» дают 409,
+    версия и отчёт комплекта не меняются (незаметное изменение утверждённой программы невозможно)."""
+    import json as _json
+
+    hm = _h(client, 'u-madina')
+    before = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
+    assert before['status'] not in ('skeleton', 'returned'), 'фикстура должна давать собранную программу'
+    report_before = _json.dumps(before.get('report'), ensure_ascii=False, sort_keys=True)
+    r = client.post(f'/api/v1/programs/{kit}/skeleton/decisions', json={'rule_id': 'V-21', 'decision': 'accept'}, headers=hm)
+    assert r.status_code == 409, r.text
+    after = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
+    assert after['version'] == before['version'] and after['status'] == before['status']
+    assert _json.dumps(after.get('report'), ensure_ascii=False, sort_keys=True) == report_before
