@@ -57,16 +57,22 @@ def _parse_docx(name: str, content: bytes, max_unpacked_mb: int) -> ParsedRefere
 
     from docx import Document
 
-    with zipfile.ZipFile(io.BytesIO(content)) as zf:
-        unpacked = sum(i.file_size for i in zf.infolist())
-        if unpacked > max_unpacked_mb * 1024 * 1024:
-            raise BadRequest(f'Файл «{name}» после распаковки больше {max_unpacked_mb} МБ')
-        if any(i.filename.endswith('vbaProject.bin') for i in zf.infolist()):
-            logger.info('В файле %s есть макросы — они не исполняются', name)
-    doc = Document(io.BytesIO(content))
-    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            unpacked = sum(i.file_size for i in zf.infolist())
+            if unpacked > max_unpacked_mb * 1024 * 1024:
+                raise BadRequest(f'Файл «{name}» после распаковки больше {max_unpacked_mb} МБ')
+            if any(i.filename.endswith('vbaProject.bin') for i in zf.infolist()):
+                logger.info('В файле %s есть макросы — они не исполняются', name)
+        doc = Document(io.BytesIO(content))
+        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        tables = doc.tables
+    except BadRequest:
+        raise
+    except Exception as exc:  # noqa: BLE001 — битый файл должен давать понятный 400, а не 500
+        raise BadRequest(f'Файл «{name}» повреждён или не является DOCX ({type(exc).__name__})') from exc
     issues: list[str] = []
-    for ti, table in enumerate(doc.tables, start=1):
+    for ti, table in enumerate(tables, start=1):
         rows = [[c.text.strip() for c in r.cells] for r in table.rows]
         issues.extend(check_hours_table(rows, ti))
     return ParsedReference(name=name, text='\n'.join(paragraphs), structure=_structure(paragraphs), hours_issues=issues)
@@ -78,7 +84,11 @@ def _parse_pdf(name: str, content: bytes) -> ParsedReference:
     parts: list[str] = []
     issues: list[str] = []
     n_table = 0
-    with fitz.open(stream=content, filetype='pdf') as doc:
+    try:
+        doc = fitz.open(stream=content, filetype='pdf')
+    except Exception as exc:  # noqa: BLE001 — битый PDF должен давать понятный 400, а не 500
+        raise BadRequest(f'Файл «{name}» повреждён или не является PDF ({type(exc).__name__})') from exc
+    with doc:
         for page in doc.pages(0, min(doc.page_count, 200)):
             parts.append(page.get_text())
             # Таблицы часов в PDF пересчитываются так же, как в .docx (FR-05)

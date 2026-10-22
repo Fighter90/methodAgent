@@ -279,9 +279,15 @@ async def create_program(
 ) -> dict[str, Any]:
     check_program_rate(p)
     files = []
+    s = get_settings()
     for a in body.attachments:
+        # Аудит 22.10: размер проверяется ДО декодирования — гигантский base64 не должен попадать в память
+        if not a.content_base64.strip():
+            raise BadRequest(f'Файл «{a.name}»: вложение пустое')
+        if len(a.content_base64) * 3 // 4 > s.max_file_size_bytes:
+            raise BadRequest(f'Файл «{a.name}» больше {s.max_file_size_mb} МБ — уменьшите вложение или пришлите ссылкой')
         try:
-            files.append((a.name, base64.b64decode(a.content_base64)))
+            files.append((a.name, base64.b64decode(a.content_base64, validate=True)))
         except ValueError as exc:
             raise BadRequest(f'Файл «{a.name}»: неверный base64') from exc
     started = time.monotonic()

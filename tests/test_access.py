@@ -388,3 +388,24 @@ def test_approve_atomic_capacity_first_and_idempotent_job(client, monkeypatch) -
         time.sleep(0.05)
     assert info['status'] == 'done', info
     assert client.get(f'/api/v1/programs/{pid}', headers=h).json()['status'] == 'kit_ready'
+
+
+def test_attachment_validated_before_decode(client, monkeypatch) -> None:
+    """SPEC-API-36"""
+    import base64 as b64
+
+    from app.core.config import get_settings
+
+    ha = _h(client, 'u-madina')
+    monkeypatch.setattr(get_settings(), 'max_file_size_mb', 1)
+    big = b64.b64encode(b'x' * (1024 * 1024 + 100)).decode()  # 1,1 МБ > лимита
+    r = client.post('/api/v1/programs', json={'request': 'тест вложений', 'attachments': [{'name': 'big.docx', 'content_base64': big}]}, headers=ha)
+    assert r.status_code == 400 and 'больше 1 МБ' in r.json()['message_ru']
+    r = client.post('/api/v1/programs', json={'request': 'тест вложений', 'attachments': [{'name': 'x.docx', 'content_base64': '!!!не-base64!!!'}]}, headers=ha)
+    assert r.status_code == 400 and 'base64' in r.json()['message_ru']
+    r = client.post('/api/v1/programs', json={'request': 'тест вложений', 'attachments': [{'name': 'empty.docx', 'content_base64': '   '}]}, headers=ha)
+    assert r.status_code == 400 and 'пустое' in r.json()['message_ru']
+    # битый docx (сигнатура есть, содержимое невалидно) — понятный 400, а не 500
+    broken = b64.b64encode('PK\x03\x04 это не zip-архив'.encode()).decode()
+    r = client.post('/api/v1/programs', json={'request': 'тест вложений', 'attachments': [{'name': 'broken.docx', 'content_base64': broken}]}, headers=ha)
+    assert r.status_code == 400 and 'повреждён' in r.json()['message_ru']

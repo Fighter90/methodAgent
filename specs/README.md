@@ -91,7 +91,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | Спецификация | Требований | Покрыто | Не покрыты |
 |---|---|---|---|
 | [agent-workflow.md](agent-workflow.md) | 46 | 46 | — |
-| [api.md](api.md) | 35 | 35 | — |
+| [api.md](api.md) | 36 | 36 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 30 | 30 | — |
 | [export.md](export.md) | 14 | 14 | — |
 | [frontend.md](frontend.md) | 30 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30 |
@@ -190,6 +190,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-API-33 | `test_spec_constraints.py::test_constraints_check_passes` |
 | SPEC-API-34 | `test_access.py::test_expert_accepts_every_item_type_without_500` |
 | SPEC-API-35 | `test_access.py::test_admin_profile_registry_and_expert_suggestions` |
+| SPEC-API-36 | `test_access.py::test_attachment_validated_before_decode` |
 | SPEC-AUTH-01 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
 | SPEC-AUTH-02 | `test_auth.py::test_login_by_login_id_and_all_demo_users`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-AUTH-03 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
