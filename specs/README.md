@@ -91,7 +91,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | Спецификация | Требований | Покрыто | Не покрыты |
 |---|---|---|---|
 | [agent-workflow.md](agent-workflow.md) | 54 | 54 | — |
-| [api.md](api.md) | 44 | 44 | — |
+| [api.md](api.md) | 45 | 45 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 31 | 31 | — |
 | [export.md](export.md) | 14 | 14 | — |
 | [frontend.md](frontend.md) | 31 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30, SPEC-UI-31 |
@@ -208,6 +208,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-API-42 | `test_spec_uploads.py::test_multipart_uploads_limited_on_every_path` |
 | SPEC-API-43 | `test_spec_uploads.py::test_type_whitelist_and_signature_match` |
 | SPEC-API-44 | `test_spec_uploads.py::test_base64_line_breaks_and_data_prefix_accepted` |
+| SPEC-API-45 | `test_access.py::test_kit_status_done_when_template_share_small` |
 | SPEC-AUTH-01 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
 | SPEC-AUTH-02 | `test_auth.py::test_login_by_login_id_and_all_demo_users`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-AUTH-03 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |

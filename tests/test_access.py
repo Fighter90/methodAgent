@@ -610,6 +610,43 @@ def test_kit_status_done_on_fixtures(client) -> None:
     assert not any('добрано шаблоном' in n for n in body['agent_notes'])
 
 
+def test_kit_status_done_when_template_share_small(client, monkeypatch) -> None:
+    """SPEC-API-45: единичный добор шаблоном (≤ 10 % вопросов и заданий) при зелёных правилах, без отказов
+    шагов, модулей-черновиков и тем без заданий даёт done со сводкой degraded; больше 10 % — done_with_errors."""
+    from app.skills.content import run as content_run
+
+    def stub(template_questions: int):
+        async def answered(doc, m, *, n_questions, test_id, slide_topics, stats=None, instruction_extra=''):
+            base = content_run.fallback(doc, m, content_run._module_los(doc, m), n_questions, test_id, slide_topics)
+            base.source = 'llm'
+            for x in (*base.questions, *base.tasks):
+                x.origin = 'llm'
+            if m.n == 1 and base.tasks:
+                base.tasks[0].origin = 'template'  # модель не дала одно задание — добрано шаблоном
+            for q in base.questions[:template_questions]:
+                q.origin = 'template'
+            return base
+        return answered
+
+    from app.agent import workflow as wf
+
+    orig = wf._stats_to_usage
+
+    def no_failures(doc, stats, step=''):
+        stats.fallbacks.clear()  # модель ответила на всех шагах: отказов навыков нет
+        return orig(doc, stats, step)
+
+    monkeypatch.setattr(wf, '_stats_to_usage', no_failures)
+    h = _h(client, 'u-madina')
+    monkeypatch.setattr(content_run, 'run', stub(0))
+    body = client.post('/api/v1/programs?mode=auto', json={'request': REQ}, headers=h).json()
+    assert body['status'] == 'done', (body['status'], body['degraded'], body['step_errors'])
+    assert body['degraded']['template_elements'] >= 1 and 'добрано шаблоном' in body['degraded']['text']  # сводка не скрывается
+    monkeypatch.setattr(content_run, 'run', stub(100))  # все вопросы модулей добраны шаблоном
+    body = client.post('/api/v1/programs?mode=auto', json={'request': REQ}, headers=h).json()
+    assert body['status'] == 'done_with_errors', body['degraded']
+
+
 def test_kit_status_degraded_on_partial_llm(client, monkeypatch) -> None:
     """SPEC-API-40: MET-50/R06 — частичный ответ модели (модуль собран ею, source=llm, но вопросы
     добраны шаблоном, а задания есть не на все практические темы) при зелёных структурных правилах

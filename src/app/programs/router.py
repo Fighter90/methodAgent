@@ -239,6 +239,22 @@ def _kit_degraded(doc: ProgramDoc) -> dict[str, Any]:
     }
 
 
+TEMPLATE_SHARE_MAX = 0.10  # доля вопросов и заданий, добранных шаблоном, при которой комплект ещё «done»
+
+
+def _degraded_minor(doc: ProgramDoc, degraded: dict[str, Any]) -> bool:
+    """Ревью 22.10: единичный добор шаблоном не делает комплект провальным.
+
+    Комплект остаётся «done» (сводка degraded в ответе сохраняется), если нет отказов шагов,
+    модулей без ответа модели и практических тем без заданий, а шаблоном добрано не больше
+    TEMPLATE_SHARE_MAX вопросов и заданий вместе; иначе — done_with_errors.
+    """
+    if degraded['step_errors'] or degraded['draft_modules'] or degraded['topics_without_task']:
+        return False
+    total = len(doc.kit.questions) + len(doc.kit.tasks)
+    return total > 0 and degraded['template_elements'] <= TEMPLATE_SHARE_MAX * total
+
+
 def _note_degraded(doc: ProgramDoc) -> None:
     """MET-50 (аудит 22.10, R06): сводка деградации комплекта — в заметки агента документа,
     чтобы она сохранилась в программе и попала в agent_notes ответа автопрогона."""
@@ -254,7 +270,8 @@ def _auto_response(doc: ProgramDoc, base: str) -> dict[str, Any]:
     # MET-50 (аудит 22.10, R06): частичный ответ модели с добором шаблоном, шаблонные модули,
     # отказы шагов и темы без заданий — не чистый done, а done_with_errors со сводкой degraded.
     degraded = _kit_degraded(doc)
-    status = 'done' if doc.status == Status.KIT_READY and not failed and not degraded else ('done_with_errors' if doc.kit.questions else 'failed')
+    clean = doc.status == Status.KIT_READY and not failed and (not degraded or _degraded_minor(doc, degraded))
+    status = 'done' if clean else ('done_with_errors' if doc.kit.questions else 'failed')
     tot = doc.totals()
     return {
         'program_id': doc.id,
