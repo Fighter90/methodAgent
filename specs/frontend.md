@@ -29,7 +29,7 @@
 | SPEC-UI-15 | THE SYSTEM SHALL открывать шаги мастера программы по статусу: `draft`/`questions` — до шага 2, `skeleton`/`returned` — до 4, `skeleton_approved`/`generating`/`kit_ready` — до 5, остальные — до 6. | FR-20, FR-23 | `frontend/src/__tests__/api.test.ts` (STATUS_LABEL жизненного цикла) |
 | SPEC-UI-16 | WHILE активная роль — `expert`, THE SYSTEM SHALL показывать в карточке программы экран вычитки назначенных модулей вместо мастера. | FR-44 | — |
 | SPEC-UI-17 | WHILE активная роль — `head`, THE SYSTEM SHALL по умолчанию фильтровать список программ по статусам `on_approval,approved`. | FR-50 | — |
-| SPEC-UI-18 | WHEN пользователь регистрируется в интерфейсе, THE SYSTEM SHALL проверять логин по шаблону и пароль (от 8 символов, буква и цифра) так же, как сервер, и требовать согласие. | Доп. | — |
+| SPEC-UI-18 | WHEN пользователь регистрируется в интерфейсе, THE SYSTEM SHALL проверять логин по шаблону и пароль (от 8 символов, буква и цифра) так же, как сервер, и требовать согласие. | Доп. | `frontend/src/__tests__/validate.test.ts` |
 | SPEC-UI-19 | WHILE выполняется задание сборки, THE SYSTEM SHALL опрашивать `GET /jobs/{id}` каждые 1,2 с и показывать прогресс до `done` или `failed`. | FR-30 | `frontend/src/__tests__/api.test.ts` (waitJob) |
 | SPEC-UI-20 | THE SYSTEM SHALL поддерживать светлую и тёмную тему и запоминать выбор в `localStorage` (`ma.theme`). | код | `frontend/src/__tests__/theme.test.ts` |
 | SPEC-UI-21 | WHILE активная роль — `admin`, THE SYSTEM SHALL показывать вкладку «Токены API»: выдача токена (владелец, назначение, срок), значение токена один раз с кнопкой копирования, список без секретов и отзыв. | Р-04, US-22 | `e2e/ui_roles.spec.cjs` (вкладка «Токены API») |

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Building2, Check, Eye, EyeOff, LockKeyhole, RefreshCw, ShieldCheck, Sparkles, UserPlus } from 'lucide-react'
 import { api, ApiError, login, register, ROLE_LABEL, type AuthConfig } from '../api'
+import { emailError, loginError, passwordError } from '../validate'
 import { Logo, Spinner, useMouseParallax, useToast } from '../components/ui'
 
 // Подписи плиток демо-профиля АЦР; сами учётки приходят с сервера (/auth/config)
@@ -76,9 +77,8 @@ export default function Login() {
   async function submitRegister(e: React.FormEvent) {
     e.preventDefault()
     if (reg.name.trim().length < 2) return setError({ text: 'Укажите имя' })
-    if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(reg.login.trim().toLowerCase())) return setError({ text: 'Логин: 3–32 символа, латиница, цифры, точка, дефис или подчёркивание' })
-    if (reg.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(reg.email.trim())) return setError({ text: 'Некорректный адрес почты' })
-    if (reg.password.length < 8 || !/\d/.test(reg.password) || !/\p{L}/u.test(reg.password)) return setError({ text: 'Пароль: не меньше 8 символов, буква и цифра' })
+    const bad = loginError(reg.login) || emailError(reg.email) || passwordError(reg.password)
+    if (bad) return setError({ text: bad })
     if (reg.password !== reg.confirm) return setError({ text: 'Пароли не совпадают' })
     if (!reg.consent) return setError({ text: 'Нужно согласие на обработку персональных данных' })
     setBusy(true); setError(null)

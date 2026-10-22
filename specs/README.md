@@ -104,7 +104,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | [solvers.md](solvers.md) | 16 | 16 | — |
 | [validation-judge.md](validation-judge.md) | 8 | 8 | — |
 | [validation-repair.md](validation-repair.md) | 18 | 18 | — |
-| [validation-rules.md](validation-rules.md) | 22 | 22 | — |
+| [validation-rules.md](validation-rules.md) | 23 | 23 | — |
 | [validation-sandbox.md](validation-sandbox.md) | 13 | 13 | — |
 
 | Требование | Тесты |
@@ -430,6 +430,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-RULES-19 | `test_spec_rules.py::test_originality_by_8grams` |
 | SPEC-RULES-20 | `test_core.py::test_open_cases_auto` |
 | SPEC-RULES-21 | `test_spec_rules.py::test_v26_latin_share_per_node` |
+| SPEC-RULES-23 | `test_spec_rules.py::test_v16_registry_freshness_warn` |
 | SPEC-RULES-22 | `test_spec_rules.py::test_v18_v25_material_quality` |
 | SPEC-SANDBOX-01 | `test_spec_sandbox.py::test_empty_code_skipped` |
 | SPEC-SANDBOX-02 | `test_spec_sandbox.py::test_system_access_not_run`, `test_spec_sandbox.py::test_legit_examples_still_run` |

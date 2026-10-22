@@ -8,12 +8,13 @@ validation/judge.py уточняет их моделью, если судья в
 
 from __future__ import annotations
 
+import datetime
 import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.kb.registry import match_source, tf_codes
+from app.kb.registry import match_source, registry, tf_codes
 from app.programs.schemas import KINDS, ProgramDoc, ProgramType, RuleResult
 from app.validation.ngrams import overlap_share, similarity
 
@@ -362,8 +363,24 @@ def v16(doc: ProgramDoc, stage: str):
     if unmarked:
         return 'fail', [f'Источник «{s.bibl[:60]}» не найден и не помечен' for s in unmarked], [s.id for s in unmarked]
     if still:
-        return 'warn', [f'{len(still)} источник(а) не найдено в реестре — помечены «не подтверждено»'], [s.id for s in still]
-    return _ok()
+        return 'warn', [f'{len(still)} источник(а) не найдено в реестре — помечены «не подтверждено»'] + _stale_registry_warn(), [s.id for s in still]
+    status, ok_msg, nodes = _ok()
+    stale = _stale_registry_warn()
+    return ('warn', [*ok_msg, *stale], nodes) if stale else _ok()
+
+
+def _stale_registry_warn() -> list[str]:
+    """MET-10: реестр с датой проверки старше 180 дней — предупреждение в отчёте V-16."""
+    stale_kinds = []
+    limit = (datetime.date.today() - datetime.timedelta(days=180)).isoformat()
+    for kind in ('npa', 'ps', 'literature'):
+        items = registry().get(kind) or []
+        dates = [i.get('checked_at', '') for i in items if i.get('checked_at')]
+        if items and (not dates or min(dates) < limit):
+            stale_kinds.append(kind)
+    if not stale_kinds:
+        return []
+    return [f'Реестр ({", ".join(stale_kinds)}) не обновлялся более 180 дней — проверьте актуальность нормативной базы']
 
 
 # --- 8. Оригинальность ---

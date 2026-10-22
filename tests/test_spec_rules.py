@@ -357,3 +357,19 @@ def test_originality_by_8grams() -> None:
     # 3 восьмиграммы текста, одна из них есть в референсе
     assert overlap_share(ref + ' девять десять', ref) == pytest.approx(1 / 3)
     assert overlap_share('коротко', ref) == 0.0
+
+
+def test_v16_registry_freshness_warn(monkeypatch) -> None:
+    """SPEC-RULES-23"""
+    from app.validation import rules
+
+    class _Doc:
+        sources = []
+    stale_reg = {'npa': [{'id': 'law-x', 'checked_at': '2020-01-01'}], 'ps': [], 'literature': []}
+    monkeypatch.setattr('app.validation.rules.registry', lambda: stale_reg)
+    status, msgs, _ = rules.v16(_Doc(), 'kit')
+    assert status == 'warn' and any('180 дней' in m for m in msgs), msgs
+    fresh_reg = {'npa': [{'id': 'law-x', 'checked_at': '2026-10-01'}], 'ps': [], 'literature': []}
+    monkeypatch.setattr('app.validation.rules.registry', lambda: fresh_reg)
+    status, msgs, _ = rules.v16(_Doc(), 'kit')
+    assert status == 'pass' and not any('180 дней' in m for m in msgs)

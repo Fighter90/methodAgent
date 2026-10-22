@@ -32,6 +32,7 @@
 | SPEC-RULES-20 | WHEN формируется ответ автопрогона, THE SYSTEM SHALL отдавать `rules_passed` (правила не в `fail`), `rules_total`, `blocking_checks` вида `N/10` и `failed_rules`. | FR-62 | `test_core.py::test_open_cases_auto` |
 | SPEC-RULES-21 | WHEN доля латинских букв среди букв вопроса (формулировка и варианты) или слайда (заголовок, пункты, заметки) больше 30 %, THE SYSTEM SHALL выдать `warn` V-26 с привязкой к узлу (id вопроса или слайда); проверка выполняется кодом и работает без модели. | MET-33, F11 | `test_spec_rules.py::test_v26_latin_share_per_node` |
 | SPEC-RULES-22 | IF у задания есть критерий без текста или без баллов (V-18, `fail` проверки 9) либо слайд без пунктов (V-09, `warn`), или в комплекте дублируются строки — одинаковые формулировки вопросов (в том числе с разными ключами), пункты одного слайда, строки одного плана (V-25, `warn`), — THEN THE SYSTEM SHALL выдать находку с привязкой к узлу. | MET-33, F11 | `test_spec_rules.py::test_v18_v25_material_quality` |
+| SPEC-RULES-23 | WHEN нормативный реестр (НПА, ПС, литература) не обновлялся более 180 дней (`checked_at`), THEN THE SYSTEM SHALL добавить в V-16 предупреждение о необходимости проверить актуальность нормативной базы. | MET-10, FR-10 | `test_spec_rules.py::test_v16_registry_freshness_warn` |
 
 ## Вне области
 
