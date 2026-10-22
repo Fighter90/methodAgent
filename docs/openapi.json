@@ -306,6 +306,16 @@
             "title": "Norm Mode",
             "type": "string"
           },
+          "params": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Params"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "request": {
             "maxLength": 5000,
             "minLength": 5,
@@ -466,6 +476,43 @@
         "title": "LoginIn",
         "type": "object"
       },
+      "Materials": {
+        "description": "Что запрошено в комплекте явно (V-09).",
+        "properties": {
+          "slides_lessons": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Slides Lessons",
+            "type": "array"
+          },
+          "slides_modules": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Slides Modules",
+            "type": "array"
+          },
+          "slides_topic_hint": {
+            "default": "",
+            "title": "Slides Topic Hint",
+            "type": "string"
+          },
+          "test_questions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Questions"
+          }
+        },
+        "title": "Materials",
+        "type": "object"
+      },
       "MeIn": {
         "properties": {
           "email": {
@@ -509,6 +556,210 @@
         "title": "MeIn",
         "type": "object"
       },
+      "Params": {
+        "description": "Распознанные параметры запроса (навык intake).",
+        "properties": {
+          "audience": {
+            "default": "",
+            "title": "Audience",
+            "type": "string"
+          },
+          "constraints": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Constraints",
+            "type": "array"
+          },
+          "customer_expectation": {
+            "default": "",
+            "title": "Customer Expectation",
+            "type": "string"
+          },
+          "days_per_week": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Per Week"
+          },
+          "direction": {
+            "default": "",
+            "title": "Direction",
+            "type": "string"
+          },
+          "distance": {
+            "default": false,
+            "title": "Distance",
+            "type": "boolean"
+          },
+          "duration_weeks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Weeks"
+          },
+          "entry_level": {
+            "default": "",
+            "title": "Entry Level",
+            "type": "string"
+          },
+          "final_assessment_form": {
+            "default": "",
+            "title": "Final Assessment Form",
+            "type": "string"
+          },
+          "final_assessment_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Assessment Hours"
+          },
+          "form": {
+            "default": "",
+            "title": "Form",
+            "type": "string"
+          },
+          "materials": {
+            "$ref": "#/components/schemas/Materials"
+          },
+          "max_hours_per_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Hours Per Day"
+          },
+          "min_practice_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Practice Hours"
+          },
+          "min_practice_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Practice Share"
+          },
+          "no_classroom": {
+            "default": false,
+            "title": "No Classroom",
+            "type": "boolean"
+          },
+          "program_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgramType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ps_hint": {
+            "default": "",
+            "title": "Ps Hint",
+            "type": "string"
+          },
+          "reference_structure_only": {
+            "default": true,
+            "title": "Reference Structure Only",
+            "type": "boolean"
+          },
+          "reference_used": {
+            "default": false,
+            "title": "Reference Used",
+            "type": "boolean"
+          },
+          "reference_volume_h": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Volume H"
+          },
+          "required_topics": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Topics",
+            "type": "array"
+          },
+          "session_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Hours"
+          },
+          "sessions_per_week": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sessions Per Week"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "volume_h": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume H"
+          }
+        },
+        "title": "Params",
+        "type": "object"
+      },
       "PasswordIn": {
         "properties": {
           "current": {
@@ -529,6 +780,15 @@
         ],
         "title": "PasswordIn",
         "type": "object"
+      },
+      "ProgramType": {
+        "enum": [
+          "dpp_pk",
+          "dpp_pk_internship",
+          "doop"
+        ],
+        "title": "ProgramType",
+        "type": "string"
       },
       "ReadIn": {
         "properties": {

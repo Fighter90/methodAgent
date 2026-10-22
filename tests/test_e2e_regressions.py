@@ -204,6 +204,47 @@ def test_head_decisions_logged_in_words(client) -> None:
     assert ev[0]['action'] == 'approved' and ev[0]['text'] == 'Программа утверждена руководителем'
 
 
+def test_skeleton_return_blocked_after_approval(client) -> None:
+    """SPEC-FLOW-50: возврат каркаса закрыт, когда программа собрана или утверждена (аудит 22.10, MET-48/R04-workflow).
+
+    Из kit_ready и из approved POST /skeleton/approve с decision=return даёт
+    409 BAD_STATE: статус, версия и комплект не меняются, задание не остаётся.
+    """
+    hm, ht, hh = _h(client, 'u-madina'), _h(client, 'u-timur'), _h(client, 'u-ahmed')
+    r = client.post('/api/v1/programs?mode=auto', json={'request': REQ}, headers=hm)
+    assert r.status_code == 200, r.text
+    pid = r.json()['program_id']
+    doc = client.get(f'/api/v1/programs/{pid}', headers=hm).json()
+    assert doc['status'] == 'kit_ready' and doc['kit']['questions']
+    # комплект уже собран: возврат каркаса подменил бы его новым каркасом
+    r = client.post(f'/api/v1/programs/{pid}/skeleton/approve', json={'decision': 'return', 'comment': 'Переделайте каркас'}, headers=hm)
+    assert r.status_code == 409 and r.json()['code'] == 'BAD_STATE', r.text
+    doc = client.get(f'/api/v1/programs/{pid}', headers=hm).json()
+    assert doc['status'] == 'kit_ready' and doc['kit']['questions'], 'состояние и комплект не изменились'
+    # доводим программу до approved: эксперты принимают модули, руководитель утверждает
+    for m in doc['modules']:
+        assert client.put(f'/api/v1/programs/{pid}/modules/{m["id"]}/expert', json={'expert_id': 'u-timur'}, headers=hm).status_code == 200
+    for task in client.get('/api/v1/reviews', headers=ht).json():
+        if task['program_id'] != pid:
+            continue
+        mine = client.get(f'/api/v1/programs/{pid}', headers=ht).json()['kit']
+        mid = task['module_id']
+        items = [f'mp-{mid}'] * any(x['module_id'] == mid for x in mine['module_programs'])
+        items += [x['id'] for k in ('lectures', 'questions', 'tasks') for x in mine[k] if x.get('module_id') == mid]
+        for it in items:
+            assert client.post(f'/api/v1/reviews/{task["rid"]}/decision', json={'decision': 'accept_item', 'node_id': it}, headers=ht).status_code == 200
+        assert client.post(f'/api/v1/reviews/{task["rid"]}/decision', json={'decision': 'accept', 'score': 5}, headers=ht).status_code == 200
+    assert client.post(f'/api/v1/programs/{pid}/submit', headers=hm).status_code == 200
+    assert client.post(f'/api/v1/programs/{pid}/approval', json={'decision': 'approve'}, headers=hh).status_code == 200
+    v = client.get(f'/api/v1/programs/{pid}', headers=hm).json()['version']
+    # MET-48: из утверждённой программы возврат каркаса больше не проходит молча
+    r = client.post(f'/api/v1/programs/{pid}/skeleton/approve', json={'decision': 'return', 'comment': 'Переделайте каркас'}, headers=hm)
+    assert r.status_code == 409 and r.json()['code'] == 'BAD_STATE', r.text
+    doc = client.get(f'/api/v1/programs/{pid}', headers=hm).json()
+    assert doc['status'] == 'approved' and doc['version'] == v, 'утверждение и версия не изменились'
+    assert doc['kit']['questions'], 'комплект не смешан с новым каркасом'
+
+
 def test_return_with_comment_reports_changes(client) -> None:
     """SPEC-FLOW-46: возврат с комментарием перестраивает каркас, и в данных программы видно, что изменил агент (демо 19.10, MET-14).
 

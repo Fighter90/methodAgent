@@ -90,22 +90,23 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 <!-- trace:begin -->
 | Спецификация | Требований | Покрыто | Не покрыты |
 |---|---|---|---|
-| [agent-workflow.md](agent-workflow.md) | 47 | 47 | — |
-| [api.md](api.md) | 36 | 36 | — |
-| [auth-and-roles.md](auth-and-roles.md) | 30 | 30 | — |
+| [agent-workflow.md](agent-workflow.md) | 50 | 50 | — |
+| [api.md](api.md) | 39 | 39 | — |
+| [auth-and-roles.md](auth-and-roles.md) | 31 | 31 | — |
 | [export.md](export.md) | 14 | 14 | — |
 | [frontend.md](frontend.md) | 30 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30 |
-| [knowledge-base.md](knowledge-base.md) | 21 | 21 | — |
-| [llm-client.md](llm-client.md) | 26 | 26 | — |
-| [programs-service.md](programs-service.md) | 16 | 16 | — |
+| [knowledge-base.md](knowledge-base.md) | 23 | 23 | — |
+| [llm-client.md](llm-client.md) | 28 | 28 | — |
+| [programs-service.md](programs-service.md) | 17 | 17 | — |
+| [quality.md](quality.md) | 2 | 2 | — |
 | [skill-content.md](skill-content.md) | 15 | 15 | — |
 | [skill-review-assist.md](skill-review-assist.md) | 5 | 5 | — |
-| [skills-core.md](skills-core.md) | 19 | 19 | — |
+| [skills-core.md](skills-core.md) | 20 | 20 | — |
 | [solvers.md](solvers.md) | 16 | 16 | — |
-| [validation-judge.md](validation-judge.md) | 8 | 8 | — |
-| [validation-repair.md](validation-repair.md) | 18 | 18 | — |
+| [validation-judge.md](validation-judge.md) | 12 | 12 | — |
+| [validation-repair.md](validation-repair.md) | 20 | 20 | — |
 | [validation-rules.md](validation-rules.md) | 23 | 23 | — |
-| [validation-sandbox.md](validation-sandbox.md) | 13 | 13 | — |
+| [validation-sandbox.md](validation-sandbox.md) | 14 | 14 | — |
 
 | Требование | Тесты |
 |---|---|
@@ -156,6 +157,9 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-FLOW-45 | `test_spec_misc.py::test_slide_hint_finds_module_by_any_topic` |
 | SPEC-FLOW-46 | `test_e2e_regressions.py::test_return_with_comment_reports_changes`, `test_spec_misc.py::test_return_rebuild_lists_changes` |
 | SPEC-FLOW-47 | `test_access.py::test_skeleton_decision_rejected_after_build` |
+| SPEC-FLOW-48 | `test_spec_misc.py::test_final_task_follows_course_subject` |
+| SPEC-FLOW-49 | `test_spec_misc.py::test_v21_explicit_prerequisites_survive_reorder` |
+| SPEC-FLOW-50 | `test_e2e_regressions.py::test_skeleton_return_blocked_after_approval` |
 | SPEC-API-01 | `test_access.py::test_unassigned_expert_cannot_accept_and_api_404` |
 | SPEC-API-02 | `test_access.py::test_module_accept_requires_all_items`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-API-03 | `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
@@ -192,6 +196,9 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-API-34 | `test_access.py::test_expert_accepts_every_item_type_without_500` |
 | SPEC-API-35 | `test_access.py::test_admin_profile_registry_and_expert_suggestions` |
 | SPEC-API-36 | `test_access.py::test_attachment_validated_before_decode` |
+| SPEC-API-37 | `test_access.py::test_expert_actualize_hides_foreign_modules` |
+| SPEC-API-38 | `test_access.py::test_return_rejected_for_approved_program` |
+| SPEC-API-39 | `test_access.py::test_form_params_override_text_with_conflict_note` |
 | SPEC-AUTH-01 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
 | SPEC-AUTH-02 | `test_auth.py::test_login_by_login_id_and_all_demo_users`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-AUTH-03 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
@@ -222,6 +229,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-AUTH-28 | `test_spec_tokens.py::test_admin_issues_lists_and_revokes_api_tokens`, `test_spec_tokens.py::test_expired_api_token_rejected` |
 | SPEC-AUTH-29 | `test_spec_tokens.py::test_program_creation_limit_per_user` |
 | SPEC-AUTH-30 | `test_access.py::test_expert_node_must_belong_to_own_module` |
+| SPEC-AUTH-31 | `test_access.py::test_expert_cannot_touch_foreign_aggregates` |
 | SPEC-EXPORT-01 | `test_spec_export.py::test_formats_and_unknown` |
 | SPEC-EXPORT-02 | `test_core.py::test_open_cases_auto` |
 | SPEC-EXPORT-03 | `test_spec_export.py::test_human_fields_left_blank` |
@@ -287,6 +295,8 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-KB-19 | `test_spec_kb_vectors.py::test_kb_search_fuses_org_and_norms_by_rank` |
 | SPEC-KB-20 | `test_spec_kb_vectors.py::test_abbreviations_expanded_in_search` |
 | SPEC-KB-21 | `test_extras.py::test_tool_aliases_from_registry`, `test_spec_kb_vectors.py::test_recognition_normalizes_writing` |
+| SPEC-KB-22 | `test_extras.py::test_docx_tables_in_reference_text` |
+| SPEC-KB-23 | `test_extras.py::test_pdf_encrypted_rejected_and_plain_ok` |
 | SPEC-LLM-01 | `test_extras.py::test_parse_json_truncated_reasoning`, `test_spec_llm_client.py::test_parse_json_cleanup` |
 | SPEC-LLM-02 | `test_spec_llm_client.py::test_daily_limit_detection` |
 | SPEC-LLM-03 | `test_spec_llm_client.py::test_call_stats_accumulate` |
@@ -313,6 +323,8 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-LLM-24 | `test_spec_llm_client.py::test_truncated_answer_salvaged_when_partial_ok` |
 | SPEC-LLM-25 | `test_spec_llm_client.py::test_budget_checked_after_queue` |
 | SPEC-LLM-26 | `test_spec_misc.py::test_llm_status_cache_and_admin_live` |
+| SPEC-LLM-27 | `test_spec_llm_client.py::test_ping_budget_and_spend`, `test_spec_llm_client.py::test_ping_accounts_cost_when_budget_allows`, `test_spec_llm_client.py::test_embed_budget_checked_per_batch` |
+| SPEC-LLM-28 | `test_spec_misc.py::test_llm_status_stampede_single_ping` |
 | SPEC-SVC-01 | `test_spec_service.py::test_new_id_format` |
 | SPEC-SVC-02 | `test_spec_service.py::test_save_and_load_roundtrip` |
 | SPEC-SVC-03 | `test_spec_service.py::test_missing_program_not_found` |
@@ -329,6 +341,9 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-SVC-14 | `test_access.py::test_approve_atomic_capacity_first_and_idempotent_job`, `test_spec_service.py::test_start_job_capacity_first_and_idempotent` |
 | SPEC-SVC-15 | `test_spec_service.py::test_start_job_capacity_first_and_idempotent` |
 | SPEC-SVC-16 | `test_spec_service.py::test_save_survives_malformed_lecture_plan` |
+| SPEC-SVC-17 | `test_access.py::test_parallel_approve_creates_exactly_one_job`, `test_spec_service.py::test_start_job_parallel_reserves_single_job` |
+| SPEC-Q-01 | `test_quality_report.py::test_build_report_data_marks_failures`, `test_quality_report.py::test_build_report_data_happy_path`, `test_quality_report.py::test_pytest_verdict_reads_failures`, `test_quality_report.py::test_autorun_verdict_reads_markers`, `test_quality_report.py::test_main_exit_code_and_report` |
+| SPEC-Q-02 | `test_autorun_checks.py::test_case3_slides_check_requires_every_pandas_topic`, `test_autorun_checks.py::test_case1_slides_must_belong_to_own_module`, `test_autorun_checks.py::test_case5_slides_must_belong_to_own_module` |
 | SPEC-CONTENT-01 | `test_spec_content.py::test_fallback_when_model_disabled` |
 | SPEC-CONTENT-02 | `test_spec_content.py::test_fallback_questions` |
 | SPEC-CONTENT-03 | `test_spec_content.py::test_fallback_tasks_and_lectures` |
@@ -368,6 +383,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-SKILLS-17 | `test_core.py::test_intake_reference_volume_not_program_volume` |
 | SPEC-SKILLS-18 | `test_extras.py::test_tool_aliases_from_registry` |
 | SPEC-SKILLS-19 | `test_spec_skeleton_domains.py`, `test_spec_skeleton_domains.py::test_postgresql_gets_no_pandas`, `test_spec_skeleton_domains.py::test_docker_exam_task_is_about_docker`, `test_spec_skeleton_domains.py::test_java_reserve_stays_java`, `test_spec_skeleton_domains.py::test_pandas_request_keeps_pandas`, `test_spec_skeleton_domains.py::test_must_covers_only_named_topics` |
+| SPEC-SKILLS-20 | `test_core.py::test_intake_reference_volume_not_program_volume`, `test_spec_misc.py::test_intake_volume_roles_with_reference` |
 | SPEC-SOLVER-01 | `test_core.py::test_largest_remainder_sums` |
 | SPEC-SOLVER-02 | `test_spec_solvers.py::test_largest_remainder_deterministic`, `test_spec_solvers.py::test_largest_remainder_tie_break` |
 | SPEC-SOLVER-03 | `test_spec_solvers.py::test_round_half_up_not_bankers` |
@@ -392,6 +408,10 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-JUDGE-06 | `test_spec_judge.py::test_merge_adds_judge_messages` |
 | SPEC-JUDGE-07 | `test_spec_judge.py::test_view_contains_real_materials`, `test_spec_judge.py::test_judge_receives_materials`, `test_spec_judge.py::test_view_truncates_materials`, `test_spec_judge.py::test_view_module_budget` |
 | SPEC-JUDGE-08 | `test_spec_judge.py::test_judge_rows_separate_from_code`, `test_spec_judge.py::test_audit_counterexample_is_caught` |
+| SPEC-JUDGE-09 | `test_spec_judge.py::test_view_contains_final_assessment`, `test_spec_judge.py::test_final_swap_is_visible_to_judge` |
+| SPEC-JUDGE-10 | `test_spec_judge.py::test_view_contains_module_program_bodies` |
+| SPEC-JUDGE-11 | `test_spec_judge.py::test_view_reports_materials_coverage` |
+| SPEC-JUDGE-12 | `test_spec_judge.py::test_final_judge_rows_anchor_to_final_task` |
 | SPEC-REPAIR-01 | `test_spec_repair.py::test_no_failed_rules_no_changes` |
 | SPEC-REPAIR-02 | `test_spec_repair.py::test_v19_duplicates_removed_and_key_fixed` |
 | SPEC-REPAIR-03 | `test_spec_repair.py::test_v19_key_keeps_correct_answer` |
@@ -410,6 +430,8 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-REPAIR-16 | `test_spec_repair.py::test_v16_unconfirmed_sources_marked_once` |
 | SPEC-REPAIR-17 | `test_spec_repair.py::test_v19_key_restored_by_text_only` |
 | SPEC-REPAIR-18 | `test_spec_repair.py::test_v13_final_task_text_extended_for_added_lo`, `test_spec_repair.py::test_v13_seminar_task_text_extended_for_added_lo` |
+| SPEC-REPAIR-19 | `test_spec_repair.py::test_cover_outcomes_subject_question_with_commands`, `test_spec_repair.py::test_cover_outcomes_subject_stem_without_commands` |
+| SPEC-REPAIR-20 | `test_spec_repair.py::test_v13_meta_question_not_counted_as_mean` |
 | SPEC-RULES-01 | `test_spec_rules.py::test_27_rules_kinds` |
 | SPEC-RULES-02 | `test_spec_rules.py::test_stage_rule_sets` |
 | SPEC-RULES-03 | `test_spec_rules.py::test_fail_downgraded_and_exception_isolated` |
@@ -445,4 +467,5 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-SANDBOX-10 | `test_spec_sandbox.py::test_check_examples_limit_and_messages` |
 | SPEC-SANDBOX-11 | `test_spec_sandbox.py::test_limits_from_settings` |
 | SPEC-SANDBOX-12 | `test_spec_sandbox.py::test_limits_degrade_on_macos` |
+| SPEC-SANDBOX-13 | `test_spec_sandbox.py::test_limits_reported` |
 <!-- trace:end -->

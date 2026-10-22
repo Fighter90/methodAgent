@@ -400,10 +400,13 @@ def test_v21_cycle_blocks_silent_approval() -> None:
     with pytest.raises(Conflict) as e:
         wf.approve_skeleton(doc, 'u-madina', auto=True)
     assert e.value.code == 'TOPIC_DEPENDENCY_CYCLE'
-    assert [t.title for t in doc.all_topics()] == ['Классы', 'Циклы', 'Переменные'], 'порядок молча не меняется'
+    by_title = {t.title: t for t in doc.all_topics()}
+    assert by_title['Классы'].prerequisites and by_title['Циклы'].prerequisites, 'взаимная зависимость сохранена по смыслу (MET-61)'
+    assert wf._topic_deps(doc)[1], 'цикл зависимостей остался и после перестановок: порядок автоматически не «чинится»'
     with pytest.raises(Conflict) as e:
         wf.approve_skeleton(doc, 'u-madina')
     assert e.value.code == 'TOPIC_DEPENDENCY_CYCLE'
+    assert [t.title for t in doc.all_topics()] == ['Переменные', 'Классы', 'Циклы'], 'без решений методиста порядок не менялся'
 
 
 def test_v21_explicit_prerequisites_survive_reorder() -> None:
@@ -474,7 +477,7 @@ def test_final_task_follows_course_subject() -> None:
     assert 'атак' not in st(docker) and 'инцидент' not in st(docker), 'заготовка про атаки не применяется'
 
     sql = build('SQL для аналитиков', 'SQL', ['SELECT и фильтры', 'Соединения и агрегаты'], 'Портфолио')
-    assert 'sql' in st(sql) and 'запрос' in st(sql), 'портфолио курса по SQL — про SQL'
+    assert 'sql' in st(sql) and 'выборк' in st(sql), 'портфолио курса по SQL — про SQL'
     assert 'план урока' not in st(sql) and 'нейросет' not in st(sql), 'заготовка про планы уроков не применяется'
 
     three = build('3D-моделирование', '3D-моделирование', ['Моделирование в Blender', 'Материалы и освещение'], 'Защита проекта', doop=True)
