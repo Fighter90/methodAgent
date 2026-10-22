@@ -403,7 +403,7 @@ def test_attachment_validated_before_decode(client, monkeypatch) -> None:
     monkeypatch.setattr(get_settings(), 'max_file_size_mb', 1)
     big = b64.b64encode(b'x' * (1024 * 1024 + 100)).decode()  # 1,1 МБ > лимита
     r = client.post('/api/v1/programs', json={'request': 'тест вложений', 'attachments': [{'name': 'big.docx', 'content_base64': big}]}, headers=ha)
-    assert r.status_code == 400 and 'больше 1 МБ' in r.json()['message_ru']
+    assert r.status_code == 413 and r.json()['code'] == 'PAYLOAD_TOO_LARGE' and 'больше 1 МБ' in r.json()['message_ru']
     r = client.post('/api/v1/programs', json={'request': 'тест вложений', 'attachments': [{'name': 'x.docx', 'content_base64': '!!!не-base64!!!'}]}, headers=ha)
     assert r.status_code == 400 and 'base64' in r.json()['message_ru']
     r = client.post('/api/v1/programs', json={'request': 'тест вложений', 'attachments': [{'name': 'empty.docx', 'content_base64': '   '}]}, headers=ha)

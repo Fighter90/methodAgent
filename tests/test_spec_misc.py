@@ -283,6 +283,23 @@ def test_auto_run_exception_marks_failed(client, monkeypatch) -> None:
     assert any('Сборка прервана: RuntimeError' in n for n in doc['agent_notes'])
 
 
+def test_patch_skeleton_malformed_body_is_400(client) -> None:
+    """SPEC-FLOW-54"""
+    h = _h(client, 'u-madina')
+    q = client.post('/api/v1/programs', json={'request': REQ}, headers=h).json()
+    ans = {x['id']: 'на ваше усмотрение' for x in q.get('questions', [])}
+    if q['status'] == 'questions':
+        r = client.patch(f"/api/v1/programs/{q['program_id']}/skeleton", json={'modules': []}, headers=h)
+        assert r.status_code == 409 and 'ответьте на уточняющие вопросы' in r.json()['message_ru']
+    doc = client.post('/api/v1/programs', json={'request': REQ, 'answers': ans}, headers=h).json()
+    assert doc['status'] == 'skeleton'
+    pid, mid = doc['program_id'], doc['program']['modules'][0]['id']
+    for body in ({'modules': 'x'}, {'modules': [1]}, {'modules': [{'id': mid, 'hours': {'lk': 'abc'}}]}):
+        r = client.patch(f'/api/v1/programs/{pid}/skeleton', json=body, headers=h)
+        assert r.status_code == 400 and r.json()['code'] == 'BAD_REQUEST', (body, r.text)
+    assert client.get(f'/api/v1/programs/{pid}', headers=h).json()['modules'][0]['hours'] == doc['program']['modules'][0]['hours']
+
+
 def test_patch_skeleton_locked() -> None:
     """SPEC-FLOW-07: правка каркаса не в статусе skeleton или returned отклоняется (SKELETON_LOCKED)."""
     from app.agent import workflow as wf
@@ -608,6 +625,24 @@ def test_submit_and_head_decision() -> None:
     wf.head_decision(doc, 'u-olga', 'approve')
     assert doc.status == Status.APPROVED
 
+
+def test_submit_rejected_outside_kit_states() -> None:
+    """SPEC-FLOW-53"""
+    from app.agent import workflow as wf
+
+    doc = _skel_doc()
+    doc.report = Report(stage='kit', blocking_passed=10, blocking_total=10)
+    for m in doc.modules:
+        m.review_status = 'accepted'
+    for st in (Status.APPROVED, Status.SKELETON, Status.GENERATING, Status.QUESTIONS):
+        doc.status = st
+        with pytest.raises(Conflict) as e:
+            wf.submit(doc, 'u-madina')
+        assert e.value.code == 'BAD_STATE' and doc.status == st
+    doc.status = Status.RETURNED  # возврат руководителем: исправленная программа отправляется снова
+    wf.submit(doc, 'u-madina')
+    assert doc.status == Status.ON_APPROVAL
+
     doc.status = Status.ON_APPROVAL
     wf.head_decision(doc, 'u-olga', 'return', 'Доработать модуль 2')
     assert doc.status == Status.RETURNED and doc.approvals[-1].comment == 'Доработать модуль 2'
@@ -697,7 +732,7 @@ def test_unhandled_error_hides_details() -> None:
 
 
 def test_request_limits(client, monkeypatch) -> None:
-    """SPEC-API-08: запрос 5–5000 символов, до 5 вложений не больше MAX_FILE_SIZE_MB; нарушения — 400 или 422."""
+    """SPEC-API-08: запрос 5–5000 символов, до 5 вложений не больше MAX_FILE_SIZE_MB; нарушения — 400, 413 или 422."""
     from app.core.config import get_settings
 
     h = _h(client, 'u-madina')
@@ -708,7 +743,7 @@ def test_request_limits(client, monkeypatch) -> None:
     assert client.post(url, json={'request': REQ, 'attachments': [att] * 6}, headers=h).status_code == 422
     monkeypatch.setattr(get_settings(), 'max_file_size_mb', 0)
     r = client.post(url, json={'request': REQ, 'attachments': [att]}, headers=h)
-    assert r.status_code == 400 and 'больше 0 МБ' in r.json()['message_ru']
+    assert r.status_code == 413 and 'больше 0 МБ' in r.json()['message_ru']
 
 
 def test_parallel_jobs_limit(client, monkeypatch) -> None:

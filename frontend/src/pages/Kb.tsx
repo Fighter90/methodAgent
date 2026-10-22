@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FileText, LibraryBig, Search, Trash2, Upload } from 'lucide-react'
 import { api, getSession } from '../api'
 import { Spinner, useToast } from '../components/ui'
+import { FILE_ACCEPT, fileError } from '../validate'
 
 const KINDS = [['template', 'Шаблон программы'], ['regulation', 'Положение'], ['other', 'Иной документ']]
 
@@ -22,6 +23,8 @@ export default function Kb() {
 
   async function upload(f: File | undefined) {
     if (!f) return
+    const err = fileError(f)
+    if (err) { toast(err, true); return }
     setBusy(true)
     try {
       const fd = new FormData()
@@ -53,7 +56,7 @@ export default function Kb() {
                 {KINDS.map(([k, l]) => <button key={k} className={`seg-btn ${kind === k ? 'active' : ''}`} onClick={() => setKind(k)}>{l}</button>)}
               </div>
               <div className="kb-drop" onClick={() => input.current?.click()}>{busy ? <><Spinner /> Индексирую…</> : <><Upload size={16} style={{ verticalAlign: -3 }} /> Загрузить .docx, .pdf или .txt до 20 МБ</>}</div>
-              <input ref={input} type="file" hidden accept=".docx,.pdf,.txt" onChange={(e) => upload(e.target.files?.[0])} />
+              <input ref={input} type="file" hidden accept={FILE_ACCEPT} onChange={(e) => upload(e.target.files?.[0])} />
             </>
           ) : <div className="callout small">Загружает и удаляет документы администратор профиля. Искать по базе может любой сотрудник.</div>}
         </section>

@@ -90,11 +90,11 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 <!-- trace:begin -->
 | Спецификация | Требований | Покрыто | Не покрыты |
 |---|---|---|---|
-| [agent-workflow.md](agent-workflow.md) | 52 | 52 | — |
-| [api.md](api.md) | 40 | 40 | — |
+| [agent-workflow.md](agent-workflow.md) | 54 | 54 | — |
+| [api.md](api.md) | 44 | 44 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 31 | 31 | — |
 | [export.md](export.md) | 14 | 14 | — |
-| [frontend.md](frontend.md) | 30 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30 |
+| [frontend.md](frontend.md) | 31 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30, SPEC-UI-31 |
 | [knowledge-base.md](knowledge-base.md) | 23 | 23 | — |
 | [llm-client.md](llm-client.md) | 28 | 28 | — |
 | [programs-service.md](programs-service.md) | 17 | 17 | — |
@@ -106,7 +106,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | [validation-judge.md](validation-judge.md) | 12 | 12 | — |
 | [validation-repair.md](validation-repair.md) | 20 | 20 | — |
 | [validation-rules.md](validation-rules.md) | 24 | 24 | — |
-| [validation-sandbox.md](validation-sandbox.md) | 14 | 14 | — |
+| [validation-sandbox.md](validation-sandbox.md) | 15 | 15 | — |
 
 | Требование | Тесты |
 |---|---|
@@ -162,6 +162,8 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-FLOW-50 | `test_e2e_regressions.py::test_skeleton_return_blocked_after_approval` |
 | SPEC-FLOW-51 | `test_spec_misc.py::test_source_confirmation_needs_record_match` |
 | SPEC-FLOW-52 | `test_spec_misc.py::test_local_and_ssrf_urls_not_probed` |
+| SPEC-FLOW-53 | `test_spec_misc.py::test_submit_rejected_outside_kit_states` |
+| SPEC-FLOW-54 | `test_spec_misc.py::test_patch_skeleton_malformed_body_is_400` |
 | SPEC-API-01 | `test_access.py::test_unassigned_expert_cannot_accept_and_api_404` |
 | SPEC-API-02 | `test_access.py::test_module_accept_requires_all_items`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-API-03 | `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
@@ -202,6 +204,10 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-API-38 | `test_access.py::test_return_rejected_for_approved_program` |
 | SPEC-API-39 | `test_access.py::test_form_params_override_text_with_conflict_note` |
 | SPEC-API-40 | `test_access.py::test_kit_status_done_on_fixtures`, `test_access.py::test_kit_status_degraded_on_partial_llm` |
+| SPEC-API-41 | `test_spec_uploads.py::test_body_limit_rejects_before_parsing` |
+| SPEC-API-42 | `test_spec_uploads.py::test_multipart_uploads_limited_on_every_path` |
+| SPEC-API-43 | `test_spec_uploads.py::test_type_whitelist_and_signature_match` |
+| SPEC-API-44 | `test_spec_uploads.py::test_base64_line_breaks_and_data_prefix_accepted` |
 | SPEC-AUTH-01 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
 | SPEC-AUTH-02 | `test_auth.py::test_login_by_login_id_and_all_demo_users`, `test_auth.py::test_register_gets_minimal_role_and_cabinet` |
 | SPEC-AUTH-03 | `test_auth.py::test_login_by_login_id_and_all_demo_users` |
@@ -277,6 +283,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-UI-28 | — |
 | SPEC-UI-29 | — |
 | SPEC-UI-30 | — |
+| SPEC-UI-31 | — |
 | SPEC-KB-01 | `test_norms.py::test_repealed_acts_are_not_used` |
 | SPEC-KB-02 | `test_norms.py::test_repealed_acts_are_not_used` |
 | SPEC-KB-03 | `test_norms.py::test_core_and_keyword_acts` |
@@ -472,4 +479,6 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-SANDBOX-11 | `test_spec_sandbox.py::test_limits_from_settings` |
 | SPEC-SANDBOX-12 | `test_spec_sandbox.py::test_limits_degrade_on_macos` |
 | SPEC-SANDBOX-13 | `test_spec_sandbox.py::test_limits_reported` |
+| SPEC-SANDBOX-14 | `test_spec_sandbox.py::test_ast_allowlist_blocks_escape_vectors` |
+| SPEC-SANDBOX-15 | `test_spec_sandbox.py::test_private_module_attrs_and_banned_names_not_run` |
 <!-- trace:end -->

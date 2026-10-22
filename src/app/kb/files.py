@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.core.errors import BadRequest
+from app.core.uploads import check_type
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ def detect_format(content: bytes) -> str | None:
 
 def parse_reference(name: str, content: bytes, max_unpacked_mb: int = 100) -> ParsedReference:
     fmt = detect_format(content)
+    check_type(name, content, fmt)  # белый список расширений и совпадение расширения с сигнатурой (415)
     if fmt == 'docx':
         return _parse_docx(name, content, max_unpacked_mb)
     if fmt == 'pdf':

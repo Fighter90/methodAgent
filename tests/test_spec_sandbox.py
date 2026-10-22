@@ -194,6 +194,25 @@ def test_limits_reported(runtime) -> None:
         assert 'RLIMIT_AS' in skipped  # MET-17: macOS не даёт понизить RLIMIT_AS
 
 
+def test_private_module_attrs_and_banned_names_not_run() -> None:
+    """SPEC-SANDBOX-15"""
+    from app.validation.sandbox import run_detailed
+
+    escapes = [
+        'import random\nrandom._os.execv("/bin/echo", ["echo", "ESCAPE"])',
+        'import random\nf = random._os.open\nf("/etc/hosts", 0)',
+        'import collections\nprint(collections._sys.version)',
+        'import fractions\nm = fractions\nprint(m.numbers)',
+        'g = open\nprint(g("/etc/hosts").read())',
+        'h = eval\nprint(h("1+1"))',
+    ]
+    for code in escapes:
+        res = run_detailed(code)
+        assert res['mode'] in ('syntax', 'skip') and 'ESCAPE' not in res['stdout'] and 'localhost' not in res['stdout'], code
+    ok = run_detailed('import random\nrandom.seed(1)\nprint(len([random.randint(1, 6) for _ in range(3)]))')
+    assert ok['mode'] == 'run' and ok['stdout'].strip() == '3'
+
+
 def test_ast_allowlist_blocks_escape_vectors() -> None:
     """SPEC-SANDBOX-14"""
     from app.validation.sandbox import run_detailed

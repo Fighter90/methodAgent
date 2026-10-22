@@ -481,6 +481,8 @@ def recompute(doc: ProgramDoc) -> None:
 
 
 def patch_skeleton(doc: ProgramDoc, patch: dict[str, Any]) -> None:
+    if doc.status in (Status.DRAFT, Status.QUESTIONS):
+        raise Conflict('Каркас ещё не собран: сначала ответьте на уточняющие вопросы', code='SKELETON_LOCKED')
     if doc.status not in (Status.SKELETON, Status.RETURNED):
         raise Conflict('Каркас уже утверждён: используйте точечную правку', code='SKELETON_LOCKED')
     for mp in patch.get('modules', []):
@@ -1739,7 +1741,13 @@ def add_comment(doc: ProgramDoc, module_id: str, author: str, text: str, node_id
     return c
 
 
+_SUBMIT_ALLOWED = (Status.KIT_READY, Status.ON_REVIEW, Status.RETURNED, Status.ON_APPROVAL)
+
+
 def submit(doc: ProgramDoc, actor: str) -> None:
+    if doc.status not in _SUBMIT_ALLOWED:
+        # утверждённая программа не уходит на утверждение повторно: решение руководителя не снимается молча
+        raise Conflict(f'Отправка на утверждение недоступна в статусе «{doc.status.value}»', code='BAD_STATE')
     if not blocking_ok(doc):
         raise Conflict('Отправка доступна после 10 из 10 блокирующих проверок', code='BLOCKING_FAILED')
     not_accepted = [m.n for m in doc.modules if m.review_status != 'accepted']

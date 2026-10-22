@@ -9,6 +9,7 @@ import {
   REQUEST_FORM_TYPE_LABEL, VOLUME_PRESETS, type RequestFormFields,
 } from '../kit'
 import { FindingsList } from './ProgramTools'
+import { FILE_ACCEPT, fileError, MAX_FILES } from '../validate'
 
 export const EXAMPLES = [
   { t: 'Python для школьников · 16 ч', q: 'Нужна дополнительная общеразвивающая программа «Первые шаги в Python» для школьников 8 и 9 классов без опыта программирования. Объем 16 часов, занятия очно по 2 часа два раза в неделю. Практики должно быть не меньше половины всех часов. В конце каждый ученик защищает небольшой проект, например простую игру или чат-бота. Нужны итоговый тест на 10 вопросов и слайды для первых двух занятий.' },
@@ -91,7 +92,13 @@ export default function Programs() {
 
   const addFiles = (fl: FileList | null) => {
     if (!fl) return
-    setFiles((x) => [...x, ...Array.from(fl)].slice(0, 5))
+    const picked = Array.from(fl)
+    const bad = picked.map(fileError).filter(Boolean) as string[]
+    const ok = picked.filter((f) => !fileError(f))
+    const next = [...files, ...ok]
+    if (next.length > MAX_FILES) bad.push(`Не больше ${MAX_FILES} файлов: не добавлены ${next.slice(MAX_FILES).map((f) => f.name).join(', ')}`)
+    if (bad.length) toast(bad.join('; '), true)
+    setFiles(next.slice(0, MAX_FILES))
   }
 
   return (
@@ -115,7 +122,7 @@ export default function Programs() {
               onDragOver={(e) => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)}
               onDrop={(e) => { e.preventDefault(); setOver(false); addFiles(e.dataTransfer.files) }}>
               <Upload size={18} style={{ verticalAlign: -4 }} /> Перетащите шаблон или прошлую программу (.docx, .pdf, .txt), до 5 файлов по 20 МБ
-              <input ref={input} type="file" hidden multiple accept=".docx,.pdf,.txt" onChange={(e) => addFiles(e.target.files)} />
+              <input ref={input} type="file" hidden multiple accept={FILE_ACCEPT} onChange={(e) => { addFiles(e.target.files); e.target.value = '' }} />
             </div>
             {files.length > 0 && (
               <div className="row row-wrap" style={{ gap: 8, marginTop: 10 }}>
@@ -267,6 +274,8 @@ function ActualizeCard() {
   const [res, setRes] = useState<any>(null)
   async function run(f: File | undefined) {
     if (!f) return
+    const err = fileError(f)
+    if (err) { toast(err, true); return }
     setBusy(true)
     try {
       const fd = new FormData()
@@ -279,7 +288,7 @@ function ActualizeCard() {
       <h3 className="h3"><RefreshCw size={16} style={{ verticalAlign: -3 }} /> Актуализация старой программы</h3>
       <p className="small muted" style={{ marginTop: 0 }}>Загрузите прошлую программу: агент найдёт устаревшие инструменты, версии, сервисы и источники по реестру 2026 года и предложит замену.</p>
       <div className="kb-drop" onClick={() => input.current?.click()}>{busy ? <Spinner /> : <Upload size={16} style={{ verticalAlign: -3 }} />} Выбрать .docx, .pdf или .txt</div>
-      <input ref={input} type="file" hidden accept=".docx,.pdf,.txt" onChange={(e) => run(e.target.files?.[0])} />
+      <input ref={input} type="file" hidden accept={FILE_ACCEPT} onChange={(e) => { run(e.target.files?.[0]); e.target.value = '' }} />
       {res && (
         <div style={{ marginTop: 12 }}>
           <div className="tiny muted" style={{ marginBottom: 8 }}>{res.name} · {Math.round(res.chars / 1000)} тыс. знаков · находок {res.total}</div>

@@ -50,6 +50,20 @@ class Conflict(AppError):
     code = 'STATE_CONFLICT'
 
 
+class PayloadTooLarge(AppError):
+    """Вложение или тело запроса больше допустимого — отклоняется до декодирования."""
+
+    status_code = 413
+    code = 'PAYLOAD_TOO_LARGE'
+
+
+class UnsupportedMedia(AppError):
+    """Тип файла вне белого списка или содержимое не соответствует расширению."""
+
+    status_code = 415
+    code = 'UNSUPPORTED_MEDIA_TYPE'
+
+
 class RateLimited(AppError):
     status_code = 429
     code = 'RATE_LIMIT'

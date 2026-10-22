@@ -116,6 +116,9 @@ def libraries(code: str) -> list[str]:
 
 # Разрешённые для исполнения учебные модули (AST-слой, R01-промежуточно): всё вне списка — только синтаксис
 _ALLOWED_ROOTS = {'math', 'random', 'string', 'statistics', 'decimal', 'fractions', 'collections', 'itertools', 'functools', 're'}
+# Модули, которые разрешённые модули отдают публичным атрибутом (statistics.sys, fractions.operator, re.copyreg)
+_MODULE_ATTRS = {'sys', 'os', 'operator', 'numbers', 'copyreg', 'enum', 'types', 'builtins', 'io'}
+_BANNED_NAMES = {'eval', 'exec', 'compile', 'open', 'getattr', 'setattr', 'delattr', 'globals', 'locals', 'vars', 'breakpoint', 'memoryview'}
 
 
 def _ast_risks(code: str) -> list[str]:
@@ -138,11 +141,17 @@ def _ast_risks(code: str) -> list[str]:
             if (node.module or '').split('.')[0] not in _ALLOWED_ROOTS:
                 risks.append(f'импорт из {node.module} запрещён')
         elif isinstance(node, ast.Attribute):
-            if node.attr.startswith('__') and node.attr.endswith('__'):
+            # любой «_»-атрибут: random._os, collections._sys и dunder-цепочки дают модуль os в обход списка
+            if node.attr.startswith('_'):
                 risks.append(f'обращение к служебному атрибуту {node.attr} запрещено')
+            elif node.attr in _MODULE_ATTRS:
+                risks.append(f'обращение к вложенному модулю {node.attr} запрещено')
         elif isinstance(node, ast.Name):
             if node.id.startswith('__') and node.id.endswith('__'):
                 risks.append(f'обращение к служебному имени {node.id} запрещено')
+            elif node.id in _BANNED_NAMES:
+                # не только вызов: `f = open; f(...)` обходит regex по скобке
+                risks.append(f'использование {node.id} запрещено')
     return risks
 
 

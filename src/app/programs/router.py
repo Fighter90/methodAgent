@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import base64
+import asyncio
 import logging
 import re
 import time
@@ -13,9 +13,17 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from app.agent import workflow as wf
+from app.core import uploads
 from app.core.config import get_settings
 from app.core.db import now_iso
-from app.core.errors import BadRequest, Conflict, ForbiddenRole, NotFound, Unauthorized
+from app.core.errors import (
+    BadRequest,
+    Conflict,
+    ForbiddenRole,
+    NotFound,
+    PayloadTooLarge,
+    Unauthorized,
+)
 from app.core.security import (
     Principal,
     check_program_rate,
@@ -153,7 +161,7 @@ def expert_view(doc: ProgramDoc, p: Principal, data: dict[str, Any]) -> dict[str
 
 
 class Attachment(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     content_base64: str
 
 
@@ -175,7 +183,7 @@ def _parse_files(files: list[tuple[str, bytes]]) -> tuple[list[ReferenceInfo], s
     refs, texts = [], []
     for name, content in files:
         if len(content) > s.max_file_size_bytes:
-            raise BadRequest(f'Файл «{name}» больше {s.max_file_size_mb} МБ')
+            raise PayloadTooLarge(f'Файл «{name}» больше {s.max_file_size_mb} МБ')
         parsed = parse_reference(name, content)
         refs.append(ReferenceInfo(name=name, chars=len(parsed.text), structure=parsed.structure, hours_issues=parsed.hours_issues, text_sample=parsed.text[:120000]))
         texts.append(parsed.text[:3000])
@@ -343,7 +351,7 @@ def _reapply_form_params(doc: ProgramDoc) -> None:
 
 async def _new_doc(text: str, files: list[tuple[str, bytes]], mode: str, norm_mode: str, owner: str,
                    params: Params | None = None) -> ProgramDoc:
-    refs, ref_text = _parse_files(files)
+    refs, ref_text = await asyncio.to_thread(_parse_files, files)  # разбор PDF/DOCX не блокирует цикл событий
     doc = ProgramDoc(id=svc.new_id('prg'), request=text.strip(), mode=mode, norm_mode=norm_mode, created_at=now_iso())
     await wf.intake_step(doc, refs, ref_text)
     if params is not None:
@@ -426,17 +434,9 @@ async def create_program(
 ) -> dict[str, Any]:
     check_program_rate(p)
     files = []
-    s = get_settings()
     for a in body.attachments:
-        # Аудит 22.10: размер проверяется ДО декодирования — гигантский base64 не должен попадать в память
-        if not a.content_base64.strip():
-            raise BadRequest(f'Файл «{a.name}»: вложение пустое')
-        if len(a.content_base64) * 3 // 4 > s.max_file_size_bytes:
-            raise BadRequest(f'Файл «{a.name}» больше {s.max_file_size_mb} МБ — уменьшите вложение или пришлите ссылкой')
-        try:
-            files.append((a.name, base64.b64decode(a.content_base64, validate=True)))
-        except ValueError as exc:
-            raise BadRequest(f'Файл «{a.name}»: неверный base64') from exc
+        # Прогон 22.10: тип по расширению и размер по длине base64 проверяются ДО декодирования (413/415)
+        files.append((a.name, uploads.decode_base64(a.name, a.content_base64)))
     started = time.monotonic()
     doc = await _new_doc(body.request, files, mode, body.norm_mode, p.user_id, body.params)
     base = str(request.base_url).rstrip('/')
@@ -477,7 +477,10 @@ async def create_program_upload(
     p: Principal = Depends(require('methodist', 'api')),
 ) -> dict[str, Any]:
     check_program_rate(p)
-    raw = [(f.filename or 'file', await f.read()) for f in files if f.filename]
+    named = [f for f in files if f.filename]
+    if len(named) > get_settings().max_files_per_request:
+        raise BadRequest(f'Не больше {get_settings().max_files_per_request} файлов на запрос')
+    raw = [(f.filename or 'file', await uploads.read_upload(f)) for f in named]
     doc = await _new_doc(text, raw, 'interactive', norm_mode if norm_mode in ('gos', 'org') else 'gos', p.user_id)
     if doc.questions:
         doc.status = Status.QUESTIONS
@@ -621,7 +624,10 @@ async def answers(
 @router.patch('/{program_id}/skeleton', summary='Изменить часы, названия, формулировки; пересчёт и проверки')
 async def patch_skeleton(program_id: str, body: dict[str, Any], p: Principal = Depends(require('methodist'))) -> dict[str, Any]:
     doc = await svc.load(program_id)
-    wf.patch_skeleton(doc, body)
+    try:
+        wf.patch_skeleton(doc, body)
+    except (AttributeError, TypeError, ValueError) as exc:  # тело не по схеме: 400 с текстом, а не 500; документ не сохраняется
+        raise BadRequest('Неверный формат правки каркаса: modules — список объектов {id, title, hours: {lk, pr, lb, srs}, topics}') from exc
     await svc.save(doc, p.user_id)
     await svc.log_event(program_id, p.user_id, 'skeleton_patch', _patch_summary(doc, body))
     return {'program': doc.model_dump(mode='json'), 'totals': doc.totals().model_dump()}

@@ -23,6 +23,10 @@ function assumptionsOf(doc: Doc): { label: string; value: string; source: string
 }
 const TYPE_LABEL: Record<string, string> = { dpp_pk: 'ДПП повышения квалификации', dpp_pk_internship: 'ДПП ПК в форме стажировки', doop: 'Дополнительная общеразвивающая' }
 
+// «returned» после сборки комплекта — возврат руководителем: доступны правка и повторная отправка (шаги 5–6)
+function stageOf(d: Doc): string {
+  return d.status === 'returned' && (d.report || d.kit?.questions?.length) ? 'kit_ready' : d.status
+}
 function maxStep(s: string) {
   if (['draft', 'questions'].includes(s)) return 2
   if (['skeleton', 'returned'].includes(s)) return 4
@@ -65,7 +69,7 @@ export default function Program() {
   useEffect(() => {
     load().then((d) => {
       if (!d) return
-      setStep(defaultStep(d.status))
+      setStep(defaultStep(stageOf(d)))
       const j = sessionStorage.getItem(`ma.job.${id}`)
       if (j) track(j)
     })
@@ -77,7 +81,7 @@ export default function Program() {
     try {
       await waitJob(jobId, (p) => setJob({ status: 'running', progress: p || {} }))
       const d = await load()
-      if (d) setStep(defaultStep(d.status))
+      if (d) setStep(defaultStep(stageOf(d)))
     } catch (e: any) {
       toast(e.message, true)
     } finally {
@@ -89,7 +93,7 @@ export default function Program() {
   if (!doc) return <div style={{ display: 'grid', gap: 12 }}><div className="skeleton" style={{ height: 60 }} /><div className="skeleton" style={{ height: 360 }} /></div>
 
   const role = user?.role
-  const ms = maxStep(doc.status)
+  const ms = maxStep(stageOf(doc))
   const building = job && (doc.status === 'skeleton' || doc.status === 'draft') && !doc.modules?.length
 
   return (
@@ -108,7 +112,7 @@ export default function Program() {
         <div className="stepper">
           {STEPS.map((s, i) => {
             const n = i + 1
-            const progress = defaultStep(doc.status) + (doc.status === 'approved' ? 1 : 0)
+            const progress = defaultStep(stageOf(doc)) + (doc.status === 'approved' ? 1 : 0)
             const done = n < progress
             const cls = n === step ? 'current' : done ? 'done' : ''
             return (
@@ -123,7 +127,7 @@ export default function Program() {
       {role === 'expert' ? <ExpertView doc={doc} reload={load} /> : (
         <div key={step + sub}>
           {building && <Building job={job} />}
-          {!building && step === 1 && <RequestView doc={doc} onNext={() => setStep(defaultStep(doc.status))} />}
+          {!building && step === 1 && <RequestView doc={doc} onNext={() => setStep(defaultStep(stageOf(doc)))} />}
           {!building && step === 2 && <QuestionsView doc={doc} onJob={track} />}
           {!building && step === 3 && <SkeletonView doc={doc} setDoc={setDoc} onNext={() => setStep(4)} />}
           {!building && step === 4 && <CheckView doc={doc} setDoc={setDoc} reload={load} onJob={(j) => { setStep(5); track(j) }} />}

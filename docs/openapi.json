@@ -159,6 +159,8 @@
             "type": "string"
           },
           "name": {
+            "maxLength": 255,
+            "minLength": 1,
             "title": "Name",
             "type": "string"
           }

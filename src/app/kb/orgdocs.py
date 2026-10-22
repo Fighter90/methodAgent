@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -142,7 +143,7 @@ async def _embed(texts: list[str]) -> list[list[float]] | None:
 
 
 async def add_document(name: str, content: bytes, kind: str, author: str) -> dict[str, Any]:
-    parsed = parse_reference(name, content)
+    parsed = await asyncio.to_thread(parse_reference, name, content)
     parts = chunks(parsed.text)
     vectors = await _embed(parts)
     with _lock:

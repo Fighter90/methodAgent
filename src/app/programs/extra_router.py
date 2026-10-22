@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
@@ -9,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.agent import extras
 from app.agent.sections import build_sections
-from app.core.config import get_settings
+from app.core import uploads
 from app.core.errors import BadRequest
 from app.core.security import (
     Principal,
@@ -76,10 +77,8 @@ async def actualize_program(program_id: str, p: Principal = Depends(require('met
 
 @router.post('/actualize', summary='Актуализация старой программы из файла (.docx, .pdf, .txt) без создания черновика')
 async def actualize_file(file: UploadFile = File(...), p: Principal = Depends(require('methodist', 'api'))) -> dict[str, Any]:
-    content = await file.read()
-    if len(content) > get_settings().max_file_size_bytes:
-        raise BadRequest('Файл больше допустимого размера')
-    parsed = parse_reference(file.filename or 'file', content)
+    content = await uploads.read_upload(file)
+    parsed = await asyncio.to_thread(parse_reference, file.filename or 'file', content)
     found = extras.scan_text(parsed.text)
     return {'name': file.filename, 'chars': len(parsed.text), 'structure': parsed.structure[:40], 'findings': found, 'total': len(found)}
 
@@ -141,9 +140,7 @@ async def kb_list(p: Principal = Depends(require('admin', 'methodist', 'head')))
 
 @router.post('/kb/documents', summary='Загрузить шаблон, положение или иной документ организации (администратор)')
 async def kb_upload(file: UploadFile = File(...), kind: str = Form('other'), p: Principal = Depends(require('admin'))) -> dict[str, Any]:
-    content = await file.read()
-    if len(content) > get_settings().max_file_size_bytes:
-        raise BadRequest('Файл больше допустимого размера')
+    content = await uploads.read_upload(file)
     return await orgdocs.add_document(file.filename or 'document', content, kind, p.user_id)
 
 

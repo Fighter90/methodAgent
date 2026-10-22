@@ -19,6 +19,7 @@ from app.core.config import ROOT_DIR, get_settings
 from app.core.db import init_db
 from app.core.errors import register_error_handlers
 from app.core.security import Principal, current_principal
+from app.core.uploads import BodyLimit
 from app.llm.client import LLMUnavailable, get_llm
 from app.programs.extra_router import router as extra_router
 from app.programs.router import misc
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+    app.add_middleware(BodyLimit)  # 413 до разбора тела; CORS оборачивает ответ снаружи
     app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
     register_error_handlers(app)
 
