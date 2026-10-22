@@ -199,8 +199,10 @@ async def run(
             if stats is not None:
                 stats.fallback('content', exc, 'шаблон из каркаса', module=m.id)
             return fallback(doc, m, los, n_questions, test_id, slide_topics)
+        data = scrub_blocked(data)
+        data = await _top_up(doc, m, data, payload, spec, n_questions, internship, stats)
         try:
-            content = _from_llm(doc, m, los, scrub_blocked(data), n_questions, test_id, slide_topics)
+            content = _from_llm(doc, m, los, data, n_questions, test_id, slide_topics)
         except MODEL_DATA_ERRORS as exc:
             # Ответ прошёл схему, но не лёг в каркас: это дефект разбора — трассировка в журнал
             logger.exception('content program=%s module=%s: ответ модели не разобран, резервная генерация', doc.id, m.id)
@@ -211,6 +213,34 @@ async def run(
                 content.lectures = list(await asyncio.gather(*(_detail_lecture(doc, m, los, lec, stats) for lec in content.lectures)))
             return content
     return fallback(doc, m, los, n_questions, test_id, slide_topics)
+
+
+async def _top_up(
+    doc: ProgramDoc, m: Module, data: ModuleContentLLM, payload: dict, spec, n_questions: int, internship: bool, stats: CallStats | None,
+) -> ModuleContentLLM:
+    """SPEC-CONTENT-18: модель недодала вопросы теста или задания тем с практикой — один повторный запрос только за
+    недостающим; шаблон добирает лишь то, чего не дал и повтор. Отказ повтора не считается деградацией сам по себе."""
+    missing_q = max(0, n_questions - len(data.questions))
+    covered = {t.topic for t in data.tasks}
+    missing_t = [t.n for t in m.topics if ((t.hours.pr + t.hours.lb > 0) or internship) and t.n not in covered]
+    if not missing_q and not missing_t:
+        return data
+    ask = {**payload, 'missing': {'questions': missing_q, 'tasks_for_topics': missing_t},
+           'existing_questions': [q.stem for q in data.questions],
+           'note': 'Повторный запрос: верни ТОЛЬКО недостающее — ровно missing.questions новых вопросов теста (не повторяй existing_questions) '
+                   'и по одному заданию семинара для каждой темы из missing.tasks_for_topics. Остальные поля оставь пустыми.'}
+    try:
+        extra: ModuleContentLLM = await get_llm().complete_json(
+            skill='content', system=spec.instruction, user=json.dumps(ask, ensure_ascii=False), schema=ModuleContentLLM,
+            temperature=spec.temperature, max_tokens=min(spec.max_tokens, 3000), stats=stats, partial_ok=True,
+        )
+    except (LLMUnavailable, *MODEL_DATA_ERRORS) as exc:
+        logger.warning('content program=%s module=%s: повтор за недостающим не ответил, добор шаблоном (%s)', doc.id, m.id, str(exc)[:200])
+        return data
+    extra = scrub_blocked(extra)
+    data.questions += extra.questions[:missing_q]
+    data.tasks += [t for t in extra.tasks if t.topic in missing_t][: len(missing_t)]
+    return data
 
 
 def slide_count(duration_min: int) -> int:

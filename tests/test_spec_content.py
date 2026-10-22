@@ -223,7 +223,15 @@ def test_scrub_without_blocklist(monkeypatch) -> None:
 
 async def test_element_origin_marked(monkeypatch) -> None:
     """SPEC-CONTENT-15: происхождение элементов честно — llm у модельных, template у добора шаблоном."""
-    mc = await _run(monkeypatch, FakeLLM(LLM_DATA), n=4)
+    from app.llm.client import LLMUnavailable
+
+    class NoTopUp(FakeLLM):  # повтор за недостающим (SPEC-CONTENT-18) не ответил — добор шаблоном
+        async def complete_json(self, **kw):
+            if 'missing' in json.loads(kw['user']):
+                raise LLMUnavailable('content: 503')
+            return await super().complete_json(**kw)
+
+    mc = await _run(monkeypatch, NoTopUp(LLM_DATA), n=4)
     llm_marks = {q.origin for q in mc.questions[:2]} | {t.origin for t in mc.tasks} | {l.origin for l in mc.lectures}
     assert llm_marks == {'llm'}, 'модельные элементы помечаются llm'
     extra = mc.questions[2:]
@@ -284,3 +292,44 @@ async def test_fallback_lecture_is_substantive(monkeypatch) -> None:
     text = ' '.join(b for s in lec.slides for b in s.bullets)
     assert 'Пишет циклы на Python' in text and 'Цикл for' in text and 'мин — ' in text
     assert all(s.notes for s in lec.slides) and all(' — ' in s.bullets[0] for s in lec.slides)
+
+
+class TopUpLLM(FakeLLM):
+    """Первый ответ модуля недодал вопрос и задание; повторный запрос за недостающим их возвращает."""
+
+    def __init__(self, second: dict | None, exc: Exception | None = None) -> None:
+        super().__init__({'questions': [{'stem': 'Что делает цикл for?', 'options': ['перебирает', 'удаляет', 'пишет'], 'key': 0, 'lo': ['РО 1']}],
+                          'tasks': []})
+        self.second, self.second_exc = second, exc
+
+    async def complete_json(self, **kw):
+        if 'missing' in json.loads(kw['user']):
+            self.calls.append(kw)
+            if self.second_exc:
+                raise self.second_exc
+            return ModuleContentLLM.model_validate(self.second)
+        return await super().complete_json(**kw)
+
+
+async def test_missing_items_topped_up_by_model(monkeypatch) -> None:
+    """SPEC-CONTENT-18: IF модель недодала вопросы теста или задания тем с практикой, THEN THE SYSTEM SHALL один раз
+    запросить у модели только недостающие элементы модуля и лишь затем добирать шаблоном."""
+    second = {'questions': [{'stem': 'Что вернёт range(3)?', 'options': ['0, 1, 2', '1, 2, 3', '3'], 'key': 0, 'lo': ['РО 1']}],
+              'tasks': [{'topic': '1.1', 'title': 'Цикл по списку', 'statement': 'Посчитайте сумму списка циклом for',
+                         'criteria': [{'text': 'Работает', 'points': 5}, {'text': 'Оформлено', 'points': 5}], 'lo': ['РО 1']}]}
+    llm = TopUpLLM(second)
+    mc = await _run(monkeypatch, llm, n=2)
+    top = [c for c in llm.calls if 'missing' in json.loads(c['user'])]
+    assert len(top) == 1 and json.loads(top[0]['user'])['missing'] == {'questions': 1, 'tasks_for_topics': ['1.1']}
+    assert [q.origin for q in mc.questions] == ['llm', 'llm'] and mc.questions[1].stem == 'Что вернёт range(3)?'
+    assert [t.origin for t in mc.tasks] == ['llm'] and mc.tasks[0].topic_id == 't1.1'
+
+
+async def test_top_up_failure_falls_back_to_template(monkeypatch) -> None:
+    """SPEC-CONTENT-18: IF повторный запрос не ответил, THEN недостающее добирается шаблоном, как раньше; повтор один."""
+    from app.llm.client import LLMUnavailable
+
+    llm = TopUpLLM(None, exc=LLMUnavailable('content: 503'))
+    mc = await _run(monkeypatch, llm, n=2)
+    assert len([c for c in llm.calls if 'missing' in json.loads(c['user'])]) == 1
+    assert [q.origin for q in mc.questions] == ['llm', 'template'] and [t.origin for t in mc.tasks] == ['template']
