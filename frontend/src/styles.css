@@ -112,6 +112,10 @@ code, .mono { font-family: var(--mono); }
 .btn-danger { background: var(--red-soft); color: var(--red); }
 .btn-sm { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
 .btn-lg { padding: 15px 26px; font-size: 16px; border-radius: 14px; }
+/* Кнопки в узких колонках (решения руководителя, эксперта, отправка на утверждение): по ширине карточки, длинная подпись переносится */
+.btn-stack { display: grid; gap: 8px; min-width: 0; }
+.btn-stack > .btn, .btn-block { width: 100%; min-width: 0; box-sizing: border-box; justify-content: center; text-align: center; white-space: normal; }
+.card .btn { max-width: 100%; }
 .spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }

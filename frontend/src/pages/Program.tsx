@@ -1231,7 +1231,7 @@ function TeamView({ doc, setDoc, reload }: { doc: Doc; setDoc: (d: Doc) => void;
             <div className={`tl-item ${doc.status === 'approved' ? 'done' : doc.status === 'on_approval' ? 'now' : ''}`}><b>Руководитель утверждает</b><div className="tiny muted">Видит готовность, решения людей, срок и затраты</div></div>
             <div className={`tl-item ${doc.status === 'approved' ? 'done' : ''}`}><b>Проект приказа</b><div className="tiny muted">Номер, дату, ФИО и подписи заполняют люди</div></div>
           </div>
-          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={!canSubmit || !!busy} onClick={submit}>{busy === 'submit' ? <Spinner /> : <><Send size={16} /> Отправить на утверждение</>}</button>
+          <button className="btn btn-primary btn-block" disabled={!canSubmit || !!busy} onClick={submit}>{busy === 'submit' ? <Spinner /> : <><Send size={16} /> Отправить на утверждение</>}</button>
           {!canSubmit && !locked && <p className="tiny muted">Станет доступна, когда все {doc.modules.length} модулей приняты и пройдены 10 из 10 проверок.</p>}
           {rd.open?.length > 0 && <div className="small" style={{ marginTop: 10 }}><b>Не закрыто:</b><ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{rd.open.map((o: any, i: number) => <li key={i}>{o.title} — <span className="muted">{o.owner}</span></li>)}</ul></div>}
         </section>
@@ -1326,7 +1326,7 @@ function ApproveView({ doc, reload }: { doc: Doc; reload: () => void }) {
           {doc.status === 'on_approval' ? (
             <>
               <textarea className="field" style={{ minHeight: 70 }} placeholder="Что исправить (для возврата)" value={comment} onChange={(e) => setComment(e.target.value)} />
-              <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+              <div className="btn-stack" style={{ marginTop: 10 }}>
                 <button className="btn btn-primary" style={{ justifyContent: 'center' }} disabled={!!busy || (rd.index || 0) < 100} onClick={() => decide('approve')}>{busy === 'approve' ? <Spinner /> : <><Check size={16} /> Утвердить и подготовить проект приказа</>}</button>
                 <button className="btn btn-ghost" style={{ justifyContent: 'center' }} disabled={!!busy || !comment.trim()} onClick={() => decide('return')}><Undo2 size={16} /> Вернуть с комментарием</button>
               </div>
@@ -1431,7 +1431,7 @@ function ExpertView({ doc, reload }: { doc: Doc; reload: () => void }) {
                 </button>
               ))}
             </div>
-            <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+            <div className="btn-stack" style={{ marginTop: 10 }}>
               <button className="btn btn-primary" style={{ justifyContent: 'center' }} disabled={!!busy || !allChecked || finished} title={allChecked ? '' : 'Сначала отметьте все элементы модуля'} onClick={() => decision('accept')}>{busy === 'accept' ? <Spinner /> : <><Check size={16} /> Принять модуль</>}</button>
               {!allChecked && !finished && <div className="tiny muted">Принять модуль можно, когда проверены все {total} элементов.</div>}
               <button className="btn btn-soft" style={{ justifyContent: 'center' }} disabled={!!busy || !text.trim()} onClick={() => ask(true)}><Sparkles size={16} /> Попросить агента о правке</button>
