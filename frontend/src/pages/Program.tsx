@@ -14,12 +14,12 @@ type Doc = any
 const STEPS = ['Запрос', 'Вопросы', 'Каркас', 'Проверка', 'Комплект', 'Согласование']
 const KINDS = ['lk', 'pr', 'lb', 'srs'] as const
 const FIELD_ROW: Record<string, string> = { program_type: 'Тип', volume_h: 'Объём', audience: 'Аудитория', form: 'Форма', final_assessment_form: 'Аттестация' }
-const FIELD_LABEL: Record<string, string> = { program_type: 'Тип программы', volume_h: 'Объём, ч', audience: 'Аудитория и входной уровень', form: 'Форма обучения', final_assessment_form: 'Форма итоговой аттестации', calendar: 'Календарный график' }
+const FIELD_LABEL: Record<string, string> = { program_type: 'Тип программы', volume_h: 'Объём, ч', audience: 'Аудитория и входной уровень', form: 'Форма обучения', final_assessment_form: 'Форма итоговой аттестации', calendar: 'Календарный график', slides_modules: 'Слайды лекций для модулей' }
 
 /** Значения, которые агент принял сам по ответу «На ваше усмотрение» или в режиме auto (FR-13). */
 function assumptionsOf(doc: Doc): { label: string; value: string; source: string }[] {
   const src = doc.report?.assumptions?.length ? doc.report.assumptions : doc.assumptions || []
-  return src.map((a: any) => ({ label: a.label || FIELD_LABEL[a.field] || a.field, value: typeof a.value === 'object' ? JSON.stringify(a.value) : String(a.value), source: a.source }))
+  return src.map((a: any) => ({ label: a.label || FIELD_LABEL[a.field] || a.field, value: Array.isArray(a.value) ? a.value.join(', ') : typeof a.value === 'object' ? JSON.stringify(a.value) : String(a.value), source: a.source }))
 }
 const TYPE_LABEL: Record<string, string> = { dpp_pk: 'ДПП повышения квалификации', dpp_pk_internship: 'ДПП ПК в форме стажировки', doop: 'Дополнительная общеразвивающая' }
 
