@@ -41,6 +41,7 @@ FIELDS: tuple[Field, ...] = (
     Field('llm_model_reserve', 'llm', 'Резервная модель', 'str'),
     Field('llm_model_embed', 'llm', 'Модель эмбеддингов (поиск по базе знаний)', 'str'),
     Field('llm_judge_enabled', 'llm', 'Включить судью', 'bool', 'Судья тратит токены рассуждающей модели'),
+    Field('llm_slides_detail', 'llm', 'Подробные слайды лекций', 'bool', 'Отдельный вызов модели на каждую лекцию: тезисы с пояснениями и заметки докладчика'),
     Field('llm_concurrency', 'limits', 'Одновременных запросов к шлюзу', 'int', 'Шлюз хакатона допускает 2', min=1, max=16),
     Field('gen_workers', 'limits', 'Потоков сборки модулей', 'int', 'FR-30: не меньше 4', min=1, max=32),
     Field('llm_timeout_s', 'limits', 'Таймаут запроса к модели, с', 'float', min=5, max=900),

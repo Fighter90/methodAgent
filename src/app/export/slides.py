@@ -111,10 +111,18 @@ def _bullets(tf, items: list[str], size: float) -> None:
         clr.append(clr.makeelement(qn('a:srgbClr'), {'val': str(ACCENT_LIGHT)}))
         pPr.append(clr)
         pPr.append(pPr.makeelement(qn('a:buChar'), {'char': '●'}))
-        para.space_after = Pt(12)
-        run = para.add_run()
-        run.text = b
-        _font(run, size, INK)
+        para.space_after = Pt(10)
+        # «Тезис — пояснение»: тезис жирным, пояснение обычным приглушённым цветом
+        head, sep, tail = b.partition(' — ')
+        if sep and 0 < len(head) <= 70:
+            _font(r := para.add_run(), size, INK, bold=True)
+            r.text = head
+            _font(r := para.add_run(), size, MUTED)
+            r.text = f' — {tail}'
+        else:
+            run = para.add_run()
+            run.text = b
+            _font(run, size, INK)
 
 
 def _place_title(shape, x, y, w, h, size: float) -> None:
@@ -147,9 +155,9 @@ def _title_slide(prs, doc: ProgramDoc) -> None:
         for r in p.runs:
             _font(r, 16, MUTED)
     if doc.modules:
-        _send_back(s, _box(s, Inches(8.3), Inches(1.75), Inches(4.43), Inches(4.7), CARD, LINE))
-        _text(s, Inches(8.6), Inches(2.0), Inches(3.9), Inches(0.3), 'МОДУЛИ', 9, MUTED, bold=True, spacing=200)
         step = min(0.62, 3.8 / len(doc.modules))
+        _send_back(s, _box(s, Inches(8.3), Inches(1.75), Inches(4.43), Inches(min(4.7, 0.95 + step * len(doc.modules))), CARD, LINE))
+        _text(s, Inches(8.6), Inches(2.0), Inches(3.9), Inches(0.3), 'МОДУЛИ', 9, MUTED, bold=True, spacing=200)
         small = len(doc.modules) > 6
         for i, m in enumerate(doc.modules):
             y = Inches(2.45 + i * step)
@@ -167,9 +175,11 @@ def _content_slide(prs, eyebrow: str, title: str, bullets: list[str], program: s
     _text(s, Inches(0.8), Inches(0.47), Inches(11.5), Inches(0.35), eyebrow.upper(), 10, ACCENT_LIGHT, bold=True, spacing=200)
     s.shapes.title.text = title
     _place_title(s.shapes.title, Inches(0.6), Inches(0.92), Inches(12.13), Inches(1.2), 30 if len(title) < 60 else 24)
-    size = 20 if len(bullets) <= 5 else 16
+    chars = sum(len(b) for b in bullets)
+    size = 20 if chars <= 320 and len(bullets) <= 5 else 17 if chars <= 560 else 15
     # карточка по высоте текста: строки оцениваются по длине тезиса, чтобы два тезиса не тонули в пустой рамке
-    lines = sum(max(1, -(-len(b) // (95 if size == 20 else 120))) for b in bullets or [''])
+    per_line = {20: 95, 17: 112, 15: 128}[size]
+    lines = sum(max(1, -(-len(b) // per_line)) for b in bullets or [''])
     height = min(4.45, max(1.6, 0.6 + lines * size / 72 * 1.25 + len(bullets or ['']) * 0.17))
     _send_back(s, _box(s, Inches(0.6), Inches(2.25), Inches(12.13), Inches(height), CARD, LINE))
     body = s.placeholders[1]

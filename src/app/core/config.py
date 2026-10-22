@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     llm_providers: str = 'cloudru'
     # Судья тратит токены рассуждающей модели; отключается LLM_JUDGE_ENABLED=false или в админке
     llm_judge_enabled: bool = True
+    # Подробные слайды лекций вторым вызовом на лекцию (SPEC-CONTENT-16); LLM_SLIDES_DETAIL=false или админка — только слайды модуля
+    llm_slides_detail: bool = True
     # Тарифы, ₽ за 1 млн токенов (вход, выход) — для отчёта о стоимости
     llm_price_in_rub: float = 73.03
     llm_price_out_rub: float = 176.39

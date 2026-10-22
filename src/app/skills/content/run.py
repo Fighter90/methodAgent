@@ -7,12 +7,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 
 from pydantic import BaseModel, Field
 
+from app.core.config import get_settings
 from app.kb.registry import tools
 from app.llm.client import MODEL_DATA_ERRORS, CallStats, LLMUnavailable, get_llm
 from app.programs.schemas import (
@@ -57,6 +59,32 @@ class TaskLLM(BaseModel):
 class SlideLLM(BaseModel):
     title: str
     bullets: list[str] = Field(default_factory=list)
+
+
+class SlideDetailLLM(BaseModel):
+    title: str
+    bullets: list[str] = Field(default_factory=list)
+    notes: str = ''
+
+
+class LectureSlidesLLM(BaseModel):
+    slides: list[SlideDetailLLM] = Field(default_factory=list)
+
+
+# Второй проход по лекции (SPEC-CONTENT-16): подробные слайды отдельным вызовом, чтобы основной ответ модуля
+# (тест, задания, программа) не обрезался по лимиту токенов. Сбой прохода не портит комплект: остаются слайды
+# первого ответа, отказ не считается деградацией.
+SLIDES_INSTRUCTION = """Ты — опытный преподаватель и методист. Подготовь содержательные слайды ОДНОЙ лекции, а не шаблон.
+Логика: цель и план занятия → ключевые понятия с определениями → как это работает (шаги, механизм) →
+пример из работы аудитории программы → типичные ошибки и как их избежать → мини-задание или вопрос для обсуждения → итоги.
+Требования:
+- ровно n_slides слайдов; заголовок слайда — конкретный, по теме (не «Введение», не «Итоги» без сути);
+- на каждом слайде 3–5 пунктов в формате «Тезис — пояснение»: тезис до 6 слов, длинное тире, затем 1–2 предложения
+  пояснения с конкретикой (команда, инструмент, параметр, число, пример); пункт 80–220 знаков;
+- notes — заметки докладчика 50–90 слов: что сказать, пример из практики аудитории, вопрос слушателям;
+- только факты по теме и РО; без выдуманных ссылок, статистики и сервисов, недоступных в России;
+- код в пунктах — коротко, в кавычках-ёлочках, без многострочных листингов.
+Верни только JSON: {"slides": [{"title": "...", "bullets": ["Тезис — пояснение"], "notes": "..."}]}"""
 
 
 class LectureLLM(BaseModel):
@@ -168,13 +196,60 @@ async def run(
                 stats.fallback('content', exc, 'шаблон из каркаса', module=m.id)
             return fallback(doc, m, los, n_questions, test_id, slide_topics)
         try:
-            return _from_llm(doc, m, los, scrub_blocked(data), n_questions, test_id, slide_topics)
+            content = _from_llm(doc, m, los, scrub_blocked(data), n_questions, test_id, slide_topics)
         except MODEL_DATA_ERRORS as exc:
             # Ответ прошёл схему, но не лёг в каркас: это дефект разбора — трассировка в журнал
             logger.exception('content program=%s module=%s: ответ модели не разобран, резервная генерация', doc.id, m.id)
             if stats is not None:
                 stats.fallback('content', exc, 'шаблон из каркаса', module=m.id)
+        else:
+            if content.lectures and get_settings().llm_slides_detail:
+                content.lectures = list(await asyncio.gather(*(_detail_lecture(doc, m, los, lec, stats) for lec in content.lectures)))
+            return content
     return fallback(doc, m, los, n_questions, test_id, slide_topics)
+
+
+def slide_count(duration_min: int) -> int:
+    """Число подробных слайдов по длительности лекции: 9 на 90 минут, от 6 до 12."""
+    return max(6, min(12, round(duration_min / 90 * 9)))
+
+
+async def _detail_lecture(doc: ProgramDoc, m: Module, los: list[LearningOutcome], lec: Lecture, stats: CallStats | None) -> Lecture:
+    """Подробные слайды лекции вторым вызовом; при отказе или скудном ответе лекция остаётся прежней (SPEC-CONTENT-16)."""
+    topic = next((t for t in m.topics if t.id == lec.topic_id), None)
+    if topic is None:
+        return lec
+    n = slide_count(lec.duration_min)
+    payload = {
+        'program': doc.title, 'program_type': doc.template,
+        'audience': f'{doc.params.audience}; входной уровень: {doc.params.entry_level}',
+        'module': f'Модуль {m.n}. {m.title}',
+        'topic': {'n': topic.n, 'title': topic.title, 'description': topic.description},
+        'outcomes': [f'{lo.code}: {lo.text}' for lo in los if lo.id in topic.lo_ids],
+        'plan': lec.plan, 'code_example': (lec.code_examples or [''])[0][:600],
+        'draft_titles': [sl.title for sl in lec.slides], 'n_slides': n,
+        'blocked_services': tools().get('ai_services_blocked', []),
+    }
+    try:
+        res = await get_llm().complete_json(
+            skill='content', system=SLIDES_INSTRUCTION, user=json.dumps(payload, ensure_ascii=False),
+            schema=LectureSlidesLLM, temperature=0.5, max_tokens=4500, stats=stats, partial_ok=True,
+        )
+    except (LLMUnavailable, *MODEL_DATA_ERRORS) as exc:
+        logger.warning('content program=%s lecture=%s: подробные слайды не получены, остаются слайды модуля (%s)', doc.id, lec.id, str(exc)[:200])
+        return lec
+    raw = getattr(res, 'slides', None) or []
+    good = [sl for sl in raw if isinstance(sl, SlideDetailLLM) and sl.title.strip() and sum(1 for b in sl.bullets if len(b.strip()) >= 20) >= 2]
+    if len(good) < 4:
+        return lec
+    rx = _blocked_rx()
+    clean = (lambda x: rx.sub('зарубежный сервис', x)) if rx is not None else (lambda x: x)  # noqa: E731
+    slides = [
+        Slide(id=f'sl{topic.n}.{j}', n=j, title=clean(sl.title.strip())[:120],
+              bullets=[clean(b.strip()) for b in sl.bullets if b.strip()][:5], notes=clean(sl.notes.strip())[:1200])
+        for j, sl in enumerate(good[:12], start=1)
+    ]
+    return lec.model_copy(update={'slides': slides})
 
 
 def _lo_ids(codes: list[str], los: list[LearningOutcome], default: list[str]) -> list[str]:
@@ -242,7 +317,7 @@ def _from_llm(
             continue
         lec = lec_by_topic.get(t.n)
         if lec is None or not lec.slides:
-            lectures.append(_fallback_lecture(m, t))
+            lectures.append(_fallback_lecture(m, t, los))
             continue
         slides = [Slide(id=f'sl{t.n}.{j}', n=j, title=s.title, bullets=s.bullets[:6]) for j, s in enumerate(lec.slides[:8], start=1)]
         plan = [{'min': int(p.get('min', 10) or 10), 'text': str(p.get('text', ''))} for p in lec.plan if isinstance(p, dict)]
@@ -274,17 +349,39 @@ def _default_plan(title: str) -> list[dict]:
     ]
 
 
-def _fallback_lecture(m: Module, t) -> Lecture:
+def _fallback_lecture(m: Module, t, los: list[LearningOutcome] | tuple = ()) -> Lecture:
+    """Шаблонная лекция без модели: пять слайдов из каркаса — цель по РО темы, понятия из описания, план по минутам,
+    практика и итоги в формате «Тезис — пояснение» (SPEC-CONTENT-17). Черновик для эксперта, без выдуманных фактов."""
+    plan = _default_plan(t.title)
+    outcomes = [lo for lo in los if lo.id in (t.lo_ids or [])]
+    goal = outcomes[0].text if outcomes else (t.description or t.title)
+    parts = [p.strip(' .') for p in re.split(r'[,;.]', t.description or '') if len(p.strip()) > 2][:4] or [t.title]
+    lk = t.hours.lk or 2
     slides = [
-        Slide(id=f'sl{t.n}.1', n=1, title=t.title, bullets=[f'Модуль {m.n}. {m.title}', f'Тема {t.n}']),
-        Slide(id=f'sl{t.n}.2', n=2, title='Зачем это нужно', bullets=[t.description or t.title, 'Где применяется на практике']),
-        Slide(id=f'sl{t.n}.3', n=3, title='Ключевые понятия', bullets=[p.strip() for p in (t.description or t.title).split(',')][:4]),
-        Slide(id=f'sl{t.n}.4', n=4, title='Практика', bullets=['Разбор примера вместе с преподавателем', 'Самостоятельное упражнение']),
-        Slide(id=f'sl{t.n}.5', n=5, title='Итоги', bullets=['Что мы узнали', 'Задание к следующему занятию']),
+        Slide(id=f'sl{t.n}.1', n=1, title=t.title, bullets=[
+            f'Модуль {m.n}. {m.title} — тема {t.n}, лекция {lk} ак. ч',
+            f'Цель занятия — {goal}',
+            'Результат — ' + ('; '.join(f'{lo.code}: {lo.text}' for lo in outcomes) or f'слушатели применяют тему «{t.title}» в своих задачах'),
+        ], notes=f'Откройте занятие вопросом к слушателям: где в их работе встречается «{t.title}». Назовите цель и результат.'),
+        Slide(id=f'sl{t.n}.2', n=2, title='Ключевые понятия', bullets=[
+            f'{part} — определение и пример из практики слушателей разбираются на занятии' for part in parts
+        ], notes='Дайте определение каждому понятию и сразу покажите короткий пример из рабочих задач аудитории.'),
+        Slide(id=f'sl{t.n}.3', n=3, title='План занятия', bullets=[f'{p["min"]} мин — {p["text"]}' for p in plan],
+              notes='Покажите, сколько времени займёт каждый блок, и где будет практика.'),
+        Slide(id=f'sl{t.n}.4', n=4, title=f'Практика: {t.title}', bullets=[
+            'Разбор у доски — преподаватель решает типовую задачу по шагам и проговаривает каждое решение',
+            f'Самостоятельно — слушатели повторяют решение на своих данных: {goal}',
+            'Проверка — сверяем результат с критериями и обсуждаем типичные ошибки',
+        ], notes='Дайте задачу, близкую к работе слушателей. Пройдите по рядам, соберите типичные ошибки для итогов.'),
+        Slide(id=f'sl{t.n}.5', n=5, title='Итоги', bullets=[
+            'Что проверим — ' + (', '.join(lo.code for lo in outcomes) or 'результаты обучения темы') + ': вопросы теста и задание семинара',
+            f'Повторить — {", ".join(parts)}',
+            'Вопрос для обсуждения — где вы примените это на следующей неделе?',
+        ], notes='Подведите итог по цели занятия, ответьте на вопросы, назовите задание к следующему занятию.'),
     ]
     return Lecture(
         id=f'lec{t.n}', topic_id=t.id, module_id=m.id, title=t.title, duration_min=max(45, t.hours.lk * 45),
-        plan=_default_plan(t.title), slides=slides, origin='template',
+        plan=plan, slides=slides, origin='template',
     )
 
 
@@ -337,7 +434,7 @@ def fallback(doc: ProgramDoc, m: Module, los: list[LearningOutcome], n_questions
                 criteria=_default_criteria(), lo_ids=list(t.lo_ids),
             )
         )
-    lectures = [_fallback_lecture(m, t) for t in m.topics if t.id in slide_topics]
+    lectures = [_fallback_lecture(m, t, los) for t in m.topics if t.id in slide_topics]
     return ModuleContent(program=program, questions=questions, tasks=tasks, lectures=lectures, sources=[], source='template')
 
 

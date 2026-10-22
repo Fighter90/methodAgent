@@ -99,7 +99,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | [llm-client.md](llm-client.md) | 28 | 28 | — |
 | [programs-service.md](programs-service.md) | 17 | 17 | — |
 | [quality.md](quality.md) | 2 | 2 | — |
-| [skill-content.md](skill-content.md) | 15 | 15 | — |
+| [skill-content.md](skill-content.md) | 17 | 17 | — |
 | [skill-review-assist.md](skill-review-assist.md) | 5 | 5 | — |
 | [skills-core.md](skills-core.md) | 20 | 20 | — |
 | [solvers.md](solvers.md) | 16 | 16 | — |
@@ -374,6 +374,8 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-CONTENT-13 | `test_spec_content.py::test_fallback_on_model_error`, `test_spec_content.py::test_code_errors_are_not_swallowed`, `test_spec_robustness.py::test_pptx_slides_when_content_skill_unavailable` |
 | SPEC-CONTENT-14 | `test_spec_content.py::test_llm_content_mapped`, `test_spec_content.py::test_llm_invalid_key_not_zeroed` |
 | SPEC-CONTENT-15 | `test_spec_content.py::test_element_origin_marked`, `test_spec_repair.py::test_repaired_origin_marked` |
+| SPEC-CONTENT-16 | `test_spec_content.py::test_detailed_slides_second_pass`, `test_spec_content.py::test_detailed_slides_failure_keeps_module_slides` |
+| SPEC-CONTENT-17 | `test_spec_content.py::test_fallback_lecture_is_substantive` |
 | SPEC-REVIEW-01 | `test_spec_review_assist.py::test_fragment_of` |
 | SPEC-REVIEW-02 | `test_spec_review_assist.py::test_fragment_of_zero_index_is_whole_element` |
 | SPEC-REVIEW-03 | `test_spec_review_assist.py::test_propose_uses_model` |

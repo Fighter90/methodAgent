@@ -228,3 +228,59 @@ async def test_element_origin_marked(monkeypatch) -> None:
     assert llm_marks == {'llm'}, 'модельные элементы помечаются llm'
     extra = mc.questions[2:]
     assert {q.origin for q in extra} == {'template'}, 'добор шаблоном помечается template'
+
+
+class TwoPassLLM(FakeLLM):
+    """Модуль — LLM_DATA, второй проход по лекции — подробные слайды (или отказ)."""
+
+    def __init__(self, slides: list[dict] | None, exc: Exception | None = None) -> None:
+        super().__init__(LLM_DATA)
+        self.slides, self.slide_exc = slides, exc
+
+    async def complete_json(self, **kw):
+        if kw.get('schema') is content.LectureSlidesLLM:
+            self.calls.append(kw)
+            if self.slide_exc:
+                raise self.slide_exc
+            return content.LectureSlidesLLM.model_validate({'slides': self.slides})
+        return await super().complete_json(**kw)
+
+
+DETAILED = [{'title': f'Слайд {i}', 'bullets': [f'Тезис {i}.{b} — пояснение с конкретным примером из работы аналитика банка' for b in range(5)],
+             'notes': 'Расскажите про цикл на примере выгрузки операций.'} for i in range(10)]
+
+
+async def test_detailed_slides_second_pass(monkeypatch) -> None:
+    """SPEC-CONTENT-16: для лекции с ответом модели второй вызов даёт подробные слайды «Тезис — пояснение» с заметками;
+    число слайдов по длительности (9 на 90 мин), не больше 5 пунктов на слайде."""
+    llm = TwoPassLLM(DETAILED)
+    mc = await _run(monkeypatch, llm, slides={'t1.1'})
+    lec = mc.lectures[0]
+    assert content.slide_count(90) == 9 and content.slide_count(45) == 6 and content.slide_count(270) == 12
+    assert [c['schema'] for c in llm.calls if c.get('schema') is content.LectureSlidesLLM]
+    assert len(lec.slides) == 10 and all(len(s.bullets) == 5 and ' — ' in s.bullets[0] and s.notes for s in lec.slides)
+    assert json.loads(next(c for c in llm.calls if c.get('schema') is content.LectureSlidesLLM)['user'])['n_slides'] == 9
+
+
+async def test_detailed_slides_failure_keeps_module_slides(monkeypatch) -> None:
+    """SPEC-CONTENT-16: IF второй проход не ответил или вернул меньше 4 содержательных слайдов, THEN лекция остаётся
+    со слайдами ответа модуля, без записи о деградации."""
+    from app.llm.client import CallStats, LLMUnavailable
+
+    st = CallStats()
+    for llm in (TwoPassLLM(None, exc=LLMUnavailable('content: 503')), TwoPassLLM(DETAILED[:2])):
+        monkeypatch.setattr(content, 'get_llm', lambda llm=llm: llm)
+        doc = _doc()
+        mc = await content.run(doc, doc.modules[0], n_questions=2, test_id='test-m1', slide_topics={'t1.1'}, stats=st)
+        assert len(mc.lectures[0].slides) == 8 and mc.lectures[0].slides[0].title == 'С0'
+    assert st.fallbacks == []
+
+
+async def test_fallback_lecture_is_substantive(monkeypatch) -> None:
+    """SPEC-CONTENT-17: шаблонная лекция без модели — цель по РО темы, понятия из описания, план по минутам, практика и итоги
+    в формате «Тезис — пояснение», с заметками докладчика."""
+    mc = await _run(monkeypatch, FakeLLM(enabled=False), slides={'t1.1'})
+    lec = mc.lectures[0]
+    text = ' '.join(b for s in lec.slides for b in s.bullets)
+    assert 'Пишет циклы на Python' in text and 'Цикл for' in text and 'мин — ' in text
+    assert all(s.notes for s in lec.slides) and all(' — ' in s.bullets[0] for s in lec.slides)
