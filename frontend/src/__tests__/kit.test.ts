@@ -101,7 +101,7 @@ describe('routeBadge', () => {
     expect(routeBadge('kit_ready')).toBeNull()
     expect(routeBadge('returned')).toBeNull()
     expect(routeBadge('on_approval')).toEqual({ text: 'На утверждении у руководителя', tone: 'wait' })
-    const approvals = [{ stage: 'skeleton', decision: 'approve', at: '2026-10-20T10:00:00' }, { stage: 'program', decision: 'approve', at: '2026-10-23T01:10:00' }]
+    const approvals = [{ stage: 'skeleton', decision: 'approve', at: '2026-10-20T10:00:00' }, { stage: 'program', decision: 'approve', at: '2026-10-23T10:10:00' }]
     expect(routeBadge('approved', approvals)).toEqual({ text: 'Утверждена руководителем · 23.10.2026', tone: 'ok' })
     expect(routeBadge('approved', approvals, orderRegisteredValue('2026-10-24T09:00:00Z'))).toEqual({ text: 'Зарегистрирована · 24.10.2026', tone: 'ok' })
   })

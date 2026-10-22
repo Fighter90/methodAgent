@@ -232,7 +232,8 @@ export function routeBadge(
   approvals: { stage: string; decision: string; at: string }[] = [],
   registeredRaw?: string | null,
 ): { text: string; tone: 'ok' | 'wait' } | null {
-  const day = (iso?: string) => (iso ? iso.slice(0, 10).split('-').reverse().join('.') : '')
+  // дата по часам пользователя: утверждение в 01:10 МСК — это уже следующий день по UTC-метке сервера
+  const day = (iso?: string) => { const d = iso ? new Date(iso) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('ru-RU') : '' }
   const withDate = (t: string, iso?: string) => (day(iso) ? `${t} · ${day(iso)}` : t)
   if (status === 'on_approval') return { text: 'На утверждении у руководителя', tone: 'wait' }
   if (status !== 'approved') return null
