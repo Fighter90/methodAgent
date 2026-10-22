@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 import time
 from typing import Any, Literal
 
@@ -92,6 +93,8 @@ def node_module_id(doc: ProgramDoc, node_id: str) -> str | None:
 def ensure_node_in_module(doc: ProgramDoc, module_id: str, node_id: str) -> None:
     """F02 (аудит 19.10): ссылка эксперта на узел чужого модуля запрещена — и в комментарии,
     и в предложении агента, и в применении правки. Проверка одна для всех путей."""
+    if node_id and not re.fullmatch(r'[a-z0-9][a-z0-9.\-_#]*', node_id):
+        raise BadRequest('Некорректный идентификатор элемента')
     owner = node_module_id(doc, node_id)
     if owner is not None and owner != module_id:
         raise ForbiddenRole('Элемент принадлежит другому модулю: эксперт работает только со своим модулем')

@@ -60,7 +60,12 @@ from app.skills.classify import run as classify
 from app.skills.content import run as content
 from app.skills.intake import run as intake
 from app.skills.skeleton import run as skeleton
-from app.solver.calendar import CalendarOut, apply_option, plan_calendar
+from app.solver.calendar import (
+    CalendarOptionOut,
+    CalendarOut,
+    apply_option,
+    plan_calendar,
+)
 from app.solver.hours import (
     KINDS,
     HoursRow,
@@ -375,7 +380,7 @@ def choose_calendar_option(doc: ProgramDoc, option_id: str) -> None:
         weeks=c.weeks, work_days=c.work_days, hours_per_day=c.hours_per_day, days_per_week=c.days_per_week,
         hours_per_week=c.hours_per_week, sessions=c.sessions, session_hours=c.session_hours,
         requested_weeks=c.requested_weeks, conflict=c.conflict,
-        options=[__import__('app.solver.calendar', fromlist=['CalendarOptionOut']).CalendarOptionOut(**o.model_dump()) for o in c.options],
+        options=[CalendarOptionOut(**o.model_dump()) for o in c.options],
     )
     out = apply_option(out, option_id, doc.volume_h, _schedule_items(doc))
     doc.calendar = _to_calendar(out, chosen=option_id)
@@ -977,7 +982,6 @@ async def check_source_urls(doc: ProgramDoc) -> None:
     только если домен ссылки есть в реестре (`registry_domains()`). Локальные и служебные
     адреса не опрашиваются и не подтверждаются. В режиме fixtures сетевых проверок нет.
     """
-    import re
 
     if get_settings().llm_providers == 'fixtures':
         return  # режим без сети
@@ -1006,7 +1010,6 @@ _LOCAL_HOST = re.compile(r'^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|169\.254
 
 def _is_local_url(url: str) -> bool:
     """Локальные и служебные адреса не опрашиваются: ни подтверждения, ни SSRF-щупа."""
-    import re
 
     m = re.match(r'https?://([^/\s:@]+)', url or '')
     if not m:
@@ -1022,7 +1025,6 @@ def _apply_source_checks(doc: ProgramDoc, results: dict[str, bool], trusted: set
     иначе фиксируется лишь проверенная ссылка, а пометка «не подтверждено» сохраняется (V-16).
     Возвращает число реально подтверждённых источников.
     """
-    import re
 
     n = 0
     for s in doc.sources:
@@ -1127,7 +1129,6 @@ def resolve_target(doc: ProgramDoc, target: str, instruction: str) -> str:
     """FR-36: правка, описанная только текстом, — агент сам находит элемент по словам запроса."""
     if target and target != 'auto':
         return target
-    import re
 
     words = {w for w in re.findall(r'\w{4,}', instruction.lower())}
     if not words:

@@ -275,6 +275,9 @@ def test_expert_node_must_belong_to_own_module(client, kit) -> None:
     # 2) комментарий к своему вопросу работает
     r = client.post(f'/api/v1/programs/{kit}/comments', json={'module_id': m1, 'text': 'Уточните формулировку', 'node_id': own_q['id']}, headers=he)
     assert r.status_code == 200, r.text
+    # кривой формат node_id отклоняется сразу (ревью 22.10: минимальное доверие к входу)
+    r = client.post(f'/api/v1/programs/{kit}/comments', json={'module_id': m1, 'text': 'кривой id', 'node_id': '<script>x</script>'}, headers=he)
+    assert r.status_code == 400 and 'идентификатор' in r.json()['message_ru'], r.text
     # 3) применение правки по чужому node_id: комментарий методиста с чужим узлом не даёт эксперту править чужой модуль
     r = client.post(f'/api/v1/programs/{kit}/comments', json={'module_id': m1, 'text': 'Внедрить чужое', 'node_id': foreign['id'], 'ask_agent': True}, headers=hm)
     assert r.status_code == 200, r.text

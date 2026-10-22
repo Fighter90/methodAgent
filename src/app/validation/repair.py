@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import zlib
 
+from app.agent.sections import build_sections
 from app.programs.schemas import (
     Assessment,
     Criterion,
@@ -116,7 +117,6 @@ def repair(doc: ProgramDoc, rules: list[RuleResult]) -> list[str]:
         log += _drop_reference_overlap(doc)
     if failed & {'V-08', 'V-11'}:
         # Разделы шаблона собираются кодом из графа: пересборка заполняет пропуски и возвращает пустые поля реквизитов
-        from app.agent.sections import build_sections
 
         doc.kit.sections = build_sections(doc)
         log.append('Разделы шаблона пересобраны: пустые разделы заполнены, реквизиты и ФИО оставлены полями')

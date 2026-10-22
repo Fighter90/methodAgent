@@ -75,7 +75,8 @@ async def log_event(
         if version is None:
             row = await s.get(ProgramRow, program_id)
             version = row.version if row else 1
-        body = text[:2000] + (f'{_SEP}{before[:1000]}{_SEP}{after[:1000]}' if before or after else '')
+        clean = lambda x: str(x or '').replace(_SEP, ' ')  # текст события не должен содержать разделитель
+        body = clean(text)[:2000] + (f'{_SEP}{clean(before)[:1000]}{_SEP}{clean(after)[:1000]}' if before or after else '')
         s.add(EventRow(program_id=program_id, actor=actor, action=action, text=body, node_id=node_id, version=version))
         await s.commit()
 
