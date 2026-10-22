@@ -222,8 +222,11 @@ async function run() {
         await shot(page, `admin-${name}`)
         check(`admin: вкладка «${tab}» без ошибок консоли`, page.errors.length === 0, page.errors.slice(0, 3).join(' | '))
       }
-      const body = await page.locator('body').innerText()
-      check('admin: вкладка пользователей показывает демо-учётки', /madina/.test(body) && /ahmed/.test(body))
+      // ждём отрисовку данных вкладки (на медленном соединении fetch приходит после networkidle)
+      const seeUser = async (login) => await page.getByText(login, { exact: false }).first()
+        .waitFor({ timeout: 8000 }).then(() => true).catch(() => false)
+      check('admin: вкладка пользователей показывает демо-учётки',
+        await seeUser('madina') && await seeUser('ahmed'))
     })
     await page.getByRole('tab', { name: /Настройки агента/ }).click()
     await page.waitForLoadState('networkidle')
