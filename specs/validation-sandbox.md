@@ -23,6 +23,7 @@
 | SPEC-SANDBOX-11 | THE SYSTEM SHALL брать лимит времени и памяти дочернего процесса из `SANDBOX_TIMEOUT_S` и `SANDBOX_MEMORY_MB` (по умолчанию 10 с и 512 МБ) и сообщать о превышении времени фактическим лимитом. | ТЗ 4.11 (T-11, T-15) | `test_spec_sandbox.py::test_limits_from_settings` |
 | SPEC-SANDBOX-12 | WHEN платформа отвергает установку лимита дочернего процесса (например, `RLIMIT_AS` на macOS — ValueError «current limit exceeds maximum limit»), THEN THE SYSTEM SHALL пропустить только этот лимит, всё равно выполнить пример (`ok=True`, режим `run`) и перечислить отвергнутые лимиты в `skipped_limits` результата. | аудит 19.10 (MET-17) | `test_spec_sandbox.py::test_limits_degrade_on_macos` |
 | SPEC-SANDBOX-13 | THE SYSTEM SHALL возвращать в результате `run_detailed` списки `applied_limits` и `skipped_limits` — имена констант `resource`, которые удалось и не удалось установить дочернему процессу; для режимов `skip` и `syntax` оба списка пустые. | аудит 19.10 (MET-23, F01) | `test_spec_sandbox.py::test_limits_reported` |
+| SPEC-SANDBOX-14 | WHEN пример содержит импорты вне разрешённого списка учебных модулей или обращается к dunder-атрибутам/именам, THEN THE SYSTEM SHALL не исполнять его (режим syntax) с сообщением о запрещённых конструкциях — AST-анализ закрывает обходы regex-фильтра (цепочки dunder-доступа, частичные импорты). | аудит 22.10 (R01-промежуточно) | `test_spec_sandbox.py::test_ast_allowlist_blocks_escape_vectors` |
 
 ## Вне области
 

@@ -192,3 +192,18 @@ def test_limits_reported(runtime) -> None:
     assert 'RLIMIT_CPU' in applied
     if sys.platform == 'darwin':
         assert 'RLIMIT_AS' in skipped  # MET-17: macOS не даёт понизить RLIMIT_AS
+
+
+def test_ast_allowlist_blocks_escape_vectors() -> None:
+    """SPEC-SANDBOX-14"""
+    from app.validation.sandbox import run_detailed
+
+    # dunder-цепочки ловит первый слой (regex __\w+__)
+    r = run_detailed('print((().__class__.__bases__[0].__subclasses__()))')
+    assert r['mode'] == 'skip'
+    # AST-слой: импорт вне разрешённого списка учебных модулей — только синтаксис, не исполнение
+    r2 = run_detailed('import json\nprint(json.dumps({"a": 1}))')
+    assert r2['mode'] == 'syntax' and 'json' in r2['error'], r2
+    # легитимный учебный пример исполняется как раньше
+    r3 = run_detailed('import random\nprint(random.randint(1, 5))')
+    assert r3['mode'] == 'run' and r3['ok'] is True

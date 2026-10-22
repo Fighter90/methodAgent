@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import subprocess
@@ -109,6 +110,38 @@ def libraries(code: str) -> list[str]:
     return list(dict.fromkeys(found))
 
 
+# Разрешённые для исполнения учебные модули (AST-слой, R01-промежуточно): всё вне списка — только синтаксис
+_ALLOWED_ROOTS = {'math', 'random', 'string', 'statistics', 'decimal', 'fractions', 'collections', 'itertools', 'functools', 're'}
+
+
+def _ast_risks(code: str) -> list[str]:
+    """Конструкции, которые нельзя исполнять: импорты вне разрешённых, dunder-атрибуты и dunder-имена.
+
+    Закрывает известные классы обхода regex-фильтра: цепочки `().__class__.__bases__`,
+    `io.FileIO` через частичный импорт, спуфинг имён через alias. Возвращает список причин.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []  # синтаксические ошибки поймает compile() на своих путях
+    risks: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name.split('.')[0] not in _ALLOWED_ROOTS:
+                    risks.append(f'импорт модуля {a.name} запрещён')
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or '').split('.')[0] not in _ALLOWED_ROOTS:
+                risks.append(f'импорт из {node.module} запрещён')
+        elif isinstance(node, ast.Attribute):
+            if node.attr.startswith('__') and node.attr.endswith('__'):
+                risks.append(f'обращение к служебному атрибуту {node.attr} запрещено')
+        elif isinstance(node, ast.Name):
+            if node.id.startswith('__') and node.id.endswith('__'):
+                risks.append(f'обращение к служебному имени {node.id} запрещено')
+    return risks
+
+
 def run_detailed(code: str) -> dict[str, Any]:
     """Выполняет пример в песочнице: статус, вывод, время, режим (запуск, синтаксис или пропуск).
 
@@ -133,6 +166,14 @@ def run_detailed(code: str) -> dict[str, Any]:
             compile(code, '<example>', 'exec')
         except SyntaxError as exc:
             res |= {'ok': False, 'error': f'Синтаксическая ошибка: {exc.msg} (строка {exc.lineno})'}
+        res['seconds'] = round(time.monotonic() - started, 3)
+        return res
+    # R01 (аудит 22.10): AST-слой — разрешённые импорты и запрет dunder-доступа.
+    # Известные обходы regex (().__class__.__bases__, частичные импорты) не доходят до исполнения.
+    risks = _ast_risks(code)
+    if risks:
+        res['mode'] = 'syntax'
+        res['error'] = '; '.join(risks[:2]) + ' — пример не запускается, проверьте вручную'
         res['seconds'] = round(time.monotonic() - started, 3)
         return res
     s = get_settings()
