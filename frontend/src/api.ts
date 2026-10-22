@@ -71,10 +71,14 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
     } catch {
       /* не JSON */
     }
-    if (res.status === 401 && s) {
+    if (res.status === 401 && !NO_REFRESH.test(path)) {
+      // SPEC-UI-32: после «Выйти» запросы страницы в полёте и фоновые опросы получают 401 — это не ошибка
+      // для пользователя: пустой текст тост не показывает. Технический текст сервера про заголовки не выводим.
+      if (!s || !getSession()) throw new ApiError(401, '', details)
       // токен обновления истёк или выпущен до смены ключа: на страницу входа, а не баннер о связи
       setSession(null)
       if (!location.pathname.startsWith('/auth')) location.assign('/auth?expired=1')
+      throw new ApiError(401, 'Сессия истекла, войдите снова', details)
     }
     throw new ApiError(res.status, msg, details)
   }

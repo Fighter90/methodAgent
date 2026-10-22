@@ -289,3 +289,23 @@ describe('вход с несколькими ролями', () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1]!.body as string)).toEqual({ role: 'methodist' })
   })
 })
+
+describe('выход из учётной записи', () => {
+  it('SPEC-UI-32: запрос без сессии после выхода падает тихо — без технического текста про Authorization', async () => {
+    setSession(null)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ message_ru: 'Нужен вход: заголовок Authorization: Bearer <токен> (POST /api/v1/auth/login)' }, 401))
+    const err = await api('/notifications').catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(401)
+    expect(err.message).toBe('')
+  })
+
+  it('SPEC-UI-32: истёкшая сессия — понятный текст вместо сырого ответа сервера', async () => {
+    setSession({ token: 't', user })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ message_ru: 'Нужен вход: заголовок Authorization: Bearer <токен>' }, 401))
+    const err = await api('/me').catch((e) => e)
+    expect(err.status).toBe(401)
+    expect(err.message).toBe('Сессия истекла, войдите снова')
+    expect(getSession()).toBeNull()
+  })
+})

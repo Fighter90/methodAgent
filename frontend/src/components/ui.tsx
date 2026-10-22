@@ -7,6 +7,7 @@ const ToastCtx = createContext<(text: string, err?: boolean) => void>(() => {})
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<Toast[]>([])
   const push = useCallback((text: string, err = false) => {
+    if (!text) return  // тихие ошибки (запросы после выхода) не показываются
     const id = Date.now() + Math.random()
     setItems((x) => [...x, { id, text, err }])
     setTimeout(() => setItems((x) => x.filter((t) => t.id !== id)), err ? 6500 : 3800)
