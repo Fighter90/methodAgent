@@ -207,3 +207,28 @@ def test_auto_run_lists_all_exports(client, run) -> None:
         assert url.endswith(f'/api/v1/programs/{run["program_id"]}/export/{fmt}')
     j = json.loads(client.get(files['json'].split('testserver', 1)[-1], headers=_h(client, 'u-madina')).text)
     assert j['program']['id'] == run['program_id']
+
+
+def test_pptx_brand_style() -> None:
+    """SPEC-EXPORT-15: слайды лекций в фирменном стиле — тёмный фон-картинка, Manrope, тезисы с зелёным маркером,
+    надзаголовок «Модуль N · Тема n.m», номер слайда; заголовок, тезисы и заметки остаются в штатных плейсхолдерах."""
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    from app.programs.schemas import Topic
+
+    doc = _doc()
+    doc.modules[0].topics = [Topic(id='t1', n='1.1', title='Циклы')]
+    doc.kit.lectures = [Lecture(id='l1', topic_id='t1', module_id='m1', title='Циклы', slides=[
+        Slide(id='s1', n=1, title='Цикл for', bullets=['перебор — проход по элементам списка'], notes='заметка')])]
+    prs = Presentation(io.BytesIO(export.render_pptx(doc)))
+    for s in prs.slides:
+        assert s.shapes[0].shape_type == MSO_SHAPE_TYPE.PICTURE  # фон — первая фигура, под текстом
+    body = prs.slides[1]
+    texts = [sh.text_frame.text for sh in body.shapes if sh.has_text_frame]
+    assert 'МОДУЛЬ 1 · ТЕМА 1.1' in texts and '2' in texts
+    assert body.shapes.title.text_frame.paragraphs[0].runs[0].font.name == 'Manrope'
+    assert str(body.shapes.title.text_frame.paragraphs[0].runs[0].font.color.rgb) == 'F2F4F7'
+    para = body.placeholders[1].text_frame.paragraphs[0]
+    assert para._p.pPr.find('{http://schemas.openxmlformats.org/drawingml/2006/main}buChar') is not None
+    assert body.notes_slide.notes_text_frame.text == 'заметка'

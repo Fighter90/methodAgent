@@ -15,13 +15,10 @@ from xml.sax.saxutils import escape
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
-from pptx import Presentation
-from pptx.dml.color import RGBColor as PptxRGB
-from pptx.util import Inches
-from pptx.util import Pt as PptxPt
 
 from app.agent.sections import BLANK, build_sections
 from app.core.errors import BadRequest
+from app.export.slides import render_lecture_slides
 from app.kb.registry import org_profile
 from app.programs.schemas import ProgramDoc, ProgramType
 from app.validation.rules import sections_for
@@ -356,37 +353,8 @@ def render_order(doc: ProgramDoc) -> bytes:
 
 
 def render_pptx(doc: ProgramDoc) -> bytes:
-    prs = Presentation()
-    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
-    title_layout, body_layout = prs.slide_layouts[0], prs.slide_layouts[1]
-    s = prs.slides.add_slide(title_layout)
-    s.shapes.title.text = doc.title
-    s.placeholders[1].text = f'{doc.template} · {doc.volume_h} ак. ч'
-    lectures = [lec for lec in doc.kit.lectures if lec.slides]
-    for lec in lectures:
-        for sl in lec.slides:
-            slide = prs.slides.add_slide(body_layout)
-            slide.shapes.title.text = sl.title
-            tf = slide.placeholders[1].text_frame
-            tf.clear()
-            for i, b in enumerate(sl.bullets or ['']):
-                para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-                para.text = b
-                para.font.size = PptxPt(22)
-            if sl.notes:
-                slide.notes_slide.notes_text_frame.text = sl.notes
-            bar = slide.shapes.add_shape(1, 0, 0, prs.slide_width, Inches(0.12))
-            bar.fill.solid()
-            bar.fill.fore_color.rgb = PptxRGB(0x21, 0xA0, 0x38)
-            bar.line.fill.background()
-    if not lectures:
-        slide = prs.slides.add_slide(body_layout)
-        slide.shapes.title.text = 'Структура программы'
-        tf = slide.placeholders[1].text_frame
-        tf.text = '\n'.join(f'Модуль {m.n}. {m.title} — {m.hours.total} ч' for m in doc.modules)
-    buf = io.BytesIO()
-    prs.save(buf)
-    return buf.getvalue()
+    """Слайды лекций в фирменном стиле (SPEC-EXPORT-06, SPEC-EXPORT-15)."""
+    return render_lecture_slides(doc)
 
 
 def _gift_escape(s: str) -> str:
