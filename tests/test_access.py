@@ -428,3 +428,172 @@ def test_skeleton_decision_rejected_after_build(client, kit) -> None:
     after = client.get(f'/api/v1/programs/{kit}', headers=hm).json()
     assert after['version'] == before['version'] and after['status'] == before['status']
     assert _json.dumps(after.get('report'), ensure_ascii=False, sort_keys=True) == report_before
+
+
+def _auto_program(client, user: str) -> dict:
+    r = client.post('/api/v1/programs?mode=auto', json={'request': REQ}, headers=_h(client, user))
+    assert r.status_code == 200, r.text
+    pid = r.json()['program_id']
+    return client.get(f'/api/v1/programs/{pid}', headers=_h(client, user)).json()
+
+
+def test_expert_cannot_touch_foreign_aggregates(client) -> None:
+    """SPEC-AUTH-31: агрегатная ссылка (тест/семинар чужого модуля) разрешается к владельцу —
+    комментарий и применение правки по ней дают 403, неизвестный идентификатор — 404 «Элемент не найден»
+    вместо молчаливого пропуска; чужие данные, версия и журнал не меняются."""
+    hm, he = _h(client, 'u-madina'), _h(client, 'u-timur')
+    full = _auto_program(client, 'u-madina')
+    pid = full['id']
+    m1 = full['modules'][0]['id']
+    assert client.put(f'/api/v1/programs/{pid}/modules/{m1}/expert', json={'expert_id': 'u-timur'}, headers=hm).status_code == 200
+    foreign_test = next(a['id'] for a in full['kit']['assessments'] if a.get('module_id') and a['module_id'] != m1)
+    foreign_q = next(q for q in full['kit']['questions'] if q.get('module_id') != m1)
+    version_before = full['version']
+    events_before = len(client.get(f'/api/v1/programs/{pid}/events', headers=hm).json())
+    # 1) комментарий по агрегатной ссылке на тест чужого модуля — 403, в том числе с запросом правки агенту
+    for extra in ({}, {'ask_agent': True}):
+        r = client.post(f'/api/v1/programs/{pid}/comments',
+                        json={'module_id': m1, 'text': 'Правка чужого теста', 'node_id': foreign_test, **extra}, headers=he)
+        assert r.status_code == 403, (extra, r.text)
+        assert 'другому модулю' in r.json()['message_ru']
+    # 2) неизвестный элемент — 404 «Элемент не найден», а не молчаливое «владельца нет — пропустить»
+    r = client.post(f'/api/v1/programs/{pid}/comments', json={'module_id': m1, 'text': 'Нет такого', 'node_id': 'nope-999'}, headers=he)
+    assert r.status_code == 404 and 'не найден' in r.json()['message_ru'], r.text
+    # 3) применение правки по чужому узлу (комментарий методиста) — 403 и без изменений чужого модуля
+    r = client.post(f'/api/v1/programs/{pid}/comments', json={'module_id': m1, 'text': 'Внедрить чужое', 'node_id': foreign_q['id'], 'ask_agent': True}, headers=hm)
+    assert r.status_code == 200, r.text
+    cid = r.json()['comment']['id']
+    r = client.post(f'/api/v1/programs/{pid}/comments/answer', json={'comment_id': cid, 'apply_proposal': True}, headers=he)
+    assert r.status_code == 403, r.text
+    after = client.get(f'/api/v1/programs/{pid}', headers=hm).json()
+    fq = next(q for q in after['kit']['questions'] if q['id'] == foreign_q['id'])
+    assert fq['stem'] == foreign_q['stem'] and fq['options'] == foreign_q['options']  # чужое задание не изменилось
+    assert after['version'] == version_before
+    assert len(client.get(f'/api/v1/programs/{pid}/events', headers=hm).json()) == events_before + 1  # только комментарий методиста
+
+
+def test_expert_actualize_hides_foreign_modules(client) -> None:
+    """SPEC-API-37: R02 — актуализация и производные ответы эксперта фильтруются по назначенным
+    модулям: находки по чужим модулям (их названия, темы и идентификаторы) не раскрываются,
+    методисту находки по всей программе остаются."""
+    hm, he = _h(client, 'u-madina'), _h(client, 'u-timur')
+    full = _auto_program(client, 'u-madina')
+    pid = full['id']
+    m1 = full['modules'][0]['id']
+    foreign_m = next(m for m in full['modules'] if m['id'] != m1)
+    assert client.put(f'/api/v1/programs/{pid}/modules/{m1}/expert', json={'expert_id': 'u-timur'}, headers=hm).status_code == 200
+
+    async def seed() -> None:
+        from app.programs import service as svc
+
+        doc = await svc.load(pid)
+        doc.module_by_id(foreign_m['id']).topics[0].title = 'Разбор Python 2.7 и df.append'
+        await svc.save(doc)
+
+    client.portal.call(seed)
+    mine = client.get(f'/api/v1/programs/{pid}/actualize', headers=he)
+    assert mine.status_code == 200, mine.text
+    assert 'Python 2.7' not in mine.text and foreign_m['id'] not in mine.text and foreign_m['title'] not in mine.text
+    whole = client.get(f'/api/v1/programs/{pid}/actualize', headers=hm)
+    assert whole.status_code == 200 and 'Python 2.7' in whole.text  # методисту находка видна
+
+
+def test_return_rejected_for_approved_program(client) -> None:
+    """SPEC-API-38: R04 — возврат каркаса недоступен для собранной и утверждённой программы:
+    из kit_ready и approved — 409 с подсказкой про точечную правку, статус и журнал не меняются;
+    на шагах каркаса (skeleton, on_review) возврат с комментарием по-прежнему работает."""
+    from app.programs import service as svc
+    from app.programs.schemas import Status
+
+    hm = _h(client, 'u-madina')
+    full = _auto_program(client, 'u-madina')  # kit_ready
+    pid = full['id']
+    events_before = len(client.get(f'/api/v1/programs/{pid}/events', headers=hm).json())
+    r = client.post(f'/api/v1/programs/{pid}/skeleton/approve', json={'decision': 'return', 'comment': 'верните каркас'}, headers=hm)
+    assert r.status_code == 409, r.text
+    assert r.json()['code'] == 'BAD_STATE' and 'точечную правку' in r.json()['message_ru']
+    assert client.get(f'/api/v1/programs/{pid}', headers=hm).json()['status'] == 'kit_ready'
+    assert len(client.get(f'/api/v1/programs/{pid}/events', headers=hm).json()) == events_before  # журнал не изменился
+    # on_review (назначен эксперт) — возврат каркаса доступен
+    m1 = full['modules'][0]['id']
+    assert client.put(f'/api/v1/programs/{pid}/modules/{m1}/expert', json={'expert_id': 'u-timur'}, headers=hm).status_code == 200
+    assert client.get(f'/api/v1/programs/{pid}', headers=hm).json()['status'] == 'on_review'
+    r = client.post(f'/api/v1/programs/{pid}/skeleton/approve', json={'decision': 'return', 'comment': 'поправьте часы'}, headers=hm)
+    assert r.status_code == 202 and r.json().get('job_id'), r.text
+    # approved: статус утверждён руководителем
+    pid2 = _auto_program(client, 'u-madina')['id']
+
+    async def mark_approved() -> None:
+        doc = await svc.load(pid2)
+        doc.status = Status.APPROVED
+        await svc.save(doc)
+
+    client.portal.call(mark_approved)
+    r = client.post(f'/api/v1/programs/{pid2}/skeleton/approve', json={'decision': 'return', 'comment': 'верните каркас'}, headers=hm)
+    assert r.status_code == 409, r.text
+    assert client.get(f'/api/v1/programs/{pid2}', headers=hm).json()['status'] == 'approved'
+
+
+def test_parallel_approve_creates_exactly_one_job(client, monkeypatch) -> None:
+    """SPEC-SVC-17: R03 — N параллельных утверждений каркаса создают ровно одно активное задание,
+    все ответы получают одинаковый job_id, у одного вызова created (повтор — идемпотентен)."""
+    import asyncio
+
+    from app.agent import workflow as wf
+    from app.core.security import Principal
+    from app.programs import service as svc
+    from app.programs.router import ApproveIn, approve
+    from app.skills.clarify.run import DEFAULT_ANSWER
+
+    h = _h(client, 'u-madina')
+    fresh = client.post('/api/v1/programs', json={'request': REQ}, headers=h)
+    body = fresh.json()
+    assert fresh.status_code == 200, fresh.text
+    pid = body['program_id']
+    if body.get('needs_answers'):
+        ans = {q['id']: DEFAULT_ANSWER for q in body['questions']}
+        assert client.post(f'/api/v1/programs/{pid}/answers?wait=true', json={'answers': ans}, headers=h).status_code == 200
+    assert client.get(f'/api/v1/programs/{pid}', headers=h).json()['status'] == 'skeleton'
+    rep = client.get(f'/api/v1/programs/{pid}/report', headers=h).json()
+    for pr in [p for p in rep.get('proposals', []) if not p.get('decided')]:
+        client.post(f'/api/v1/programs/{pid}/skeleton/decisions',
+                    json={'rule_id': pr['rule_id'], 'decision': 'accept', 'node': pr.get('node', ''),
+                          'proposal': pr.get('proposal', ''), 'option_id': pr.get('option_id', '')}, headers=h)
+    real_gen = wf.generate_kit
+
+    async def slow_gen(doc, progress=None):
+        await asyncio.sleep(0.5)  # задание остаётся активным, пока приходят параллельные повтор
+        return await real_gen(doc, progress)
+
+    monkeypatch.setattr(wf, 'generate_kit', slow_gen)
+    p = Principal('u-madina', 'methodist', 'Мадина Петрова')
+
+    async def six_approves():
+        return await asyncio.gather(*[approve(pid, ApproveIn(decision='approve'), p) for _ in range(6)])
+
+    results = client.portal.call(six_approves)
+    ids = {res['job_id'] for res in results}
+    assert len(ids) == 1, results
+    active = [j for j in client.portal.call(svc.unfinished_jobs) if j['program_id'] == pid]
+    assert len(active) == 1 and active[0]['job_id'] == ids.pop()
+    client.portal.call(asyncio.gather, *list(svc._tasks))  # дожидаемся комплект
+    assert client.get(f'/api/v1/programs/{pid}', headers=h).json()['status'] == 'kit_ready'
+
+
+def test_form_params_override_text_with_conflict_note(client) -> None:
+    """SPEC-API-39: R09 — структурированные поля params в POST /programs приоритетнее разбора текста;
+    расхождения записываются в assumptions («форма и текст расходятся: принято значение формы»),
+    конфликт объёма добавляет явный уточняющий вопрос с обоими значениями."""
+    hm = _h(client, 'u-madina')
+    text = ('Нужна программа повышения квалификации на 72 часа «Анализ данных» для сотрудников банков, '
+            'очно-заочно. Темы: pandas, SQL.')
+    r = client.post('/api/v1/programs',
+                    json={'request': text, 'params': {'volume_h': 36, 'form': 'очная', 'audience': 'Банки'}}, headers=hm)
+    assert r.status_code == 200, r.text
+    doc = r.json()['program']
+    assert doc['params']['volume_h'] == 36 and doc['params']['form'] == 'очная' and doc['params']['audience'] == 'Банки'
+    conflicts = [a for a in doc['assumptions'] if a['source'].startswith('форма и текст расходятся')]
+    assert {'volume_h', 'form', 'audience'} <= {a['field'] for a in conflicts}, doc['assumptions']
+    assert all(a['value'] in (36, 'очная', 'Банки') for a in conflicts)
+    q = next(q for q in doc['questions'] if q['field'] == 'volume_h' and 'Уточните объём' in q['text'])
+    assert '36' in q['text'] and '72' in q['text'] and q['options'] == ['36', '72']

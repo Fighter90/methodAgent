@@ -274,3 +274,15 @@ async def test_start_job_capacity_first_and_idempotent(store, monkeypatch) -> No
     assert (await svc.get_job(j1))['status'] == 'failed'
     j3, created = await svc.start_job('p-1', 'kit')
     assert created and j3 != j1  # резерв снят — задание можно создать снова
+
+
+async def test_start_job_parallel_reserves_single_job(store) -> None:
+    """SPEC-SVC-17: аудит 22.10 (R03) — WHEN N параллельных start_job одной программы,
+    THEN проверка активного задания и его создание атомарны: ровно одно активное задание,
+    одинаковый job_id во всех ответах и created=True ровно у одного вызова."""
+    results = await asyncio.gather(*(svc.start_job('p-1', 'kit') for _ in range(6)))
+    ids = {job_id for job_id, _ in results}
+    assert len(ids) == 1, results
+    assert sum(1 for _, created in results if created) == 1
+    active = [j for j in await svc.unfinished_jobs() if j['program_id'] == 'p-1']
+    assert len(active) == 1 and active[0]['job_id'] == ids.pop()

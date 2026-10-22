@@ -94,10 +94,21 @@ def parse_numbers(text: str) -> Params:
     if m:
         p.final_assessment_hours = int(_num(m.group(1)) or 0) or None
 
-    # Объём: числа с «час», исключая нагрузку в день/неделю, «по N часа», часы ИА
-    # и числа из упоминаний образца/референса (F07: «36 часов по образцу 248 часов» — объём 36, а не 248)
+    # Объём: числа с «час», исключая нагрузку в день/неделю, «по N часа», часы ИА.
+    # Роли чисел (F07; аудит 22.10, R10): target — целевой объём, reference — образец
+    # (в выборе объёма не участвует), unknown — прежнее поведение, максимум.
     _REF_MARK = re.compile(r'(стар\w+|прошл\w+|образц\w*|референс\w*|пример\w*|возьмите)[^.;!?,\n]{0,60}$')
-    candidates = []
+    _PROG_WORD = re.compile(r'программ|курс|интенсив|стажировк')
+    # Переход «сократить/уменьшить/с X часов до Y часов»: X — исходный объём, Y — целевой
+    _TRANS = re.compile(
+        r'(?:\bс\b|сократ\w*|уменьш\w*)[^.]{0,40}?(\d+)\s*час\w*(?!\s*в\s+(?:день|неделю))'
+        r'[^.]{0,20}?до\s+(\d+)\s*час')
+    trans: dict[int, str] = {}
+    for tm in _TRANS.finditer(low):
+        trans[tm.start(1)] = 'reference'
+        trans[tm.start(2)] = 'target'
+    targets: list[int] = []
+    unknown: list[int] = []
     for mm in re.finditer(_N + r'[\s-]*(?:академическ\w+\s+|астрономическ\w+\s+)?(?:час|ч\b)', low):
         start, end = mm.span()
         after = low[end : end + 25]
@@ -107,14 +118,26 @@ def parse_numbers(text: str) -> Params:
         if re.search(r'(занимает|длится)\s+$', low[max(0, start - 15) : start]):
             continue
         val = _num(mm.group(1))
-        if val:
-            if _REF_MARK.search(low[max(0, start - 70) : start]):
-                p.reference_volume_h = int(val)
-                continue
-            candidates.append(int(val))
-    if candidates:
-        p.volume_h = max(candidates)
-        if p.final_assessment_hours and p.volume_h == p.final_assessment_hours and len(candidates) == 1:
+        if not val:
+            continue
+        role = trans.get(start)
+        if role is None:
+            near = low[max(0, start - 40) : start]
+            if _PROG_WORD.search(near) and not _REF_MARK.search(near):
+                role = 'target'  # «новый курс … на N часов» без образца рядом
+            elif _REF_MARK.search(low[max(0, start - 70) : start]):
+                role = 'reference'  # часы образца, прошлой программы, референса
+        if role == 'target':
+            targets.append(int(val))
+        elif role == 'reference':
+            p.reference_volume_h = int(val)
+        else:
+            unknown.append(int(val))
+    if targets:
+        p.volume_h = targets[0]
+    elif unknown:
+        p.volume_h = max(unknown)
+        if p.final_assessment_hours and p.volume_h == p.final_assessment_hours and len(unknown) == 1:
             p.volume_h = None
 
     # Срок

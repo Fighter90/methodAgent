@@ -9,6 +9,10 @@
 с ненулевым кодом выхода. Провал — это HTTP-ответ не 200/202 (202 дожидается задания),
 конечный статус не done, проваленный чек чек-листа или выгрузка, которая не скачалась
 или не прошла структурную проверку `export_problems`.
+
+Приёмка слайдов (SPEC-Q-02, MET-58/R14): слайды засчитываются, только если у каждой
+заявленной темы есть лекция с непустыми слайдами, а `module_id` этой лекции совпадает
+с модулем темы; лекции со слайдами из чужих модулей проваливают чек своего кейса.
 """
 
 from __future__ import annotations
@@ -73,6 +77,28 @@ def export_problems(fmt: str, data: bytes) -> list[str]:
     return []
 
 
+def _slides_problems(kit: dict, wanted: list[str]) -> list[str]:
+    """Приёмка слайдов (SPEC-Q-02): список проблем; пустой список — слайды полные и в своих модулях.
+
+    Для каждой заявленной темы `wanted` должна найтись лекция с непустыми слайдами,
+    у которой `module_id` совпадает с модулем этой темы по плану комплекта; лекция
+    со слайдами по чужой теме или из модуля вне комплекта — провал приёмки.
+    """
+    owner = {t['id']: m['id'] for m in kit.get('modules', []) for t in m.get('topics', [])}
+    problems: list[str] = []
+    for lec in kit.get('lectures', []):
+        if not lec.get('slides'):
+            continue
+        if lec.get('topic_id') not in owner or lec.get('module_id') != owner[lec.get('topic_id')]:
+            problems.append(f'лекция {lec.get("id")!r} со слайдами не принадлежит своему модулю '
+                            f'(module_id={lec.get("module_id")!r}, тема {lec.get("topic_id")!r})')
+    for tid in wanted:
+        if not any(lec.get('topic_id') == tid and lec.get('module_id') == owner.get(tid) and lec.get('slides')
+                   for lec in kit.get('lectures', [])):
+            problems.append(f'у темы {tid} нет лекции со слайдами её модуля')
+    return problems
+
+
 def _checks(case: dict, r: dict) -> list[tuple[str, bool]]:
     sk = r['skeleton']
     tot = sk['totals']
@@ -95,10 +121,9 @@ def _checks(case: dict, r: dict) -> list[tuple[str, bool]]:
         out.append(('8 занятий за 4 недели', sk['calendar']['sessions'] == 8 and sk['calendar']['weeks'] <= 4))
         finals = [q for q in kit['questions'] if q['assessment_id'].startswith('final') or 'final' in q['assessment_id']]
         out.append(('итоговый тест 10 вопросов с РО', len(finals) == 10 and all(q['lo_ids'] for q in finals)))
-        # Слайды именно первых двух тем-занятий, а не «хоть одной лекции»
-        slides_by_topic = {lec.get('topic_id'): lec.get('slides') for lec in kit['lectures']}
+        # Слайды именно первых двух тем-занятий своего модуля, а не «хоть одной лекции» (SPEC-Q-02)
         first_two = [t['id'] for m in kit['modules'] for t in m['topics']][:2]
-        out.append(('слайды для занятий 1 и 2', len(first_two) == 2 and all(slides_by_topic.get(t) for t in first_two)))
+        out.append(('слайды для занятий 1 и 2', len(first_two) == 2 and not _slides_problems(kit, first_two)))
         out.append(('нет профстандарта', sk['ps_code'] is None))
         out.append(('итог — защита проекта', 'проект' in sk['final_assessment']['form'].lower()))
     if case['id'] == 2:
@@ -114,7 +139,10 @@ def _checks(case: dict, r: dict) -> list[tuple[str, bool]]:
         out.append(('вводный блок Python первым', 'python' in mods[0]['title'].lower()))
         out.append(('4 недели', sk['calendar']['weeks'] == 4))
         out.append(('ПС по данным', sk['ps_code'] in ('06.042', '06.033', '06.016')))
-        out.append(('слайды для лекций модуля pandas', any(lec['slides'] for lec in kit['lectures'])))
+        # Каждая тема модуля pandas из плана ответа — со слайдами своего модуля (SPEC-Q-02)
+        pmods = [m for m in kit['modules'] if 'pandas' in m['title'].lower()]
+        wanted = [t['id'] for m in pmods for t in m['topics']]
+        out.append(('слайды для всех тем модуля pandas', bool(wanted) and not _slides_problems(kit, wanted)))
     if case['id'] == 4:
         asked = r['questions_asked']  # все вопросы clarify; questions_skipped — только неотвеченные
         out.append(('вопросы были заданы', bool(asked)))
@@ -130,6 +158,8 @@ def _checks(case: dict, r: dict) -> list[tuple[str, bool]]:
         # Вопросы собеседования стажировки, а не любые задания комплекта
         iq = (kit.get('final_assessment_materials') or {}).get('interview_questions')
         out.append(('вопросы собеседования', isinstance(iq, dict) and any(iq.values())))
+        # Слайды не заказаны, но появившиеся лекции со слайдами обязаны быть в модулях комплекта (SPEC-Q-02)
+        out.append(('слайды лекций в своих модулях', not _slides_problems(kit, [])))
     return out
 
 

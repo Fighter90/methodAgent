@@ -358,3 +358,47 @@ def test_budget_checked_after_queue(make) -> None:
         _run(scenario())
     assert 'бюджет' in str(exc.value)
     assert gw.calls == [], 'вызов не должен уходить в шлюз после исчерпания бюджета в очереди'
+
+
+def test_ping_budget_and_spend(make) -> None:
+    """SPEC-LLM-27: IF дневной бюджет исчерпан, THEN ping бросает LLMUnavailable до обращения к шлюзу."""
+    llm = make(Gateway(_resp('ок', tin=1_000_000, tout=0)), llm_price_in_rub=10.0)
+    llm._day, llm._spent = c._today(), 95.0
+    with pytest.raises(c.LLMUnavailable, match='бюджет'):
+        _run(llm.ping())
+    assert llm._client.calls == [], 'ping не должен обращаться к шлюзу при исчерпанном бюджете'
+
+
+def test_ping_accounts_cost_when_budget_allows(make) -> None:
+    """SPEC-LLM-27: успешный ping списывает стоимость ответа по тарифу модели генерации и пишет статус generate."""
+    gw = Gateway(_resp('ок', tin=1_000_000, tout=0))
+    llm = make(gw, llm_price_in_rub=10.0)
+    r = _run(llm.ping())
+    assert r['ok'] is True and r['model'] == 'gen'
+    assert llm.spent_today() == pytest.approx(10.0)
+    assert llm.status['generate'] == {'model': 'gen', 'ok': True, 'latency_s': r['latency_s']}
+
+
+def test_embed_budget_checked_per_batch(make, monkeypatch) -> None:
+    """SPEC-LLM-27: бюджет проверяется перед сетевым вызовом каждой пачки эмбеддингов: исчерпан до старта — без вызова шлюза, исчерпан между пачками — вторая пачка не отправляется."""
+    llm = make(Gateway())
+    llm._day, llm._spent = c._today(), 95.0
+    with pytest.raises(c.LLMUnavailable, match='бюджет'):
+        _run(llm.embed(['x']))
+    assert llm._client.calls == [], 'embed не должен обращаться к шлюзу при исчерпанном бюджете'
+
+    gw = Gateway()
+    llm = make(gw, llm_daily_budget_rub=90.0)
+    state = {'batches': 0}
+
+    def spent() -> float:
+        return 95.0 if state['batches'] else 0.0
+
+    def spend(cost: float) -> None:
+        state['batches'] += 1
+
+    monkeypatch.setattr(llm, 'spent_today', spent)
+    monkeypatch.setattr(llm, '_spend', spend)
+    with pytest.raises(c.LLMUnavailable, match='бюджет'):
+        _run(llm.embed(['x'] * 20))  # две пачки: 16 + 4
+    assert len(gw.calls) == 1, 'вторая пачка не уходит в шлюз после исчерпания бюджета'

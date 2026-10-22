@@ -29,7 +29,7 @@ from app.programs.schemas import (  # noqa: E402
     Topic,
 )
 from app.validation.repair import _spare_question, cover_outcomes, repair  # noqa: E402
-from app.validation.rules import assessment_map  # noqa: E402
+from app.validation.rules import assessment_map, run_rules  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -206,6 +206,70 @@ def test_v13_seminar_task_text_extended_for_added_lo() -> None:
     assert 'Нарисуйте круг' in sem.statement and 'Резервное копирование PostgreSQL' in sem.statement
     assert any('Резервное копирование PostgreSQL' in c.text for c in sem.criteria)
     assert 'РО 2: добавлен в задание «Семинар»' in log
+
+
+def test_cover_outcomes_subject_question_with_commands() -> None:
+    """SPEC-REPAIR-19: для РО «Настраивает резервное копирование PostgreSQL и восстанавливает базу» генерируется предметный вопрос: стем из текста РО, в вариантах команды темы pg_basebackup/pg_restore, верный ответ — формулировка РО."""
+    doc = ProgramDoc(
+        id='p', request='x', title='Администрирование БД',
+        competencies=[Competency(id='c1', code='ПК-1', title='К', indicators=[Indicator(id='i1', kind='can', text='x', outcomes=[
+            _lo(1, 'Настраивает резервное копирование PostgreSQL и восстанавливает базу'), _lo(2, 'Пишет скрипты мониторинга')])])],
+        modules=[
+            Module(id='m1', n=1, title='Базы данных', topics=[Topic(id='t1.1', n='1.1', title='Бэкап',
+                  description='Резервная копия снимается pg_basebackup, восстановление выполняется pg_restore.',
+                  hours=Hours(total=4, pr=4), lo_ids=['lo1'])]),
+            Module(id='m2', n=2, title='Мониторинг', topics=[Topic(id='t2.1', n='2.1', title='Мониторинг', hours=Hours(total=2, pr=2), lo_ids=['lo2'])]),
+        ],
+    )
+    log = cover_outcomes(doc)
+    assert log
+    q = doc.kit.questions[0]
+    assert 'Настраивает резервное копирование PostgreSQL и восстанавливает базу' in q.stem
+    assert q.stem.startswith('Выберите команды, которые выполняют:')
+    assert 'должен уметь' not in q.stem
+    opts = ' '.join(q.options)
+    assert 'pg_basebackup' in opts and 'pg_restore' in opts
+    assert q.options[q.key] == 'Настраивает резервное копирование PostgreSQL и восстанавливает базу'
+
+
+def test_cover_outcomes_subject_stem_without_commands() -> None:
+    """SPEC-REPAIR-19: если команды в теме не названы, стем — «Какой результат соответствует: {РО}?», дистракторы — чужие РО; метапостановки в стеме нет."""
+    doc = _doc()
+    log = cover_outcomes(doc)
+    assert log
+    for q in doc.kit.questions:
+        assert q.stem.startswith('Какой результат соответствует:')
+        assert q.stem.endswith('?') and 'должен уметь' not in q.stem
+        assert q.options[q.key] == next(x.text for x in doc.all_outcomes() if x.id == q.lo_ids[0])
+
+
+def test_v13_meta_question_not_counted_as_mean() -> None:
+    """SPEC-REPAIR-20: вопрос-метапостановка «Что слушатель должен уметь…?» без предметных слов РО не считается средством V-13 — РО с одним предметным средством остаётся незакрытым с пометкой «нужна вычитка»; после добавления предметного вопроса repair'ом покрытие закрывается."""
+    doc = _doc()
+    doc.kit.tasks = [
+        Task(id='s1', assessment_id='sem-m1', module_id='m1', title='Семинар 1', statement='s', lo_ids=['lo1']),
+        Task(id='s2', assessment_id='sem-m1', module_id='m1', title='Семинар 2', statement='s', lo_ids=['lo2']),
+        Task(id='s3', assessment_id='sem-m2', module_id='m2', title='Семинар 3', statement='s', lo_ids=['lo3']),
+    ]
+    doc.kit.questions = [
+        Question_(id='qm1', assessment_id='test-m1', module_id='m1', stem='Что слушатель должен уметь после темы «Циклы»?',
+                  options=['Пишет циклы', 'Пишет функции', 'Читает файлы', 'Другое'], key=0, lo_ids=['lo1']),
+        Question_(id='qm2', assessment_id='test-m1', module_id='m1', stem='Какова цель темы «Функции»?',
+                  options=['Пишет циклы', 'Пишет функции', 'Читает файлы', 'Другое'], key=1, lo_ids=['lo2']),
+    ]
+    assert assessment_map(doc)['lo1'] == {'sem-m1'} and assessment_map(doc)['lo2'] == {'sem-m1'}
+    res = next(r for r in run_rules(doc, 'kit') if r.id == 'V-13')
+    assert res.status == 'fail'
+    assert any('РО 1 проверяется 1 средством' in x for x in res.messages)
+    assert any('qm1' in x and 'вычитк' in x for x in res.messages) and any('qm2' in x and 'вычитк' in x for x in res.messages)
+    repair(doc, _fail('V-13'))
+    amap = assessment_map(doc)
+    assert all(len(v) >= 2 for v in amap.values())
+    q_new = next(q for q in doc.kit.questions if q.id not in {'qm1', 'qm2'} and 'lo1' in q.lo_ids)
+    assert 'Пишет циклы' in q_new.stem and 'должен уметь' not in q_new.stem
+    res = next(r for r in run_rules(doc, 'kit') if r.id == 'V-13')
+    assert res.status == 'warn'  # покрытие закрыто предметным вопросом, старый мета-вопрос помечен для вычитки
+    assert any('qm1' in x and 'вычитк' in x for x in res.messages)
 
 
 def test_cover_outcomes_question_shape() -> None:

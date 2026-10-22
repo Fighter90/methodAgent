@@ -1,6 +1,8 @@
 """Разбор референсов .docx и .pdf: текст, структура разделов и пересчёт таблиц часов (FR-02, FR-05).
 
-Ошибки в таблицах часов референса показываются методисту и не переносятся в каркас.
+Текст DOCX собирается из абзацев и таблиц тела в исходном порядке (таблицы нужны intake и актуализации,
+темы и компетенции учебных программ часто лежат в них). Ошибки в таблицах часов референса показываются
+методисту и не переносятся в каркас; защищённый паролем или нечитаемый PDF даёт 400, а не 500.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from app.core.errors import BadRequest
 logger = logging.getLogger(__name__)
 
 _KIND_HEADERS = {'lk': ('лк', 'лекц'), 'pr': ('пр', 'практ'), 'lb': ('лб', 'лаб'), 'srs': ('срс', 'самост')}
+_W_NS = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'  # префикс тегов DOCX в Clark-нотации
 
 
 @dataclass
@@ -65,7 +68,7 @@ def _parse_docx(name: str, content: bytes, max_unpacked_mb: int) -> ParsedRefere
             if any(i.filename.endswith('vbaProject.bin') for i in zf.infolist()):
                 logger.info('В файле %s есть макросы — они не исполняются', name)
         doc = Document(io.BytesIO(content))
-        paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        lines = _body_lines(doc)
         tables = doc.tables
     except BadRequest:
         raise
@@ -75,7 +78,48 @@ def _parse_docx(name: str, content: bytes, max_unpacked_mb: int) -> ParsedRefere
     for ti, table in enumerate(tables, start=1):
         rows = [[c.text.strip() for c in r.cells] for r in table.rows]
         issues.extend(check_hours_table(rows, ti))
-    return ParsedReference(name=name, text='\n'.join(paragraphs), structure=_structure(paragraphs), hours_issues=issues)
+    return ParsedReference(name=name, text='\n'.join(lines), structure=_structure(lines), hours_issues=issues)
+
+
+def _p_text(p_elm) -> str:
+    """Текст абзаца из XML: все w:t-фрагменты подряд (без создания объектов python-docx)."""
+    return ''.join(t.text or '' for t in p_elm.iter(_W_NS + 't')).strip()
+
+
+def _table_lines(tbl_elm) -> list[str]:
+    """Строки таблицы: ячейки одной строки через «|»; вложенные таблицы (глубже одного уровня) — отдельными строками."""
+    lines: list[str] = []
+    for tr in tbl_elm.iterchildren(_W_NS + 'tr'):
+        cells: list[str] = []
+        nested: list[str] = []
+        for tc in tr.iterchildren(_W_NS + 'tc'):
+            parts: list[str] = []
+            for child in tc.iterchildren():
+                if child.tag == _W_NS + 'p':
+                    t = _p_text(child)
+                    if t:
+                        parts.append(t)
+                elif child.tag == _W_NS + 'tbl':
+                    nested.extend(_table_lines(child))
+            if parts:
+                cells.append(' '.join(parts))
+        if cells:
+            lines.append(' | '.join(cells))
+        lines.extend(nested)
+    return lines
+
+
+def _body_lines(doc) -> list[str]:
+    """Абзацы и таблицы тела документа в исходном порядке (SPEC-KB-22): содержимое таблиц тоже попадает в текст."""
+    lines: list[str] = []
+    for child in doc.element.body.iterchildren():
+        if child.tag == _W_NS + 'p':
+            t = _p_text(child)
+            if t:
+                lines.append(t)
+        elif child.tag == _W_NS + 'tbl':
+            lines.extend(_table_lines(child))
+    return lines
 
 
 def _parse_pdf(name: str, content: bytes) -> ParsedReference:
@@ -88,19 +132,27 @@ def _parse_pdf(name: str, content: bytes) -> ParsedReference:
         doc = fitz.open(stream=content, filetype='pdf')
     except Exception as exc:  # noqa: BLE001 — битый PDF должен давать понятный 400, а не 500
         raise BadRequest(f'Файл «{name}» повреждён или не является PDF ({type(exc).__name__})') from exc
-    with doc:
-        for page in doc.pages(0, min(doc.page_count, 200)):
-            parts.append(page.get_text())
-            # Таблицы часов в PDF пересчитываются так же, как в .docx (FR-05)
-            try:
-                tables = page.find_tables().tables
-            except Exception as exc:  # noqa: BLE001 — сторонний разборщик PyMuPDF бросает разные типы на нестандартной вёрстке; текст страницы уже взят
-                logger.debug('pdf %s: таблицы страницы не распознаны (%s)', name, type(exc).__name__)
-                tables = []
-            for t in tables:
-                n_table += 1
-                rows = [[(c or '').replace('\n', ' ').strip() for c in r] for r in t.extract()]
-                issues.extend(check_hours_table(rows, n_table))
+    if doc.needs_pass or doc.is_encrypted:  # SPEC-KB-23: fitz.open проходит и для защищённого файла
+        doc.close()
+        raise BadRequest(f'Файл «{name}» защищён паролем — снимите защиту или загрузите доступную копию')
+    try:
+        with doc:
+            for page in doc.pages(0, min(doc.page_count, 200)):
+                parts.append(page.get_text())
+                # Таблицы часов в PDF пересчитываются так же, как в .docx (FR-05)
+                try:
+                    tables = page.find_tables().tables
+                except Exception as exc:  # noqa: BLE001 — сторонний разборщик PyMuPDF бросает разные типы на нестандартной вёрстке; текст страницы уже взят
+                    logger.debug('pdf %s: таблицы страницы не распознаны (%s)', name, type(exc).__name__)
+                    tables = []
+                for t in tables:
+                    n_table += 1
+                    rows = [[(c or '').replace('\n', ' ').strip() for c in r] for r in t.extract()]
+                    issues.extend(check_hours_table(rows, n_table))
+    except BadRequest:
+        raise
+    except Exception as exc:  # noqa: BLE001 — ожидаемые ошибки парсера (ValueError, RuntimeError, fitz) дают понятный 400, а не 500
+        raise BadRequest(f'Файл «{name}» не удалось прочитать как PDF ({type(exc).__name__})') from exc
     text = '\n'.join(parts)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     return ParsedReference(name=name, text=text, structure=_structure(lines), hours_issues=list(dict.fromkeys(issues)))

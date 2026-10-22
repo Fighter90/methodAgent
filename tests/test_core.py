@@ -67,7 +67,7 @@ def test_roles(client) -> None:
 
 
 def test_intake_reference_volume_not_program_volume() -> None:
-    """SPEC-SKILLS-17"""
+    """SPEC-SKILLS-17, SPEC-SKILLS-20"""
     from app.skills.intake.run import parse_numbers
 
     p = parse_numbers('Создай 36 часов по образцу 248 часов, аттестация 2 часа, до 4 часов в день')

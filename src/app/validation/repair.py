@@ -128,11 +128,35 @@ def repair(doc: ProgramDoc, rules: list[RuleResult]) -> list[str]:
     return log
 
 
-def cover_outcomes(doc: ProgramDoc) -> list[str]:
-    """V-13: РО, который проверяется одним средством, получает вопрос в тесте своего модуля.
+_CMD_RX = re.compile(
+    r'\b(?:pg_[a-z]+|psql|mysql(?:dump)?|sqlite3|redis-cli|mongosh?'
+    r'|docker(?:\s+(?:compose|build|run|exec|push|pull))?'
+    r'|git(?:\s+(?:commit|push|pull|rebase|merge|clone|checkout))?'
+    r'|kubectl|helm|npm(?:\s+(?:ci|install|run|build))?|pip(?:\s+install)?'
+    r'|systemctl|apt(?:-get)?|curl|wget|rsync|tar)\b',
+    re.IGNORECASE,
+)
 
-    Верный ответ — формулировка РО, дистракторы — РО других модулей: вопрос проверяет,
-    что слушатель отличает результат темы от соседних.
+
+def _topic_commands(*texts: str) -> list[str]:
+    """Команды инструментов, названные в описании темы и РО: из них собираются предметные варианты вопроса (R07)."""
+    cmds: list[str] = []
+    for text in texts:
+        for m in _CMD_RX.finditer(text.lower()):
+            cmd = ' '.join(m.group(0).split())
+            if cmd not in cmds:
+                cmds.append(cmd)
+    return cmds
+
+
+def cover_outcomes(doc: ProgramDoc) -> list[str]:
+    """V-13: РО, который проверяется одним средством, получает предметный вопрос в тесте своего модуля.
+
+    Стем собирается из текста РО («Выберите команды, которые выполняют: {РО}» — если в теме
+    названы команды, иначе «Какой результат соответствует: {РО}?»), верный ответ — формулировка
+    РО, дистракторы — РО других модулей и неполные команды темы. Мета-вопрос «Что слушатель
+    должен уметь после темы?» действия не проверяет и средством V-13 не считается
+    (аудит 22.10, R07 / MET-51).
     """
     log: list[str] = []
     amap = assessment_map(doc)
@@ -156,16 +180,25 @@ def cover_outcomes(doc: ProgramDoc) -> list[str]:
         own = {x for t in m.topics for x in t.lo_ids}
         foreign = [lo.text for lo in doc.all_outcomes() if lo.id not in own] or [t.title for mm in doc.modules if mm.id != m.id for t in mm.topics]
         foreign = [f for f in dict.fromkeys(foreign) if f != los[lo_id].text]
-        while len(foreign) < 3:
-            foreign.append(f'Не относится к модулю «{m.title}» (вариант {len(foreign) + 1})')
         n = sum(1 for q in doc.kit.questions if q.module_id == m.id) + 1
-        shift = (n * 3) % len(foreign)
-        options = [los[lo_id].text, *(foreign[(shift + j) % len(foreign)] for j in range(3))]
+        cmds = _topic_commands(topic.description, los[lo_id].text)
+        if cmds:
+            stem = f'Выберите команды, которые выполняют: {los[lo_id].text}'
+            distractors = [f'Только {cmd} — неполный шаг, результат темы не достигается' for cmd in cmds[:2]]
+        else:
+            stem = f'Какой результат соответствует: {los[lo_id].text}?'
+            distractors = []
+        shift = (n * 3) % len(foreign) if foreign else 0
+        if foreign:
+            distractors += [x for x in (foreign[(shift + j) % len(foreign)] for j in range(len(foreign))) if x not in distractors]
+        while len(distractors) < 3:
+            distractors.append(f'Не относится к модулю «{m.title}» (вариант {len(distractors) + 1})')
+        options = [los[lo_id].text, *distractors[:3]]
         key = n % 4
         options[0], options[key] = options[key], options[0]
         q = Question_(
             id='', assessment_id=test_id, module_id=m.id,
-            stem=f'Что слушатель должен уметь после темы «{topic.title}»?', options=options, key=key, lo_ids=[lo_id],
+            stem=stem, options=options, key=key, lo_ids=[lo_id],
         )
         # Объём теста задан в запросе — вопрос заменяет один из вопросов по РО, который проверяется несколькими вопросами
         spare = _spare_question(doc, test_id, m.id) if doc.params.materials.test_questions else None

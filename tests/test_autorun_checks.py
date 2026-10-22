@@ -53,8 +53,8 @@ def _ok_case1() -> dict[str, Any]:
         'questions': [{'id': f'q{i}', 'assessment_id': 'final-test', 'stem': f'В{i}', 'options': ['а', 'б'], 'key': 0, 'lo_ids': ['ro1']} for i in range(10)],
         'tasks': [],
         'lectures': [
-            {'id': 'l1', 'topic_id': 't1.1', 'title': 'Занятие 1', 'slides': [{'n': 1, 'title': 'Слайд', 'bullets': ['тезис']}]},
-            {'id': 'l2', 'topic_id': 't1.2', 'title': 'Занятие 2', 'slides': [{'n': 1, 'title': 'Слайд', 'bullets': ['тезис']}]},
+            {'id': 'l1', 'topic_id': 't1.1', 'module_id': 'm1', 'title': 'Занятие 1', 'slides': [{'n': 1, 'title': 'Слайд', 'bullets': ['тезис']}]},
+            {'id': 'l2', 'topic_id': 't1.2', 'module_id': 'm1', 'title': 'Занятие 2', 'slides': [{'n': 1, 'title': 'Слайд', 'bullets': ['тезис']}]},
         ],
         'final_assessment_materials': {'form': 'Защита проекта'},
     }
@@ -76,6 +76,11 @@ def _ok_case1() -> dict[str, Any]:
     }
 
 
+def _slides() -> list[dict[str, Any]]:
+    """Непустой слайд для фейковых лекций."""
+    return [{'n': 1, 'title': 'Слайд', 'bullets': ['тезис']}]
+
+
 def _case5_payload(interview: dict | None) -> dict[str, Any]:
     kit = {'modules': [], 'assessments': [], 'questions': [], 'tasks': [{'id': 't1'}], 'lectures': [],
            'final_assessment_materials': {} if interview is None else {'interview_questions': interview}}
@@ -85,6 +90,42 @@ def _case5_payload(interview: dict | None) -> dict[str, Any]:
                      'totals': {'all': 256, 'lk': 0, 'pr': 0, 'lb': 0, 'srs': 254, 'ia': 2}, 'modules': []},
         'report': {'blocking_checks': '10/10', 'rules': []},
         'agent_notes': ['Итого в образце не сходится'],
+        'questions_asked': [],
+        'tokens': {'cost_rub': 0},
+        'files': {},
+        'kit': {'program': kit},
+    }
+
+
+def _case3_payload(lectures: list[dict[str, Any]]) -> dict[str, Any]:
+    """Ответ автопрогона кейса 3: модуль pandas из двух тем, лекции подставляет тест."""
+    kit = {
+        'modules': [
+            {'id': 'm1', 'n': 1, 'title': 'Введение в Python', 'topics': [{'id': 't1.1', 'n': '1.1', 'title': 'Основы Python'}]},
+            {'id': 'm2', 'n': 2, 'title': 'Анализ данных в pandas', 'topics': [{'id': 't2.1', 'n': '2.1', 'title': 'DataFrame'},
+                                                                               {'id': 't2.2', 'n': '2.2', 'title': 'Группировки'}]},
+        ],
+        'assessments': [],
+        'questions': [],
+        'tasks': [],
+        'lectures': lectures,
+        'final_assessment_materials': {},
+    }
+    sk_mods = [
+        {'n': 1, 'title': 'Введение в Python', 'total': 16, 'lk': 8, 'pr': 8, 'lb': 0, 'srs': 0,
+         'topics': [{'n': '1.1', 'title': 'Основы Python', 'total': 16, 'lk': 8, 'pr': 8, 'lb': 0, 'srs': 0}]},
+        {'n': 2, 'title': 'Анализ данных в pandas', 'total': 56, 'lk': 12, 'pr': 12, 'lb': 12, 'srs': 20,
+         'topics': [{'n': '2.1', 'title': 'DataFrame', 'total': 28, 'lk': 6, 'pr': 6, 'lb': 6, 'srs': 10},
+                    {'n': '2.2', 'title': 'Группировки', 'total': 28, 'lk': 6, 'pr': 6, 'lb': 6, 'srs': 10}]},
+    ]
+    return {
+        'program_id': 'prg-3',
+        'status': 'done',
+        'skeleton': {'type': 'dpp_pk', 'ps_code': '06.033', 'issued_document': 'удостоверение', 'final_assessment': {'form': 'Защита проекта'},
+                     'calendar': {'sessions': 24, 'weeks': 4, 'hours_per_day': 6},
+                     'totals': {'all': 72, 'lk': 20, 'pr': 20, 'lb': 12, 'srs': 20, 'ia': 0}, 'modules': sk_mods},
+        'report': {'blocking_checks': '10/10', 'rules': []},
+        'agent_notes': [],
         'questions_asked': [],
         'tokens': {'cost_rub': 0},
         'files': {},
@@ -210,3 +251,48 @@ def test_case5_interview_check_requires_interview_questions() -> None:
     assert not checks['вопросы собеседования']
     checks = dict(autorun._checks({'id': 5}, _case5_payload({'Модуль 1': []})))
     assert not checks['вопросы собеседования']
+
+
+# --------------------------------------------------------------------------- приёмка слайдов (SPEC-Q-02)
+
+
+def test_case3_slides_check_requires_every_pandas_topic() -> None:
+    """SPEC-Q-02: слайды засчитываются, только если у каждой темы модуля pandas есть лекция со слайдами своего модуля."""
+    good = _case3_payload([
+        {'id': 'l1', 'topic_id': 't1.1', 'module_id': 'm1', 'title': 'Лекция 1', 'slides': []},
+        {'id': 'l2', 'topic_id': 't2.1', 'module_id': 'm2', 'title': 'Лекция 2', 'slides': _slides()},
+        {'id': 'l3', 'topic_id': 't2.2', 'module_id': 'm2', 'title': 'Лекция 3', 'slides': _slides()},
+    ])
+    assert dict(autorun._checks({'id': 3}, good))['слайды для всех тем модуля pandas']
+    # Слайды только у постороннего модуля «Безопасность полётов», у pandas пусто — приёмка провалена
+    foreign = _case3_payload([
+        {'id': 'l1', 'topic_id': 't1.1', 'module_id': 'm1', 'title': 'Лекция 1', 'slides': []},
+        {'id': 'l9', 'topic_id': 't9.1', 'module_id': 'm9', 'title': 'Безопасность полётов', 'slides': _slides()},
+    ])
+    assert not dict(autorun._checks({'id': 3}, foreign))['слайды для всех тем модуля pandas']
+    # Чужих лекций нет, но у одной темы pandas слайдов нет — тоже провал
+    partial = _case3_payload([{'id': 'l2', 'topic_id': 't2.1', 'module_id': 'm2', 'title': 'Лекция 2', 'slides': _slides()}])
+    assert not dict(autorun._checks({'id': 3}, partial))['слайды для всех тем модуля pandas']
+
+
+def test_case1_slides_must_belong_to_own_module() -> None:
+    """SPEC-Q-02: лекция со слайдами по чужой теме и из чужого модуля проваливает чек «слайды для занятий 1 и 2»."""
+    payload = _ok_case1()
+    payload['kit']['program']['lectures'] = [
+        {'id': 'l9', 'topic_id': 't9.1', 'module_id': 'm9', 'title': 'Безопасность полётов', 'slides': _slides()},
+    ]
+    assert not dict(autorun._checks({'id': 1}, payload))['слайды для занятий 1 и 2']
+    # Слайды есть у обеих первых тем, но одна лекция приписана чужому модулю — приёмка тоже провалена
+    misplaced = _ok_case1()
+    misplaced['kit']['program']['lectures'][1]['module_id'] = 'm2'
+    assert not dict(autorun._checks({'id': 1}, misplaced))['слайды для занятий 1 и 2']
+
+
+def test_case5_slides_must_belong_to_own_module() -> None:
+    """SPEC-Q-02: в кейсе 5 слайды не заказаны, но появившиеся лекции со слайдами чужого модуля приёмку не проходят."""
+    payload = _case5_payload({'Модуль 1': ['Вопрос 1', 'Вопрос 2', 'Вопрос 3']})
+    assert dict(autorun._checks({'id': 5}, payload))['слайды лекций в своих модулях']
+    payload['kit']['program']['lectures'] = [
+        {'id': 'l9', 'topic_id': 't9.1', 'module_id': 'm9', 'title': 'Безопасность полётов', 'slides': _slides()},
+    ]
+    assert not dict(autorun._checks({'id': 5}, payload))['слайды лекций в своих модулях']

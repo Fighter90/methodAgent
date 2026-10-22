@@ -323,6 +323,65 @@ def test_kb_docx_zip_bomb_rejected_and_normal_ok() -> None:
         parse_reference('bomb.docx', bomb.getvalue())
 
 
+def test_docx_tables_in_reference_text() -> None:
+    """SPEC-KB-22"""
+    from docx import Document
+
+    from app.kb.files import parse_reference
+
+    doc = Document()
+    doc.add_paragraph('До таблицы')
+    content = doc.add_table(rows=3, cols=1)
+    content.cell(0, 0).text = '1. Модуль Резервное копирование PostgreSQL'
+    content.cell(1, 0).text = '2.1 Тема pg_restore'
+    content.cell(2, 0).text = 'Результат: настраивает pg_restore'
+    inner = content.cell(2, 0).add_table(1, 1)  # вложенная таблица
+    inner.cell(0, 0).text = '1.2 Вложенная тема restore'
+    doc.add_paragraph('После таблицы')
+    hours = doc.add_table(rows=5, cols=7)
+    rows = [['№', 'Наименование', 'Всего', 'ЛК', 'ПР', 'ЛБ', 'СРС'],
+            ['1', 'Модуль', '10', '2', '4', '0', '4'],
+            ['1.1', 'Тема', '6', '1', '2', '0', '3'],
+            ['1.2', 'Тема 2', '4', '1', '2', '0', '1'],
+            ['Итого', '', '10', '2', '4', '0', '6']]
+    for ri, row in enumerate(rows):
+        for ci, val in enumerate(row):
+            hours.cell(ri, ci).text = val
+    buf = io.BytesIO()
+    doc.save(buf)
+    ref = parse_reference('ref.docx', buf.getvalue())
+    # Документ, где всё содержимое лежит в таблицах, раньше давал text='' — ячейки должны попадать в текст
+    assert '1. Модуль Резервное копирование PostgreSQL' in ref.text
+    assert '2.1 Тема pg_restore' in ref.text
+    assert 'Результат: настраивает pg_restore' in ref.text
+    assert '1.2 Вложенная тема restore' in ref.text
+    assert ref.structure and '2.1 Тема pg_restore' in ref.structure
+    # Порядок сохраняется: абзац до таблицы, содержимое таблиц, абзац после
+    order = [ref.text.index(x) for x in ('До таблицы', '1. Модуль', 'Результат:', 'После таблицы')]
+    assert order == sorted(order)
+    assert any('итоговая строка' in i and 'СРС 6' in i for i in ref.hours_issues)  # пересчёт часов не сломан
+
+
+def test_pdf_encrypted_rejected_and_plain_ok() -> None:
+    """SPEC-KB-23"""
+    fitz = pytest.importorskip('fitz')
+
+    from app.core.errors import BadRequest
+    from app.kb.files import parse_reference
+
+    enc = fitz.open()
+    enc.new_page()
+    buf = io.BytesIO()
+    enc.save(buf, encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw='x', user_pw='y')
+    with pytest.raises(BadRequest, match='паролем'):
+        parse_reference('secret.pdf', buf.getvalue())
+    plain = fitz.open()
+    plain.new_page().insert_text((72, 72), '1. PostgreSQL pg_restore overview', fontname='helv', fontsize=11)
+    ref = parse_reference('plain.pdf', plain.tobytes())
+    assert 'pg_restore' in ref.text
+    assert '1. PostgreSQL pg_restore overview' in ref.structure
+
+
 def test_tool_aliases_from_registry(monkeypatch) -> None:
     """SPEC-SKILLS-18, SPEC-KB-21"""
     from app.agent import extras

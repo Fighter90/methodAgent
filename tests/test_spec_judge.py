@@ -1,9 +1,10 @@
-"""Спецификация specs/validation-judge.md: судья по смысловым правилам (FR-33, MET-33)."""
+"""Спецификация specs/validation-judge.md: судья по смысловым правилам (FR-33, MET-33, аудит 22.10 R08/MET-52)."""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,7 @@ import pytest
 os.environ.setdefault('LLM_PROVIDERS', 'fixtures')
 
 from app.programs.schemas import (  # noqa: E402
+    Assessment,
     Criterion,
     Lecture,
     Module,
@@ -64,6 +66,21 @@ def _kit_doc() -> ProgramDoc:
     doc.kit.lectures = [Lecture(id='lec1.1', topic_id='t', module_id='m1', title='Циклы',
                                 plan=[{'min': 10, 'text': 'Актуализация'}, {'min': 40, 'text': 'Разбор примеров'}],
                                 slides=[Slide(id='sl1.1.1', n=1, title='Цикл for', bullets=['перебор элементов', 'range()'])])]
+    return doc
+
+
+def _final_doc() -> ProgramDoc:
+    """Комплект с итоговой аттестацией: задание final-task (module_id=None), итоговый тест и форма ИА."""
+    doc = _kit_doc()
+    doc.final_assessment.form = 'Проект'
+    doc.final_assessment.hours = 4
+    doc.kit.assessments.append(Assessment(id='test-final', kind='test', title='Итоговый тест'))
+    doc.kit.questions.append(Question_(id='qf.1', assessment_id='test-final', module_id='m1',
+                                       stem='Итоговый вопрос: что такое интерпретатор Python?',
+                                       options=['программа, выполняющая код', 'компилятор в машинный код'], key=0))
+    doc.kit.tasks.append(Task(id='final-task', assessment_id='final', title='Итоговая аттестация: Проект',
+                              statement='Выполнить и защитить проект на данные', expected_result='Работающий проект и защита',
+                              criteria=[Criterion(text='Проект работает', points=5)], lo_ids=['lo1', 'lo2']))
     return doc
 
 
@@ -139,6 +156,69 @@ def test_view_module_budget() -> None:
     mat = j._view(doc)['modules'][0]['материалы']
     total = sum(len(x) for values in mat.values() if isinstance(values, list) for x in values)
     assert total <= j._MODULE_CHARS and mat['усечено'] == 'да'
+
+
+def test_view_contains_final_assessment() -> None:
+    """SPEC-JUDGE-09: во входе судьи есть блок «итоговая аттестация» — форма, задание final-task
+    с ожидаемым результатом, критериями и РО, вопросы итогового теста; в материалах модулей их нет."""
+    v = j._view(_final_doc())
+    fin = v['итоговая аттестация']
+    assert fin['форма'] == 'Проект, 4 ч'
+    assert any('final-task' in x and 'Выполнить и защитить проект' in x and 'Работающий проект' in x for x in fin['задание'])
+    assert any('Проект работает (5 б.)' in x and 'РО: lo1, lo2' in x for x in fin['задание'])
+    assert any('qf.1' in x and '✓ программа, выполняющая код' in x for x in fin['вопросы'])
+    m1 = v['modules'][0]['материалы']
+    assert not any('final-task' in x for x in m1.get('задания', []))
+    assert not any('qf.1' in x for x in m1.get('вопросы', []))
+
+
+async def test_final_swap_is_visible_to_judge(monkeypatch) -> None:
+    """SPEC-JUDGE-09, R08: замена итогового задания на нерелевантное («приготовление пирога») меняет вход
+    судьи — находка возможна; вердикт с узлом final-task попадает в отчёт по узлу итогового задания."""
+    from app.validation.report import build_report
+
+    out = j.JudgeOut(verdicts=[j.Verdict(rule='V-26', status='warn', node='final-task',
+                                         messages=['Итоговое задание «приготовление пирога» не связано с программой'])])
+    llm = _setup(monkeypatch, FakeLLM(out=out))
+    doc = _final_doc()
+    next(t for t in doc.kit.tasks if t.id == 'final-task').statement = 'Приготовление пирога: замесить тесто и выпечь'
+    await j.judge(doc)
+    assert 'пирог' in llm.calls[0]['user']  # вход судьи изменился вместе с заданием
+    rep = build_report(doc, 'kit')
+    row = {r.id: r for r in rep.rules}['V-26-judge']
+    assert row.nodes == ['final-task'] and any('пирог' in m for m in row.messages)
+
+
+def test_view_contains_module_program_bodies() -> None:
+    """SPEC-JUDGE-10: во входе судьи — тело рабочей программы модуля (аннотация и содержание);
+    вставка длинного английского текста в content меняет вход (аудит 22.10: раньше — побайтно тот же),
+    длинный текст усекается с «…» и указанием исходной длины."""
+    doc = _kit_doc()
+    doc.kit.module_programs = [ModuleProgram(module_id='m1', annotation='Программа модуля про циклы',
+                                             content=[{'topic_id': 't', 'text': 'Содержание: цикл for, перебор списков, range()'}])]
+    before = json.dumps(j._view(doc), ensure_ascii=False)
+    doc.kit.module_programs[0].content.append({'topic_id': 't', 'text': 'Machine learning pipeline ' * 4000})
+    v = j._view(doc)
+    assert json.dumps(v, ensure_ascii=False) != before
+    mat = v['modules'][0]['материалы']
+    assert any('аннотация: Программа модуля про циклы' in x for x in mat['программа'])
+    assert any('Содержание: цикл for' in x for x in mat['программа'])
+    assert any('Machine learning' in x and '…' in x and '(исходный текст ' in x for x in mat['программа'])
+
+
+def test_view_reports_materials_coverage() -> None:
+    """SPEC-JUDGE-11: в конце входа судьи — строка «Показано X% материалов»; полный комплект — 100%
+    без усечения, вставка длинного текста даёт честный процент по символам, пометки «усечено»
+    и «не показано» с числом скрытых символов."""
+    doc = _kit_doc()
+    v = j._view(doc)
+    assert list(v)[-1] == 'покрытие'
+    assert v['покрытие'] == 'Показано 100% материалов (полностью)'
+    doc.kit.module_programs = [ModuleProgram(module_id='m1', annotation='Аннотация',
+                                             content=[{'topic_id': 't', 'text': 'A' * 40000}])]
+    line = j._view(doc)['покрытие']
+    assert 0 < int(re.search(r'Показано (\d+)%', line).group(1)) < 100
+    assert 'усечено' in line and 'не показано' in line and '39500 симв. не показано' in line
 
 
 async def test_only_warn_with_messages_kept(monkeypatch) -> None:
@@ -239,3 +319,15 @@ async def test_audit_counterexample_is_caught(monkeypatch) -> None:
     assert 'q1.4' in res['V-26'].nodes and 'sl1.1.6' in res['V-26'].nodes
     assert res['V-18'].status == 'fail' and 'task1.2' in res['V-18'].nodes
     assert 'q1.3' in res['V-25'].nodes and any('разными ключами' in m for m in res['V-25'].messages)
+
+
+def test_final_judge_rows_anchor_to_final_task() -> None:
+    """SPEC-JUDGE-12: замечания судьи по вопросам итогового теста ([qf.*]) привязываются в отчёте
+    к узлу итогового задания final-task; замечание по модульному вопросу узел не меняет."""
+    from app.validation.report import build_report
+
+    doc = _final_doc()
+    doc.kit.judge = {'V-26': ['[qf.1] Вопрос итогового теста не относится к программе'], 'V-19': ['[q1.2] Ключ неверен']}
+    res = {r.id: r for r in build_report(doc, 'kit').rules}
+    assert res['V-26-judge'].nodes == ['qf.1', 'final-task']
+    assert res['V-19-judge'].nodes == ['q1.2']

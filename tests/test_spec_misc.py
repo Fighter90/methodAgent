@@ -237,6 +237,35 @@ def test_link_outcomes_both_ways() -> None:
     assert 'lo1' in topics[0].lo_ids and 'lo2' in topics[1].lo_ids
 
 
+def test_intake_volume_roles_with_reference() -> None:
+    """SPEC-SKILLS-20: роль числа с часами — переход «с X до Y» и «курс/программа … на N часов» дают целевой объём; часы образца объёмом не становятся (аудит 22.10, R10)."""
+    import json
+    from pathlib import Path
+
+    from app.skills.intake.run import parse_numbers
+
+    # (а) переход «сократить … на 248 часов до 36 часов»: целевой объём — 36, исходный — референс
+    p = parse_numbers('Нужно сократить существующую программу на 248 часов до 36 часов')
+    assert p.volume_h == 36, 'целевой объём — после «до», а не исходные 248'
+    assert p.reference_volume_h == 248
+    # (б) «по образцу прошлой программы … новый курс на 36 часов»: 36 — объём, а не часы образца
+    p = parse_numbers('По образцу прошлой программы разработайте новый курс на 36 часов')
+    assert p.volume_h == 36
+    assert p.reference_volume_h is None, 'число у «новый курс» — объём, хотя выше упомянут образец'
+    # прежнее поведение F07: «36 часов по образцу 248 часов»
+    p = parse_numbers('Создай 36 часов по образцу 248 часов')
+    assert p.volume_h == 36 and p.reference_volume_h == 248
+    # часы образца не участвуют в выборе объёма: цель берётся из «сократи … до 36 часов»
+    p = parse_numbers('Сократи программу до 36 часов по образцу прошлой программы на 248 часов')
+    assert p.volume_h == 36 and p.reference_volume_h == 248
+    # регресс открытых кейсов: прежний объём кейсов 1, 3, 5 сохранён
+    root = Path(__file__).resolve().parents[1]
+    cases = {c['id']: c['request'] for c in json.loads((root / 'testset' / 'cases.json').read_text(encoding='utf-8'))}
+    assert parse_numbers(cases[1]).volume_h == 16
+    assert parse_numbers(cases[3]).volume_h == 72
+    assert parse_numbers(cases[5]).volume_h == 256
+
+
 # --------------------------------------------------------------------------- agent-workflow.md
 def test_auto_run_exception_marks_failed(client, monkeypatch) -> None:
     """SPEC-FLOW-04: автопрогон, прерванный исключением, переводит программу в статус failed."""
@@ -375,6 +404,91 @@ def test_v21_cycle_blocks_silent_approval() -> None:
     with pytest.raises(Conflict) as e:
         wf.approve_skeleton(doc, 'u-madina')
     assert e.value.code == 'TOPIC_DEPENDENCY_CYCLE'
+
+
+def test_v21_explicit_prerequisites_survive_reorder() -> None:
+    """SPEC-FLOW-49: при пересортировке темы сохраняют идентичность — ссылки prerequisites остаются на тех же смысловых темах (аудит 22.10, MET-61/R17).
+
+    Явная цепочка «Классы требуют Циклы, Циклы требуют Переменные» после сортировки
+    остаётся ацикличной и осмысленной (утверждение не блокируется циклом),
+    повторное решение по «!» порядок и ссылки не меняет, а цикл явных зависимостей
+    по-прежнему запрещает молчаливое утверждение.
+    """
+    from app.agent import workflow as wf
+    from app.validation.report import build_report
+
+    doc = _prereq_doc()
+    doc.all_topics()[0].prerequisites = ['t1.2']  # Классы требуют Циклы
+    doc.all_topics()[1].prerequisites = ['t1.3']  # Циклы требуют Переменные
+    doc.report = build_report(doc, 'skeleton')
+    wf.approve_skeleton(doc, 'u-madina', auto=True)  # без ремапа здесь был TOPIC_DEPENDENCY_CYCLE
+    assert [t.title for t in doc.all_topics()] == ['Переменные', 'Циклы', 'Классы'], 'порядок по графу зависимостей'
+    by_title = {t.title: t for t in doc.all_topics()}
+    assert by_title['Классы'].prerequisites == ['t1.2'], 'Классы требуют по-прежнему Циклы'
+    assert by_title['Циклы'].prerequisites == ['t1.1'], 'Циклы требуют по-прежнему Переменные'
+    assert by_title['Переменные'].prerequisites == []
+    assert not wf._topic_deps(doc)[1], 'граф после перестановки ацикличен'
+    before = [t.model_dump() for t in doc.all_topics()]
+    wf.decide(doc, 'V-21', 'accept', 'u-madina', 't1.1>t1.3', 'устаревшее предложение')
+    assert [t.model_dump() for t in doc.all_topics()] == before, 'повторное решение ничего не меняет'
+
+    cyc = _prereq_doc()
+    cyc.all_topics()[0].prerequisites = ['t1.2']
+    cyc.all_topics()[1].prerequisites = ['t1.1']
+    with pytest.raises(Conflict) as e:
+        wf.approve_skeleton(cyc, 'u-madina', auto=True)
+    assert e.value.code == 'TOPIC_DEPENDENCY_CYCLE'
+
+
+def test_final_task_follows_course_subject() -> None:
+    """SPEC-FLOW-48: итоговое задание и рубрика строятся от предмета курса, форма аттестации не диктует предмет (аудит 22.10, MET-49/R05).
+
+    React+проект — про приложение из компонентов (не про «анализ обезличенных данных»),
+    Docker+экзамен — про Docker (не про «атаки и отчёт об инциденте»), SQL+портфолио —
+    про SQL (не про «планы уроков с ИИ»), 3D-моделирование у школьников — про 3D-сцену
+    (не про «игру или чат-бота»), а курс анализа данных сохраняет проект по данным.
+    """
+    from app.agent import workflow as wf
+
+    def build(title: str, direction: str, topics: list[str], form: str, doop: bool = False) -> ProgramDoc:
+        doc = ProgramDoc(
+            id='p', request='x', type=ProgramType.DOOP if doop else ProgramType.DPP_PK, status=Status.SKELETON_APPROVED,
+            title=title, goal='Цель',
+            params=Params(volume_h=36, direction=direction, final_assessment_form=form, final_assessment_hours=4),
+            competencies=[Competency(id='c1', code='К-1', title='К', indicators=[Indicator(id='i1', kind='can', text='x',
+                          outcomes=[LearningOutcome(id='lo1', code='РО 1', text='Создаёт работу по теме курса')])])],
+        )
+        wf.apply_solver(doc, [Module(id='m1', n=1, title=title, weight=1,
+                              topics=[Topic(id=f't1.{i}', n=f'1.{i}', title=t, lo_ids=['lo1']) for i, t in enumerate(topics, 1)])])
+        return doc
+
+    def st(doc: ProgramDoc) -> str:
+        return wf._final_assessment(doc)[1].statement.lower()
+
+    react = build('React для разработчиков', 'React', ['Компоненты и props', 'Состояние и хуки'], 'Защита проекта')
+    assert 'компонент' in st(react) and 'приложен' in st(react), 'проект курса по React — про приложение из компонентов'
+    assert 'обезличенн' not in st(react) and 'данн' not in st(react), 'заготовка про анализ данных не применяется'
+
+    docker = build('Администрирование Docker', 'Docker', ['Docker и образы', 'Docker Compose'], 'Экзамен')
+    assert 'docker' in st(docker) and 'контейнер' in st(docker), 'экзамен курса по Docker — про Docker'
+    assert 'атак' not in st(docker) and 'инцидент' not in st(docker), 'заготовка про атаки не применяется'
+
+    sql = build('SQL для аналитиков', 'SQL', ['SELECT и фильтры', 'Соединения и агрегаты'], 'Портфолио')
+    assert 'sql' in st(sql) and 'запрос' in st(sql), 'портфолио курса по SQL — про SQL'
+    assert 'план урока' not in st(sql) and 'нейросет' not in st(sql), 'заготовка про планы уроков не применяется'
+
+    three = build('3D-моделирование', '3D-моделирование', ['Моделирование в Blender', 'Материалы и освещение'], 'Защита проекта', doop=True)
+    assert '3d' in st(three) and 'сцен' in st(three), 'детский проект курса по 3D — про 3D-сцену'
+    assert 'игр' not in st(three) and 'чат-бот' not in st(three), 'заготовка про игру или чат-бота не применяется'
+
+    data = build('Анализ данных на Python', 'анализ данных', ['pandas: таблицы', 'Визуализация данных'], 'Защита проекта')
+    assert 'анализ' in st(data) and 'данн' in st(data), 'курс анализа данных сохраняет проект по данным'
+
+    school = build('Первые шаги в Python', 'Python', ['Циклы for и while', 'Функции'], 'Защита проекта', doop=True)
+    assert 'игр' in st(school) or 'чат-бот' in st(school), 'детский курс основ Python сохраняет проект «игра или чат-бот»'
+
+    task = wf._final_assessment(react)[1]
+    assert task.criteria and all(c.text for c in task.criteria) and task.lo_ids == ['lo1'], 'рубрика и связи с РО строятся вместе с заданием'
 
 
 def test_slide_hint_finds_module_by_any_topic(monkeypatch) -> None:
@@ -796,3 +910,29 @@ def test_llm_status_cache_and_admin_live(client, monkeypatch) -> None:
     r3 = client.get('/api/v1/llm/status', headers={'X-MA-Token': tok}).json()
     assert calls['n'] == 2, 'администратор получает живую проверку'
     assert {'spent_today_rub', 'daily_budget_rub', 'daily_limit_reached', 'models'} <= set(r3)
+
+
+def test_llm_status_stampede_single_ping(client, monkeypatch) -> None:
+    """SPEC-LLM-28: 8 одновременных запросов /llm/status при промахе кэша дают ровно один живой ping — остальные ждут под замком и читают обновлённый кэш."""
+    import app.main as m
+    from app.core.security import Principal
+    from app.llm.client import get_llm
+
+    m._LLM_STATUS_CACHE.update(at=0.0, info=None)  # кэш от предыдущих тестов сбрасываем
+    calls = {'n': 0}
+
+    async def fake_ping():
+        calls['n'] += 1
+        await asyncio.sleep(0.05)  # держим живую проверку, пока остальные запросы встают в очередь
+        return {'enabled': True, 'ok': True}
+
+    monkeypatch.setattr(get_llm(), 'ping', fake_ping)
+    route = next(r for r in client.app.routes if getattr(r, 'path', '') == '/api/v1/llm/status')
+    p = Principal('u-madina', 'methodist', 'Мадина')
+
+    async def call() -> dict:
+        return await route.endpoint(p=p)
+
+    results = client.portal.call(lambda: asyncio.gather(*(call() for _ in range(8))))
+    assert calls['n'] == 1, 'одновременные промахи кэша дают один живой ping'
+    assert all(r['ok'] is True for r in results)

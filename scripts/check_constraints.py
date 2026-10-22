@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_SDK = {'openai', 'anthropic', 'google-generativeai', 'langchain-openai', 'cohere', 'mistralai'}
 FORBIDDEN_ENV = ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_ORG', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY',
                  'GEMINI_API_KEY', 'AZURE_OPENAI', 'COHERE_API_KEY', 'MISTRAL_API_KEY')
-ALLOWED_HOSTS = ('foundation-models.api.cloud.ru', 'hub.gigaschool.ru', '127.0.0.1', 'localhost', '0.0.0.0', 'json-schema.org')  # 0.0.0.0 — прокси-заглушка песочницы, json-schema.org — ссылка на спецификацию формата
+ALLOWED_HOSTS = ('foundation-models.api.cloud.ru', 'hub.gigaschool.ru', '127.0.0.1', 'localhost', '0.0.0.0', 'json-schema.org', 'schemas.openxmlformats.org')  # OOXML-namespace константа формата, не сеть  # 0.0.0.0 — прокси-заглушка песочницы, json-schema.org — ссылка на спецификацию формата
 
 
 def main() -> int:

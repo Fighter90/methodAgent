@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+import weakref
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -216,6 +217,23 @@ async def list_programs(owner: str | None = None, statuses: set[str] | None = No
 
 
 # --- Задания ---
+_job_gates: 'weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]' = weakref.WeakKeyDictionary()
+
+
+def _loop_gate() -> asyncio.Lock:
+    """Блокировка резерва заданий на цикл событий (аудит 22.10, R03).
+
+    Lock привязывается к первому циклу, а тесты и uvicorn живут в разных циклах,
+    поэтому замок хранится по циклу; слабые ссылки убирают замки закончившихся циклов.
+    """
+    loop = asyncio.get_running_loop()
+    gate = _job_gates.get(loop)
+    if gate is None:
+        gate = asyncio.Lock()
+        _job_gates[loop] = gate
+    return gate
+
+
 async def create_job(program_id: str, kind: str) -> str:
     job_id = new_id('job')
     async with sessionmaker()() as s:
@@ -228,23 +246,26 @@ async def start_job(program_id: str, kind: str) -> tuple[str, bool]:
     """Ёмкость и задание резервируются до изменения состояния документа (аудит 19.10, F05).
 
     Сначала проверяется лимит параллельных заданий: 429 приходит до того, что-либо изменилось.
+    Резерв атомарен (аудит 22.10, R03): параллельные вызовы одного процесса не пускает
+    блокировка `_loop_gate`, а внутри транзакции активное задание перечитывается — гонка
+    между процессами тоже не создаёт второе задание.
     IF у программы уже есть активное задание (queued или running), THEN возвращается оно
     (created=False) — на программе выполняется не больше одного активного задания, а повторный
     вызов идемпотентен.
     """
     check_capacity()
-    async with sessionmaker()() as s:
-        row = (await s.execute(
-            select(JobRow)
-            .where(JobRow.program_id == program_id, JobRow.status.in_(('queued', 'running')))
-            .order_by(JobRow.id.desc())
-            .limit(1)
-        )).scalars().first()
-        if row is not None:
-            return row.id, False
-        job_id = new_id('job')
-        s.add(JobRow(id=job_id, program_id=program_id, kind=kind, status='queued', progress={}))
-        await s.commit()
+    async with _loop_gate():
+        async with sessionmaker()() as s, s.begin():
+            row = (await s.execute(
+                select(JobRow)
+                .where(JobRow.program_id == program_id, JobRow.status.in_(('queued', 'running')))
+                .order_by(JobRow.id.desc())
+                .limit(1)
+            )).scalars().first()
+            if row is not None:
+                return row.id, False
+            job_id = new_id('job')
+            s.add(JobRow(id=job_id, program_id=program_id, kind=kind, status='queued', progress={}))
         return job_id, True
 
 

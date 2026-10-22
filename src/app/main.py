@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -18,7 +19,7 @@ from app.core.config import ROOT_DIR, get_settings
 from app.core.db import init_db
 from app.core.errors import register_error_handlers
 from app.core.security import Principal, current_principal
-from app.llm.client import get_llm
+from app.llm.client import LLMUnavailable, get_llm
 from app.programs.extra_router import router as extra_router
 from app.programs.router import misc
 from app.programs.router import router as programs_router
@@ -28,6 +29,8 @@ logger = logging.getLogger('metodagent')
 STATIC_DIR = ROOT_DIR / 'frontend' / 'dist'
 # Кэш живой проверки LLM для /llm/status: живой probe не чаще раза в 5 минут (F15)
 _LLM_STATUS_CACHE: dict = {'at': 0.0, 'info': None}
+# R16 (аудит 22.10): одновременные промахи кэша дают один живой ping, остальные ждут под замком
+_LLM_STATUS_LOCK = asyncio.Lock()
 
 
 @asynccontextmanager
@@ -75,14 +78,26 @@ def create_app() -> FastAPI:
     async def llm_status(p: Principal = Depends(current_principal)) -> dict:
         # F15 (аудит 19.10): живой probe — не чаще раза в 5 минут; администратору — всегда живой,
         # остальным — кэш последней проверки, чтобы частые опросы не дёргали модель мимо семафора.
+        # R16 (аудит 22.10): живой ping выполняется под замком с повторной проверкой свежести кэша
+        # после захвата (double-checked) — 8 одновременных промахов дают один сетевой вызов.
         llm = get_llm()
-        now = time.monotonic()
-        fresh = _LLM_STATUS_CACHE['info'] is not None and now - _LLM_STATUS_CACHE['at'] < 300
-        if fresh and p.role != 'admin':
+
+        def cached() -> bool:
+            return _LLM_STATUS_CACHE['info'] is not None and time.monotonic() - _LLM_STATUS_CACHE['at'] < 300
+
+        if cached() and p.role != 'admin':
             info = _LLM_STATUS_CACHE['info']
         else:
-            info = await llm.ping()
-            _LLM_STATUS_CACHE['info'], _LLM_STATUS_CACHE['at'] = info, now
+            async with _LLM_STATUS_LOCK:
+                if cached() and p.role != 'admin':
+                    info = _LLM_STATUS_CACHE['info']
+                else:
+                    try:
+                        info = await llm.ping()
+                    except LLMUnavailable as exc:
+                        # Бюджет или лимит исчерпан: статус отдаётся без ошибки 500
+                        info = {'enabled': True, 'ok': False, 'error': type(exc).__name__, 'message': str(exc)}
+                    _LLM_STATUS_CACHE['info'], _LLM_STATUS_CACHE['at'] = info, time.monotonic()
         info = {**info, 'spent_today_rub': round(llm.spent_today(), 2), 'daily_budget_rub': s.llm_daily_budget_rub, 'daily_limit_reached': llm.limit_reached()}
         return {**info, 'models': {'generate': s.llm_model_generate, 'judge': s.llm_model_judge, 'embed': s.llm_model_embed}, 'judge_enabled': s.llm_judge_enabled}
 

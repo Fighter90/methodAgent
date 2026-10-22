@@ -1,0 +1,11 @@
+{
+  "name": "metodagent-e2e",
+  "private": true,
+  "description": "UI-регресс МетодАгента: playwright закреплён локально, глобальные npm-пакеты не нужны (R15/MET-59).",
+  "scripts": {
+    "test": "node ui_roles.spec.cjs"
+  },
+  "dependencies": {
+    "playwright": "1.60.0"
+  }
+}

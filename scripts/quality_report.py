@@ -4,6 +4,10 @@
 Запуск из корня: `python scripts/quality_report.py`
 Раздел 1 (живой замер на Cloud.ru) не пересчитывается локально — он переносится
 из предыдущей версии отчёта и обновляется только точечным живым прогоном на стенде.
+
+SPEC-Q-01 (MET-57/R13): провал обязательной проверки виден и в отчёте, и в коде выхода.
+Наличие строк «done» или отсутствие латинского FAIL в выводе — не успех: учитываются
+код возврата дочернего процесса и его сводка («N failed», «N error», «чек-лист X/Y»).
 """
 from __future__ import annotations
 
@@ -12,44 +16,75 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / 'docs' / 'reports' / 'quality.md'
 ENV = {**__import__('os').environ, 'PYTHONPATH': str(ROOT / 'src'), 'LLM_PROVIDERS': 'fixtures'}
 
 
-def _run(cmd: list[str], timeout: int = 600) -> str:
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=ROOT, env=ENV)
-    return r.stdout + r.stderr
+def _run(cmd: list[str], timeout: int = 600) -> tuple[int, str]:
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=ROOT, env=ENV, check=False)
+    return r.returncode, r.stdout + r.stderr
 
 
-def _pytest() -> tuple[str, str]:
-    out = _run([sys.executable, '-m', 'pytest', '-q', '--cov=src/app', '--cov-report=term'])
-    m = re.search(r'(\d+) passed(?:, (\d+) skipped)?(?:, \d+ failed)?', out)
+def _pytest_verdict(rc: int, out: str) -> dict[str, Any]:
+    """PASS только при коде 0 и без «N failed»/«N error» в сводке pytest (SPEC-Q-01)."""
+
+    def num(pat: str) -> int:
+        m = re.search(pat, out)
+        return int(m.group(1)) if m else 0
+
+    failed, errors = num(r'(\d+) failed'), num(r'(\d+) error')
+    passed, skipped = re.search(r'(\d+) passed', out), re.search(r'(\d+) skipped', out)
     cov = re.search(r'Total coverage: (\d+[.,]\d+)%', out)
-    passed = m.group(1) if m else '?'
-    skipped = m.group(2) or '0'
-    coverage = (cov.group(1) if cov else '?').replace(',', '.')
-    return f'{passed} passed, {skipped} skipped', coverage
+    summary = f'{passed.group(1) if passed else "?"} passed, {skipped.group(1) if skipped else "0"} skipped'
+    if failed or errors:
+        summary += f', {failed} failed, {errors} error'
+    ok = rc == 0 and failed == 0 and errors == 0
+    return {'status': 'PASS' if ok else 'FAIL', 'text': summary, 'failed': failed, 'errors': errors,
+            'coverage': (cov.group(1) if cov else '?').replace(',', '.')}
 
 
-def _autorun() -> str:
-    out = _run([sys.executable, 'scripts/autorun.py'], timeout=900)
-    if 'все кейсы и выгрузки прошли' in out or ('FAIL' not in out and 'done' in out.lower()):
-        m = re.search(r'(\d+)/(\d+)', out)
-        return f'5/5 done, чек-листы {m.group(1)}/{m.group(2)}' if m else '5/5 done'
-    return 'ПРОВАЛ — см. logs/autorun/'
+def _pytest() -> dict[str, Any]:
+    rc, out = _run([sys.executable, '-m', 'pytest', '-q', '--cov=src/app', '--cov-report=term'])
+    return _pytest_verdict(rc, out)
+
+
+def _autorun_verdict(rc: int, out: str) -> dict[str, Any]:
+    """PASS только при коде 0 и финальном маркере autorun «все кейсы и выгрузки прошли» (SPEC-Q-01)."""
+    pairs = re.findall(r'чек-лист (\d+)/(\d+)', out)
+    lists = f'чек-листы {sum(int(a) for a, _ in pairs)}/{sum(int(b) for _, b in pairs)}' if pairs else 'чек-листы —'
+    if rc == 0 and 'все кейсы и выгрузки прошли' in out:
+        return {'status': 'PASS', 'text': f'5/5 done, {lists}'}
+    return {'status': 'FAIL', 'text': f'ПРОВАЛ — код {rc}, {lists}; см. logs/autorun/'}
+
+
+def _autorun() -> dict[str, Any]:
+    rc, out = _run([sys.executable, 'scripts/autorun.py'], timeout=900)
+    return _autorun_verdict(rc, out)
 
 
 def _trace() -> str:
-    out = _run([sys.executable, 'scripts/spec_trace.py'])
+    rc, out = _run([sys.executable, 'scripts/spec_trace.py'])
     m = re.search(r'ИТОГО: требований (\d+), покрыто тестами (\d+)', out)
-    return f'{m.group(2)}/{m.group(1)}' if m else '?'
+    return f'{m.group(2)}/{m.group(1)}' if m else f'— (код {rc})'
 
 
 def _constraints() -> str:
-    out = _run([sys.executable, 'scripts/check_constraints.py'])
-    return 'соблюдены' if 'соблюдены' in out else 'НАРУШЕНЫ'
+    rc, out = _run([sys.executable, 'scripts/check_constraints.py'])
+    return 'соблюдены' if rc == 0 and 'соблюдены' in out else f'НАРУШЕНЫ (код {rc})'
+
+
+def build_report_data() -> dict[str, Any]:
+    """Собирает фактические результаты проверок; ok — прошли все обязательные (SPEC-Q-01).
+
+    Обязательные проверки — `pytest` и автопрогон; трассировка и ограничения кейса
+    в отчёте информационные и на код выхода не влияют.
+    """
+    tests, autor = _pytest(), _autorun()
+    return {'pytest': tests, 'autorun': autor, 'trace': _trace(), 'constraints': _constraints(),
+            'ok': tests['status'] == 'PASS' and autor['status'] == 'PASS'}
 
 
 def main() -> int:
@@ -59,7 +94,8 @@ def main() -> int:
         m = re.search(r'## 1\. Живой прогон.*?(?=## 2\. )', old, flags=re.DOTALL)
         if m:
             live = m.group(0)
-    tests, coverage = _pytest()
+    data = build_report_data()
+    tests, autor = data['pytest'], data['autorun']
     run = datetime.datetime.now().strftime('%d.%m.%Y %H:%M')
     sha = ''
     try:
@@ -69,19 +105,21 @@ def main() -> int:
     if not live:
         live = ('## 1. Живой прогон на реальной модели (не fixtures)\n\n'
                 'Раздел заполняется точечным живым прогоном на стенде (последний: 21.10.2026 — см. историю git).\n\n')
+    verdict = 'ЕСТЬ ПРОВАЛЫ' if not data['ok'] else 'обязательные проверки пройдены'
     body = f'''# Отчёт качества и воспроизводимости
 
 Обновляется командой `python scripts/quality_report.py`; последний прогон: **{run}**, коммит `{sha or '—'}`.
+Итог обязательных проверок (`pytest`, автопрогон): **{verdict}**.
 
 {live}## 2. Регресс на детерминированных ответах (fixtures)
 
-| Проверка | Результат |
-|---|---|
-| `pytest` (тестов) | **{tests}** |
-| Покрытие `src/app` | **{coverage} %** (порог 70 %) |
-| Автопрогон 5 открытых кейсов (`scripts/autorun.py`) | {_autorun()} |
-| Трассировка SDD | {_trace()} в автотестах; SPEC-UI — vitest + браузерный прогон |
-| Ограничения кейса (`scripts/check_constraints.py`) | {_constraints()} |
+| Проверка | Статус | Результат |
+|---|---|---|
+| `pytest` (тестов) | **{tests['status']}** | **{tests['text']}** |
+| Покрытие `src/app` | — | **{tests['coverage']} %** (порог 70 %) |
+| Автопрогон 5 открытых кейсов (`scripts/autorun.py`) | **{autor['status']}** | {autor['text']} |
+| Трассировка SDD | — | {data['trace']} в автотестах; SPEC-UI — vitest + браузерный прогон |
+| Ограничения кейса (`scripts/check_constraints.py`) | — | {data['constraints']} |
 
 ## 3. Как воспроизвести
 
@@ -103,7 +141,11 @@ BASE_URL=http://127.0.0.1:8765 NODE_PATH=$(npm root -g) node e2e/ui_roles.spec.c
 '''
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(body, encoding='utf-8')
-    print(f'docs/reports/quality.md обновлён: {tests}, покрытие {coverage} %')
+    print(f'docs/reports/quality.md обновлён: {tests["text"]}, покрытие {tests["coverage"]} %')
+    if not data['ok']:
+        print('ОТЧЁТ: ЕСТЬ ПРОВАЛЫ — обязательные проверки не пройдены, статусы FAIL в docs/reports/quality.md')
+        return 1
+    print('Отчёт: обязательные проверки пройдены')
     return 0
 
 

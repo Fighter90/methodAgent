@@ -62,10 +62,15 @@ async def adapt(program_id: str, body: AdaptIn, p: Principal = Depends(require('
 
 @router.get('/programs/{program_id}/actualize', summary='Актуализация: устаревшие темы, инструменты и версии по реестру (FR-61)')
 async def actualize_program(program_id: str, p: Principal = Depends(require('methodist', 'expert', 'head', 'api'))) -> dict[str, Any]:
-    from app.programs.router import _load_for
+    from app.programs.router import _load_for, expert_modules, node_module_id
 
     doc = await _load_for(program_id, p)
     found = extras.actualize_doc(doc)
+    if p.role == 'expert':
+        # R02 (аудит 22.10): производные ответы эксперта не раскрывают чужие модули — находки
+        # фильтруются по назначенным модулям тем же правилом владельца, что и комментарии
+        mine = expert_modules(doc, p)
+        found = [f for f in found if not f.get('node_id') or node_module_id(doc, f['node_id']) in mine]
     return {'program_id': doc.id, 'findings': found, 'total': len(found), 'registry_checked_at': extras.tools().get('checked_at', '')}
 
 

@@ -28,7 +28,9 @@ from app.kb.files import parse_reference
 from app.programs import service as svc
 from app.programs.schemas import (
     Assumption,
+    Params,
     ProgramDoc,
+    Question,
     ReferenceInfo,
     Status,
     StepError,
@@ -71,33 +73,59 @@ EXPERT_SECTIONS = frozenset({
 })
 
 
-def node_module_id(doc: ProgramDoc, node_id: str) -> str | None:
-    """Модуль, которому принадлежит узел графа: рабочая программа, тема, лекция, слайд, вопрос или задание."""
+def _resolve_node(doc: ProgramDoc, node_id: str) -> tuple[str | None, bool]:
+    """Владелец узла графа и признак того, что узел вообще существует (аудит 22.10, R02).
+
+    Разрешаются все адресуемые формы: рабочая программа (`mp-<id>` и id модуля), тема,
+    лекция (в том числе по слайду), вопрос и задание (в том числе по критерию — «#»),
+    ассессмент/тест (`test-<id>`, `sem-<id>`, `test-final`, `final`). Владелец None у
+    известных общих элементов (например, итогового теста), False — узел неизвестен вовсе.
+    """
     base = (node_id or '').partition('#')[0]
     if not base:
-        return None
+        return None, False
     if base.startswith('mp-'):
-        return base[3:]
+        mid = base[3:]
+        return (mid, True) if doc.module_by_id(mid) else (None, False)
+    if doc.module_by_id(base) is not None:
+        return base, True
     lec = wf._lecture_of(doc, base)
     if lec:
-        return lec.module_id
+        return lec.module_id, True
     for m in doc.modules:
         if any(t.id == base for t in m.topics):
-            return m.id
+            return m.id, True
     for x in (*doc.kit.questions, *doc.kit.tasks):
         if x.id == base:
-            return x.module_id
-    return None
+            return x.module_id, True
+    for a in doc.kit.assessments:
+        if a.id == base:
+            return a.module_id, True
+    return None, False
+
+
+def node_module_id(doc: ProgramDoc, node_id: str) -> str | None:
+    """Модуль, которому принадлежит узел графа: рабочая программа, тема, лекция, слайд,
+    вопрос, задание или ассессмент (тест). None — узел общий или неизвестный."""
+    return _resolve_node(doc, node_id)[0]
 
 
 def ensure_node_in_module(doc: ProgramDoc, module_id: str, node_id: str) -> None:
-    """F02 (аудит 19.10): ссылка эксперта на узел чужого модуля запрещена — и в комментарии,
-    и в предложении агента, и в применении правки. Проверка одна для всех путей."""
+    """F02 (аудит 19.10) и R02 (аудит 22.10): ссылка эксперта на узел чужого модуля запрещена —
+    и в комментарии, и в предложении агента, и в применении правки. Агрегатные ссылки
+    (тест, семинар, рабочая программа) разрешаются к владельцу; узел вне модулей (например,
+    итоговый тест) эксперту не принадлежит; неизвестный идентификатор — 404 вместо
+    молчаливого пропуска. Проверка одна для всех путей."""
     if node_id and not re.fullmatch(r'[a-z0-9][a-z0-9.\-_#]*', node_id):
         raise BadRequest('Некорректный идентификатор элемента')
-    owner = node_module_id(doc, node_id)
-    if owner is not None and owner != module_id:
+    if not node_id:
+        return
+    owner, exists = _resolve_node(doc, node_id)
+    if owner == module_id:
+        return
+    if exists:
         raise ForbiddenRole('Элемент принадлежит другому модулю: эксперт работает только со своим модулем')
+    raise NotFound('Элемент не найден')
 
 
 def expert_view(doc: ProgramDoc, p: Principal, data: dict[str, Any]) -> dict[str, Any]:
@@ -135,6 +163,8 @@ class CreateProgram(BaseModel):
     wait: bool = True
     # Ответы методиста на вопросы, если автопрогон их знает заранее (ключ — поле или id вопроса)
     answers: dict[str, str] = Field(default_factory=dict)
+    # R09 (аудит 22.10): структурированные поля формы; применяются с приоритетом над разбором текста
+    params: Params | None = None
 
 
 def _parse_files(files: list[tuple[str, bytes]]) -> tuple[list[ReferenceInfo], str]:
@@ -202,10 +232,61 @@ def _auto_response(doc: ProgramDoc, base: str) -> dict[str, Any]:
     }
 
 
-async def _new_doc(text: str, files: list[tuple[str, bytes]], mode: str, norm_mode: str, owner: str) -> ProgramDoc:
+_FORM_PARAM_FIELDS: tuple[str, ...] = (
+    'title', 'program_type', 'audience', 'entry_level', 'volume_h', 'form', 'duration_weeks', 'final_assessment_form',
+)
+
+
+def _apply_form_params(doc: ProgramDoc, form: Params, *, with_question: bool = True) -> None:
+    """R09 (аудит 22.10): поля формы приоритетнее разбора текста запроса.
+
+    Расхождение формы и текста фиксируется в assumptions («форма и текст расходятся:
+    принято значение формы»), а конфликт объёма добавляет явный уточняющий вопрос
+    с обоими значениями. Повторное применение (после ответов «на усмотрение агента»)
+    дополнений не создаёт и значения формы не теряет.
+    """
+    noted = {a.field for a in doc.assumptions if a.source.startswith('форма и текст расходятся')}
+    for name in _FORM_PARAM_FIELDS:
+        value = getattr(form, name)
+        if value in (None, ''):
+            continue
+        from_text = getattr(doc.params, name)
+        differs = from_text not in (None, '') and from_text != value
+        if differs and name not in noted:
+            doc.assumptions.append(Assumption(
+                field=name, value=value,
+                source=f'форма и текст расходятся: принято значение формы ({value} вместо «{from_text}» из текста запроса)'))
+            noted.add(name)
+        setattr(doc.params, name, value)
+        if name == 'volume_h' and differs and with_question and not any(
+                q.field == 'volume_h' and 'Уточните объём' in q.text for q in doc.questions):
+            doc.questions.append(Question(
+                id=svc.new_id('q'), field='volume_h',
+                text=(f'Уточните объём программы: в форме указано {value} ч, в тексте запроса — {from_text} ч. '
+                      f'Пока принято значение формы ({value} ч) — подтвердите его или пришлите свой вариант.'),
+                options=[str(value), str(from_text)]))
+
+
+def _store_form_params(doc: ProgramDoc, form: Params) -> None:
+    """Значения формы сохраняются в документе, чтобы ответ «на усмотрение агента» на шаге
+    уточнения не перебил их значениями профиля (R09)."""
+    doc.progress['form_params'] = form.model_dump(mode='json')
+
+
+def _reapply_form_params(doc: ProgramDoc) -> None:
+    saved = doc.progress.get('form_params')
+    if saved:
+        _apply_form_params(doc, Params.model_validate(saved), with_question=False)
+
+
+async def _new_doc(text: str, files: list[tuple[str, bytes]], mode: str, norm_mode: str, owner: str,
+                   params: Params | None = None) -> ProgramDoc:
     refs, ref_text = _parse_files(files)
     doc = ProgramDoc(id=svc.new_id('prg'), request=text.strip(), mode=mode, norm_mode=norm_mode, created_at=now_iso())
     await wf.intake_step(doc, refs, ref_text)
+    if params is not None:
+        _apply_form_params(doc, params)  # R09: поля формы приоритетнее разбора текста
+        _store_form_params(doc, params)
     await svc.log_event(doc.id, owner, 'created', f'Запрос: {text[:200]}')
     return doc
 
@@ -294,12 +375,13 @@ async def create_program(
         except ValueError as exc:
             raise BadRequest(f'Файл «{a.name}»: неверный base64') from exc
     started = time.monotonic()
-    doc = await _new_doc(body.request, files, mode, body.norm_mode, p.user_id)
+    doc = await _new_doc(body.request, files, mode, body.norm_mode, p.user_id, body.params)
     base = str(request.base_url).rstrip('/')
     if mode == 'auto':
         if doc.questions and body.answers:
             doc.status = Status.QUESTIONS
             wf.answer_questions(doc, body.answers)
+            _reapply_form_params(doc)  # R09: ответ «на усмотрение агента» не перебивает значения формы
         doc.status = Status.SKELETON
         if not body.wait:
             svc.check_capacity()
@@ -314,6 +396,7 @@ async def create_program(
         if body.answers:
             # Ответы известны заранее: вопросы закрываются без остановки, неотвеченные — значением профиля (assumptions)
             wf.answer_questions(doc, body.answers)
+            _reapply_form_params(doc)  # R09: значения формы приоритетнее профиля
         else:
             await svc.save(doc, p.user_id)
             return _questions_response(doc, base)
@@ -453,6 +536,7 @@ async def answers(
 ) -> dict[str, Any]:
     doc = await _load_for(program_id, p)
     wf.answer_questions(doc, body.answers)
+    _reapply_form_params(doc)  # R09: ответ «на усмотрение агента» не перебивает значения формы
     doc.status = Status.SKELETON
     await svc.save(doc, p.user_id)
     await svc.log_event(program_id, p.user_id, 'answers', '; '.join(f'{q.text} — {q.answer}' for q in doc.questions))
@@ -541,6 +625,10 @@ class ApproveIn(BaseModel):
 async def approve(program_id: str, body: ApproveIn, p: Principal = Depends(require('methodist'))) -> dict[str, Any]:
     doc = await svc.load(program_id)
     if body.decision == 'return':
+        # R04 (аудит 22.10): возврат каркаса — шаг каркаса (шаг 4), а не утверждённой программы:
+        # собранный или утверждённый комплект возвращают точечной правкой и решением руководителя
+        if doc.status in (Status.GENERATING, Status.KIT_READY, Status.ON_APPROVAL, Status.APPROVED):
+            raise Conflict('Утверждённая программа: возврат каркаса недоступен — используйте точечную правку', code='BAD_STATE')
         # F05 (аудит 19.10): резерв задания до изменения состояния; повторный возврат при активном задании — то же задание
         job_id, created = await svc.start_job(program_id, 'skeleton')
         if not created:

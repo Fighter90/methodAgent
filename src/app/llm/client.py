@@ -418,11 +418,16 @@ class LLMClient:
             for attempt in range(attempts):
                 try:
                     async with self._sem:
+                        # R16 (аудит 22.10): бюджет проверяется перед сетевым вызовом каждой пачки,
+                        # после ожидания в очереди семафора — как у complete_json
+                        if self.spent_today() >= self.settings.llm_daily_budget_rub:
+                            raise LLMUnavailable(f'Дневной бюджет LLM {self.settings.llm_daily_budget_rub:.0f} ₽ исчерпан')
                         resp = await asyncio.wait_for(
                             self._get().embeddings.create(model=self.settings.llm_model_embed, input=batch),
                             timeout=self.settings.llm_timeout_s,
                         )
                     vectors = [list(d.embedding) for d in resp.data]
+                    self._spend(0.0)  # тарифа у эмбеддингов нет: стоимость нулевая, день расхода поддерживается актуальным
                     break
                 except (AttributeError, TypeError) as exc:
                     last_error = GatewayError(f'Ответ шлюза без data: {type(exc).__name__}')
@@ -450,6 +455,9 @@ class LLMClient:
         """Проверочный запрос для GET /api/v1/llm/status (одна попытка, таймаут не больше 30 с)."""
         if not self.enabled:
             return {'enabled': False, 'provider': self.settings.llm_providers}
+        # R16 (аудит 22.10): проверочный запрос тратит деньги шлюза, поэтому подчиняется дневному бюджету
+        if self.spent_today() >= self.settings.llm_daily_budget_rub:
+            raise LLMUnavailable(f'Дневной бюджет LLM {self.settings.llm_daily_budget_rub:.0f} ₽ исчерпан')
         started = time.monotonic()
         try:
             # F15: проверочный запрос идёт через общий семафор, как и рабочие вызовы,
@@ -463,9 +471,17 @@ class LLMClient:
                     ),
                     timeout=min(30.0, self.settings.llm_timeout_s),
                 )
+            # R16: стоимость ответа учитывается так же, как у complete_json, — по тарифу модели генерации
+            usage = getattr(resp, 'usage', None)
+            tin = int(getattr(usage, 'prompt_tokens', 0) or 0)
+            tout = int(getattr(usage, 'completion_tokens', 0) or 0)
+            pin, pout = self._price(self.settings.llm_model_generate)
+            self._spend((tin * pin + tout * pout) / 1_000_000)
             if self._limit_day:
                 self._limit_day = ''  # шлюз снова отвечает: лимит сброшен раньше полуночи
                 self._save_spend()
+            self.status['generate'] = {'model': self.settings.llm_model_generate, 'ok': True,
+                                       'latency_s': round(time.monotonic() - started, 2)}
             return {
                 'enabled': True,
                 'ok': bool(getattr(resp, 'choices', None)),

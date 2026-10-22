@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.kb.registry import match_source, registry, tf_codes
-from app.programs.schemas import KINDS, ProgramDoc, ProgramType, RuleResult
+from app.programs.schemas import KINDS, ProgramDoc, ProgramType, Question_, RuleResult
 from app.validation.ngrams import overlap_share, similarity
 
 logger = logging.getLogger(__name__)
@@ -286,10 +286,36 @@ def v12(doc: ProgramDoc, stage: str):
     return ('fail' if miss else 'pass'), [f'{lo.code} не раскрыт ни в одной теме' for lo in miss], [lo.id for lo in miss]
 
 
+_META_STEM_RX = re.compile(
+    r'что\s+(?:слушател\w+|обучающ\w+|студент\w*|курсант\w*)\s+должен\s+уметь'
+    r'|какова\s+цель\s+(?:этой\s+)?(?:темы|занятия|модуля|урока)',
+    re.IGNORECASE,
+)
+
+
+def _meta_question(doc: ProgramDoc, q: Question_) -> bool:
+    """MET-51/R07: чистая метапостановка — «Что слушатель должен уметь…?» без предметных слов РО.
+
+    Верный ответ в таком вопросе угадывается по теме, само действие не проверяется,
+    поэтому средством V-13 вопрос не считается. Если в стеме есть предметный фрагмент РО
+    (4 слова подряд из его текста), вопрос остаётся средством.
+    """
+    if not _META_STEM_RX.search(q.stem):
+        return False
+    stem = ' '.join(re.findall(r'[а-яёa-z0-9_]+', q.stem.lower()))
+    words = [w for lo in doc.all_outcomes() if lo.id in q.lo_ids for w in re.findall(r'[а-яёa-z0-9_]+', lo.text.lower())]
+    return not any(' '.join(words[i:i + 4]) in stem for i in range(max(0, len(words) - 3)))
+
+
 def assessment_map(doc: ProgramDoc) -> dict[str, set[str]]:
-    """РО → множество оценочных средств, которыми он проверяется."""
+    """РО → множество оценочных средств, которыми он проверяется.
+
+    Вопрос-метапостановка без предметных слов РО средством не считается (MET-51/R07).
+    """
     res: dict[str, set[str]] = {lo.id: set() for lo in doc.all_outcomes()}
     for q in doc.kit.questions:
+        if _meta_question(doc, q):
+            continue
         for lo_id in q.lo_ids:
             res.setdefault(lo_id, set()).add(q.assessment_id)
     for t in doc.kit.tasks:
@@ -318,7 +344,12 @@ def v13(doc: ProgramDoc, stage: str):
     codes = {lo.id: lo.code for lo in doc.all_outcomes()}
     weak = [(lo_id, means) for lo_id, means in amap.items() if lo_id in codes and len(means) < 2]
     msgs = [f'{codes[lo_id]} проверяется {len(m)} средством(ами), нужно не меньше двух' for lo_id, m in weak]
-    return ('fail' if weak else 'pass'), msgs, [lo_id for lo_id, _ in weak]
+    # MET-51/R07: вопрос-метапостановка средством не считается — честный статус и пометка для вычитки
+    meta = [q.id for q in doc.kit.questions if _meta_question(doc, q)]
+    msgs += [f'Вопрос {q}: метапостановка без предметных слов из РО — средством не считается, нужна вычитка эксперта' for q in meta]
+    if weak:
+        return 'fail', msgs, [lo_id for lo_id, _ in weak]
+    return ('warn' if meta else 'pass'), msgs, []
 
 
 # --- 6. Привязка оценивания ---
