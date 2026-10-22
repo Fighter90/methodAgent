@@ -30,7 +30,11 @@ def _limits(timeout_s: int, memory_mb: int) -> tuple[list[str], list[str]]:  # p
     import resource
 
     mem = memory_mb * 1024 * 1024
-    specs = {'RLIMIT_CPU': (timeout_s, timeout_s), 'RLIMIT_AS': (mem, mem), 'RLIMIT_NPROC': (64, 64)}
+    # R01-промежуточно: без записи больших файлов и без core-дампов (уменьшение ущерба при обходе фильтров)
+    specs = {
+        'RLIMIT_CPU': (timeout_s, timeout_s), 'RLIMIT_AS': (mem, mem), 'RLIMIT_NPROC': (64, 64),
+        'RLIMIT_FSIZE': (1024 * 1024, 1024 * 1024), 'RLIMIT_CORE': (0, 0),
+    }
     applied: list[str] = []
     skipped: list[str] = []
     for name, pair in specs.items():
