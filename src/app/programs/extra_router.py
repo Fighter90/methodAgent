@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.agent import extras
 from app.agent.sections import build_sections
 from app.core import uploads
-from app.core.errors import BadRequest
+from app.core.errors import BadRequest, Conflict
 from app.core.security import (
     Principal,
     check_program_rate,
@@ -33,6 +33,8 @@ class TemplateIn(BaseModel):
 
 @router.post('/programs/{program_id}/template', summary='Сменить шаблон АЦР до утверждения каркаса (FR-06)')
 async def change_template(program_id: str, body: TemplateIn, p: Principal = Depends(require('methodist'))) -> dict[str, Any]:
+    if await svc.is_archived(program_id):
+        raise Conflict('Программа в архиве: верните её из архива, чтобы изменять', code='ARCHIVED')
     doc = await svc.load(program_id)
     old = doc.template
     extras.change_template(doc, body.program_type)

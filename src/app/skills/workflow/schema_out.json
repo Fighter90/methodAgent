@@ -1785,6 +1785,16 @@
       "title": "Approvals",
       "type": "array"
     },
+    "archived_at": {
+      "default": "",
+      "title": "Archived At",
+      "type": "string"
+    },
+    "archived_by": {
+      "default": "",
+      "title": "Archived By",
+      "type": "string"
+    },
     "assumptions": {
       "items": {
         "$ref": "#/$defs/Assumption"

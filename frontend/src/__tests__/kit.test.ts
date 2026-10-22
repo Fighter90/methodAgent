@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupKitByTopic, humanChecklist, KIND_ABBR, KIND_TITLES, orderRegisteredValue, routeBadge, TYPE_HINTS } from '../kit'
+import { groupKitByTopic, humanChecklist, KIND_ABBR, KIND_TITLES, orderRegisteredValue, routeBadge, TYPE_HINTS, ARCHIVE_FILTER, programsQuery, canArchive } from '../kit'
 
 /* SPEC-UI-26, SPEC-UI-27, SPEC-UI-25: чистые функции карточки программы */
 
@@ -104,5 +104,20 @@ describe('routeBadge', () => {
     const approvals = [{ stage: 'skeleton', decision: 'approve', at: '2026-10-20T10:00:00' }, { stage: 'program', decision: 'approve', at: '2026-10-23T01:10:00' }]
     expect(routeBadge('approved', approvals)).toEqual({ text: 'Утверждена руководителем · 23.10.2026', tone: 'ok' })
     expect(routeBadge('approved', approvals, orderRegisteredValue('2026-10-24T09:00:00Z'))).toEqual({ text: 'Зарегистрирована · 24.10.2026', tone: 'ok' })
+  })
+})
+
+describe('архив методиста', () => {
+  it('SPEC-UI-34: чип «Архив» запрашивает archived=true, кнопка архива — только у методиста и не на утверждении', () => {
+    expect(programsQuery(ARCHIVE_FILTER)).toBe('?archived=true')
+    expect(programsQuery('on_approval', '2026-10-01')).toBe('?status=on_approval&since=2026-10-01')
+    expect(programsQuery('')).toBe('')
+    expect(canArchive('methodist', 'kit_ready')).toBe(true)
+    expect(canArchive('methodist', 'approved')).toBe(true)
+    expect(canArchive('methodist', 'on_approval')).toBe(false)
+    expect(canArchive('methodist', 'generating')).toBe(false)
+    expect(canArchive('methodist', 'kit_ready', '2026-10-23T01:00:00')).toBe(false)
+    expect(canArchive('head', 'kit_ready')).toBe(false)
+    expect(canArchive('expert', 'kit_ready')).toBe(false)
   })
 })

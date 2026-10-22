@@ -48,7 +48,23 @@ from app.skills.clarify.run import DEFAULT_ANSWER
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix='/programs', tags=['programs'])
+ARCHIVED_MSG = 'Программа в архиве: верните её из архива, чтобы изменять'
+
+
+async def ensure_not_archived(program_id: str) -> None:
+    """SPEC-SVC-20: архивная программа только для чтения — изменения отклоняются до возврата из архива."""
+    if await svc.is_archived(program_id):
+        raise Conflict(ARCHIVED_MSG, code='ARCHIVED')
+
+
+async def _archive_guard(request: Request) -> None:
+    """Любой изменяющий запрос к программе из архива — 409, кроме самих archive/unarchive."""
+    pid = request.path_params.get('program_id')
+    if pid and request.method not in ('GET', 'HEAD', 'OPTIONS') and not request.url.path.endswith(('/archive', '/unarchive')):
+        await ensure_not_archived(pid)
+
+
+router = APIRouter(prefix='/programs', tags=['programs'], dependencies=[Depends(_archive_guard)])
 misc = APIRouter(tags=['misc'])
 
 
@@ -566,17 +582,20 @@ def _skeleton_job(program_id: str, owner: str, comment: str = ''):
     return _job
 
 
-@router.get('', summary='Список программ; status=on_approval,approved и since/until (ГГГГ-ММ-ДД) — фильтр руководителя')
+@router.get('', summary='Список программ; status=on_approval,approved и since/until (ГГГГ-ММ-ДД) — фильтр руководителя; archived — архив методиста')
 async def list_programs(
     status: str = Query('', description='Статусы через запятую'),
     since: str = Query('', pattern=r'^(\d{4}-\d{2}-\d{2})?$'),
     until: str = Query('', pattern=r'^(\d{4}-\d{2}-\d{2})?$'),
+    archived: Literal['', 'false', 'true', 'all'] = Query('', description='Архив: false — без архивных (по умолчанию у методиста), true — только архивные, all — все'),
     p: Principal = Depends(current_principal),
 ) -> list[dict[str, Any]]:
     if p.role == 'admin':
         raise ForbiddenRole('Администратор ведёт пользователей и настройки; программы ведут методист, эксперт и руководитель')
     statuses = {x.strip() for x in status.split(',') if x.strip()} or None
-    items = await svc.list_programs(owner=p.user_id if p.role == 'api' else None, statuses=statuses, since=since, until=until)
+    # SPEC-SVC-19: архив — инструмент методиста; руководитель и API-клиент видят список как раньше, эксперт — без архивных
+    mode = archived or ('false' if p.role in ('methodist', 'expert') else 'all')
+    items = await svc.list_programs(owner=p.user_id if p.role == 'api' else None, statuses=statuses, since=since, until=until, archived=mode)
     if p.role == 'expert':
         mine = {r['program_id'] for r in await _reviews_of(p.user_id)}
         items = [x for x in items if x['id'] in mine]
@@ -942,6 +961,35 @@ async def review_decision(program_id: str, body: ReviewIn, p: Principal = Depend
     return {'program': program}
 
 
+@router.post('/{program_id}/archive', summary='Убрать программу в архив (методист, свои программы)')
+async def archive(program_id: str, p: Principal = Depends(require('methodist'))) -> dict[str, Any]:
+    """SPEC-SVC-18, SPEC-SVC-21: признак архива поверх статуса; версия не меняется, событие — в журнал."""
+    if await svc.owner_of(program_id) != p.user_id:
+        raise ForbiddenRole('В архив убирает методист — владелец программы')
+    doc = await svc.load(program_id)
+    if doc.archived_at:
+        raise Conflict('Программа уже в архиве', code='ARCHIVED')
+    busy = {j['program_id'] for j in await svc.unfinished_jobs()}
+    if doc.status in (Status.ON_APPROVAL, Status.GENERATING) or program_id in busy:
+        raise Conflict('Программу на утверждении или со сборкой в процессе нельзя убрать в архив', code='BAD_STATE')
+    doc.archived_at, doc.archived_by = now_iso(), p.user_id
+    await svc.save(doc, p.user_id)
+    await svc.log_event(program_id, p.user_id, 'archive', f'Программа убрана в архив · {p.name}')
+    return {'id': program_id, 'archived_at': doc.archived_at, 'archived_by': doc.archived_by}
+
+
+@router.post('/{program_id}/unarchive', summary='Вернуть программу из архива (методист)')
+async def unarchive(program_id: str, p: Principal = Depends(require('methodist'))) -> dict[str, Any]:
+    """SPEC-SVC-20: возврат восстанавливает программу как была — статус маршрута не менялся."""
+    if await svc.owner_of(program_id) != p.user_id:
+        raise ForbiddenRole('Из архива возвращает методист — владелец программы')
+    doc = await svc.load(program_id)
+    doc.archived_at, doc.archived_by = '', ''
+    await svc.save(doc, p.user_id)
+    await svc.log_event(program_id, p.user_id, 'unarchive', f'Программа возвращена из архива · {p.name}')
+    return {'id': program_id, 'archived_at': '', 'archived_by': ''}
+
+
 @router.post('/{program_id}/submit', summary='Отправить программу на утверждение')
 async def submit(program_id: str, p: Principal = Depends(require('methodist'))) -> dict[str, Any]:
     doc = await svc.load(program_id)
@@ -1001,7 +1049,7 @@ async def my_reviews(p: Principal = Depends(require('expert'))) -> list[dict[str
 async def _reviews_of(user_id: str) -> list[dict[str, Any]]:
     """Задания на вычитку (ReviewTask, таблица 18): rid = program_id__module_id."""
     out = []
-    for item in await svc.list_programs():
+    for item in await svc.list_programs(archived='false'):
         doc = await svc.load(item['id'])
         for m in doc.modules:
             if m.expert_id == user_id:
@@ -1029,6 +1077,7 @@ class ReviewCommentIn(BaseModel):
 @misc.post('/reviews/{rid}/comments', summary='Комментарий к фрагменту задания на вычитку; ask_agent=true — запрос правки агенту')
 async def review_comment(rid: str, body: ReviewCommentIn, p: Principal = Depends(require('expert', 'methodist'))) -> dict[str, Any]:
     program_id, module_id = _rid(rid)
+    await ensure_not_archived(program_id)
     return await comment(program_id, CommentIn(module_id=module_id, text=body.text, node_id=body.node_id, ask_agent=body.ask_agent), p)
 
 
@@ -1042,6 +1091,7 @@ class ReviewDecisionIn(BaseModel):
 @misc.post('/reviews/{rid}/decision', summary='Принять элемент или модуль, вернуть модуль методисту')
 async def review_rid_decision(rid: str, body: ReviewDecisionIn, p: Principal = Depends(require('expert'))) -> dict[str, Any]:
     program_id, module_id = _rid(rid)
+    await ensure_not_archived(program_id)
     return await review_decision(program_id, ReviewIn(module_id=module_id, decision=body.decision, comment=body.comment, node_id=body.node_id, score=body.score), p)
 
 

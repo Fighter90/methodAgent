@@ -82,6 +82,12 @@ async def log_event(
         await s.commit()
 
 
+async def is_archived(program_id: str) -> bool:
+    async with sessionmaker()() as s:
+        row = await s.get(ProgramRow, program_id)
+        return bool(row and (row.doc or {}).get('archived_at'))
+
+
 async def owner_of(program_id: str) -> str:
     async with sessionmaker()() as s:
         row = await s.get(ProgramRow, program_id)
@@ -189,8 +195,11 @@ async def version_doc(program_id: str, version: int) -> ProgramDoc:
         return ProgramDoc.model_validate(row.doc)
 
 
-async def list_programs(owner: str | None = None, statuses: set[str] | None = None, since: str = '', until: str = '') -> list[dict[str, Any]]:
-    """Список программ; руководитель фильтрует «на утверждении» и утверждённые за период (FR-50)."""
+async def list_programs(
+    owner: str | None = None, statuses: set[str] | None = None, since: str = '', until: str = '', archived: str = 'all',
+) -> list[dict[str, Any]]:
+    """Список программ; руководитель фильтрует «на утверждении» и утверждённые за период (FR-50);
+    archived: all — все, false — без архивных, true — только архивные (SPEC-SVC-19)."""
     async with sessionmaker()() as s:
         q = select(ProgramRow).order_by(ProgramRow.updated_at.desc()).limit(200)
         if statuses:
@@ -207,11 +216,14 @@ async def list_programs(owner: str | None = None, statuses: set[str] | None = No
             when = (decided[-1] if decided else at)[:10]
             if (since and when < since) or (until and when > until):
                 continue
+            if (archived == 'false' and doc.get('archived_at')) or (archived == 'true' and not doc.get('archived_at')):
+                continue
             out.append({
                 'id': r.id, 'title': r.title, 'status': r.status, 'version': r.version, 'updated_at': at, 'owner': r.owner,
                 'type': doc.get('type'), 'template': doc.get('template', ''), 'volume_h': doc.get('volume_h', 0),
                 'blocking': (doc.get('report') or {}).get('blocking_passed'), 'cost_rub': round((doc.get('usage') or {}).get('cost_rub', 0.0), 2),
                 'decided_at': decided[-1] if decided else '',
+                'archived_at': doc.get('archived_at', ''),
             })
         return out
 

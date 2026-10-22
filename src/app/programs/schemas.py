@@ -451,6 +451,9 @@ class ProgramDoc(BaseModel):
     progress: dict[str, Any] = Field(default_factory=dict)
     created_at: str = ''
     updated_at: str = ''
+    # Архив методиста (SPEC-SVC-18…21): признак поверх статуса маршрута — возврат из архива восстанавливает программу как была
+    archived_at: str = ''
+    archived_by: str = ''
 
     # --- Навигация по графу ---
     def all_outcomes(self) -> list[LearningOutcome]:

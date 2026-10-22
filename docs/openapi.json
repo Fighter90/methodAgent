@@ -3924,6 +3924,24 @@
             }
           },
           {
+            "description": "Архив: false — без архивных (по умолчанию у методиста), true — только архивные, all — все",
+            "in": "query",
+            "name": "archived",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Архив: false — без архивных (по умолчанию у методиста), true — только архивные, all — все",
+              "enum": [
+                "",
+                "false",
+                "true",
+                "all"
+              ],
+              "title": "Archived",
+              "type": "string"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -3982,7 +4000,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Список программ; status=on_approval,approved и since/until (ГГГГ-ММ-ДД) — фильтр руководителя",
+        "summary": "Список программ; status=on_approval,approved и since/until (ГГГГ-ММ-ДД) — фильтр руководителя; archived — архив методиста",
         "tags": [
           "programs"
         ]
@@ -4580,6 +4598,82 @@
           }
         },
         "summary": "Руководитель утверждает программу или возвращает с комментарием",
+        "tags": [
+          "programs"
+        ]
+      }
+    },
+    "/api/v1/programs/{program_id}/archive": {
+      "post": {
+        "description": "SPEC-SVC-18, SPEC-SVC-21: признак архива поверх статуса; версия не меняется, событие — в журнал.",
+        "operationId": "archive_api_v1_programs__program_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program_id",
+            "required": true,
+            "schema": {
+              "title": "Program Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-ma-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ma-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Archive Api V1 Programs  Program Id  Archive Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Убрать программу в архив (методист, свои программы)",
         "tags": [
           "programs"
         ]
@@ -5894,6 +5988,82 @@
         "summary": "Сменить шаблон АЦР до утверждения каркаса (FR-06)",
         "tags": [
           "extras"
+        ]
+      }
+    },
+    "/api/v1/programs/{program_id}/unarchive": {
+      "post": {
+        "description": "SPEC-SVC-20: возврат восстанавливает программу как была — статус маршрута не менялся.",
+        "operationId": "unarchive_api_v1_programs__program_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program_id",
+            "required": true,
+            "schema": {
+              "title": "Program Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-ma-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ma-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Unarchive Api V1 Programs  Program Id  Unarchive Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Вернуть программу из архива (методист)",
+        "tags": [
+          "programs"
         ]
       }
     },

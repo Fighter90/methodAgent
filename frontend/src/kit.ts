@@ -244,3 +244,21 @@ export function routeBadge(
   const approval = [...approvals].reverse().find((a) => a.stage === 'program' && a.decision === 'approve')
   return { text: withDate('Утверждена руководителем', approval?.at), tone: 'ok' }
 }
+
+/** Фильтр «Архив» методиста (SPEC-UI-34): значение чипа ARCHIVE_FILTER превращается в archived=true, остальные — в status. */
+export const ARCHIVE_FILTER = 'archive'
+
+export function programsQuery(filter: string, since = '', until = ''): string {
+  const q = new URLSearchParams()
+  if (filter === ARCHIVE_FILTER) q.set('archived', 'true')
+  else if (filter) q.set('status', filter)
+  if (since) q.set('since', since)
+  if (until) q.set('until', until)
+  const s = q.toString()
+  return s ? `?${s}` : ''
+}
+
+/** Кнопка «Убрать в архив»: только методист, не на утверждении и не во время сборки (SPEC-UI-34). */
+export function canArchive(role: string | undefined, status: string, archivedAt?: string): boolean {
+  return role === 'methodist' && !archivedAt && !['on_approval', 'generating'].includes(status)
+}

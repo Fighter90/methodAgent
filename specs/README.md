@@ -94,10 +94,10 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | [api.md](api.md) | 46 | 46 | — |
 | [auth-and-roles.md](auth-and-roles.md) | 31 | 31 | — |
 | [export.md](export.md) | 15 | 15 | — |
-| [frontend.md](frontend.md) | 33 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30, SPEC-UI-31, SPEC-UI-32, SPEC-UI-33 |
+| [frontend.md](frontend.md) | 34 | 0 | SPEC-UI-01, SPEC-UI-02, SPEC-UI-03, SPEC-UI-04, SPEC-UI-05, SPEC-UI-06, SPEC-UI-07, SPEC-UI-08, SPEC-UI-09, SPEC-UI-10, SPEC-UI-11, SPEC-UI-12, SPEC-UI-13, SPEC-UI-14, SPEC-UI-15, SPEC-UI-16, SPEC-UI-17, SPEC-UI-18, SPEC-UI-19, SPEC-UI-20, SPEC-UI-21, SPEC-UI-22, SPEC-UI-23, SPEC-UI-24, SPEC-UI-25, SPEC-UI-26, SPEC-UI-27, SPEC-UI-28, SPEC-UI-29, SPEC-UI-30, SPEC-UI-31, SPEC-UI-32, SPEC-UI-33, SPEC-UI-34 |
 | [knowledge-base.md](knowledge-base.md) | 23 | 23 | — |
 | [llm-client.md](llm-client.md) | 28 | 28 | — |
-| [programs-service.md](programs-service.md) | 17 | 17 | — |
+| [programs-service.md](programs-service.md) | 21 | 21 | — |
 | [quality.md](quality.md) | 2 | 2 | — |
 | [skill-content.md](skill-content.md) | 17 | 17 | — |
 | [skill-review-assist.md](skill-review-assist.md) | 5 | 5 | — |
@@ -289,6 +289,7 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-UI-31 | — |
 | SPEC-UI-32 | — |
 | SPEC-UI-33 | — |
+| SPEC-UI-34 | — |
 | SPEC-KB-01 | `test_norms.py::test_repealed_acts_are_not_used` |
 | SPEC-KB-02 | `test_norms.py::test_repealed_acts_are_not_used` |
 | SPEC-KB-03 | `test_norms.py::test_core_and_keyword_acts` |
@@ -357,6 +358,10 @@ python scripts/spec_trace.py --markdown  # таблица «требование
 | SPEC-SVC-15 | `test_spec_service.py::test_start_job_capacity_first_and_idempotent` |
 | SPEC-SVC-16 | `test_spec_service.py::test_save_survives_malformed_lecture_plan` |
 | SPEC-SVC-17 | `test_access.py::test_parallel_approve_creates_exactly_one_job`, `test_spec_service.py::test_start_job_parallel_reserves_single_job` |
+| SPEC-SVC-18 | `test_spec_archive.py`, `test_spec_archive.py::test_archive_only_methodist` |
+| SPEC-SVC-19 | `test_spec_archive.py::test_archive_hides_from_methodist_list_and_reviews` |
+| SPEC-SVC-20 | `test_spec_archive.py::test_archived_is_read_only_until_returned` |
+| SPEC-SVC-21 | `test_spec_archive.py::test_archive_conflicts` |
 | SPEC-Q-01 | `test_quality_report.py::test_build_report_data_marks_failures`, `test_quality_report.py::test_build_report_data_happy_path`, `test_quality_report.py::test_pytest_verdict_reads_failures`, `test_quality_report.py::test_autorun_verdict_reads_markers`, `test_quality_report.py::test_main_exit_code_and_report` |
 | SPEC-Q-02 | `test_autorun_checks.py::test_case3_slides_check_requires_every_pandas_topic`, `test_autorun_checks.py::test_case1_slides_must_belong_to_own_module`, `test_autorun_checks.py::test_case5_slides_must_belong_to_own_module` |
 | SPEC-CONTENT-01 | `test_spec_content.py::test_fallback_when_model_disabled` |

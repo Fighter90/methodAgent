@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, FileText, ListChecks, Paperclip, Plus, RefreshCw, Sparkles, Upload, X } from 'lucide-react'
+import { Archive, ArrowRight, FileText, ListChecks, Paperclip, Plus, RefreshCw, Sparkles, Upload, X } from 'lucide-react'
 import { api, getSession, STATUS_LABEL } from '../api'
 import { Spinner, useToast } from '../components/ui'
 import {
   buildRequestParams, EMPTY_REQUEST_FORM, FORM_ONLY_REQUEST, hasRequestParams,
   REQUEST_FORM_FINAL_OPTIONS, REQUEST_FORM_FORM_OPTIONS,
-  REQUEST_FORM_TYPE_LABEL, VOLUME_PRESETS, type RequestFormFields,
+  REQUEST_FORM_TYPE_LABEL, VOLUME_PRESETS, type RequestFormFields, ARCHIVE_FILTER, canArchive, programsQuery,
 } from '../kit'
 import { FindingsList } from './ProgramTools'
 import { FILE_ACCEPT, fileError, MAX_FILES } from '../validate'
@@ -36,16 +36,25 @@ export default function Programs() {
   const [filter, setFilter] = useState(role === 'head' ? 'on_approval,approved' : '')
   const [since, setSince] = useState('')
   const [until, setUntil] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
   const setField = (k: keyof RequestFormFields, v: string | number) => setForm((f) => ({ ...f, [k]: v }) as RequestFormFields)
 
   useEffect(() => {
-    const q = new URLSearchParams()
-    if (filter) q.set('status', filter)
-    if (since) q.set('since', since)
-    if (until) q.set('until', until)
     setList(null)
-    api(`/programs${q.toString() ? `?${q}` : ''}`).then(setList).catch((e) => { setList([]); toast(e.message, true) })
-  }, [toast, filter, since, until])
+    api(`/programs${programsQuery(filter, since, until)}`).then(setList).catch((e) => { setList([]); toast(e.message, true) })
+  }, [toast, filter, since, until, reloadKey])
+
+  // SPEC-UI-34: убрать в архив прямо из строки списка (только методист)
+  async function archive(e: React.MouseEvent, id: string) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!confirm('Убрать программу в архив? Её можно вернуть из фильтра «Архив».')) return
+    try {
+      await api(`/programs/${id}/archive`, { method: 'POST' })
+      toast('Программа убрана в архив')
+      setReloadKey((k) => k + 1)
+    } catch (err: any) { toast(err.message, true) }
+  }
 
   /** Файл → вложение JSON-запроса: имя и base64 без префикса data: (бэкенд валидирует размер до декодирования). */
   function fileToAttachment(f: File): Promise<{ name: string; content_base64: string }> {
@@ -149,7 +158,8 @@ export default function Programs() {
             <span className="chip">{list?.length ?? 0}</span>
           </div>
           <div className="filters">
-            {[['', 'Все'], ['on_approval', 'На утверждении'], ['approved', 'Утверждённые'], ['on_approval,approved', 'Оба статуса'], ['kit_ready', 'Комплект готов']].map(([v, l]) => (
+            {[['', 'Все'], ['on_approval', 'На утверждении'], ['approved', 'Утверждённые'], ['on_approval,approved', 'Оба статуса'], ['kit_ready', 'Комплект готов'],
+              ...(role === 'methodist' ? [[ARCHIVE_FILTER, 'Архив']] : [])].map(([v, l]) => (
               <button key={v} className={`chip ${filter === v ? 'chip-ok' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setFilter(v)}>{l}</button>
             ))}
             <span className="grow" />
@@ -170,6 +180,10 @@ export default function Programs() {
                   <div className="tiny muted">{p.template ? `${p.template} · ` : ''}{p.volume_h ? `${p.volume_h} ч · ` : ''}версия {p.version} · обновлена {(p.updated_at || '').slice(0, 16).replace('T', ' ')}{p.blocking != null ? ` · проверки ${p.blocking}/10` : ''}</div>
                 </div>
                 <span className={`chip ${STATUS_CHIP[p.status] || ''}`}>{STATUS_LABEL[p.status] || p.status}</span>
+                {p.archived_at && <span className="chip chip-warn"><Archive size={13} /> В архиве</span>}
+                {canArchive(role, p.status, p.archived_at) && (
+                  <button className="icon-btn" title="Убрать в архив" aria-label="Убрать в архив" onClick={(e) => archive(e, p.id)}><Archive size={16} /></button>
+                )}
                 <ArrowRight size={18} className="muted" />
               </Link>
             ))}

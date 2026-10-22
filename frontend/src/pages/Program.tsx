@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight, Clock, Coins, Download, FileSpreadsheet, FileText,
-  GitBranch, History, MessageSquare, Presentation, RotateCcw, Send, Sparkles, Star, Undo2, Users, X,
+  Archive, ArchiveRestore, GitBranch, History, MessageSquare, Presentation, RotateCcw, Send, Sparkles, Star, Undo2, Users, X,
 } from 'lucide-react'
 import { api, download, getSession, STATUS_LABEL, waitJob } from '../api'
 import { Avatar, Spinner, useToast } from '../components/ui'
-import { groupKitByTopic, humanChecklist, isOrderRegistered, KIND_ABBR, KIND_TITLES, ORDER_CHECKLIST, ORDER_NOTE, orderRegisteredValue, orderStorageKey, programMetrics, readStore, routeBadge, TYPE_HINTS, writeStore } from '../kit'
+import { groupKitByTopic, humanChecklist, isOrderRegistered, KIND_ABBR, KIND_TITLES, ORDER_CHECKLIST, ORDER_NOTE, orderRegisteredValue, orderStorageKey, programMetrics, readStore, routeBadge, TYPE_HINTS, writeStore, canArchive } from '../kit'
 import { REVIEW_LABEL } from './Reviews'
 import { EditableText, TemplateSwitch, ToolsPanel } from './ProgramTools'
 
@@ -94,6 +94,16 @@ export default function Program() {
 
   const role = user?.role
   const ms = maxStep(stageOf(doc))
+
+  // SPEC-UI-34: архив — только у методиста; архивная программа открывается на просмотр и выгрузку
+  async function toggleArchive(on: boolean) {
+    if (on && !confirm('Убрать программу в архив? Её можно вернуть из фильтра «Архив».')) return
+    try {
+      await api(`/programs/${id}/${on ? 'archive' : 'unarchive'}`, { method: 'POST' })
+      toast(on ? 'Программа убрана в архив' : 'Программа возвращена из архива')
+      load()
+    } catch (e: any) { toast(e.message, true) }
+  }
   const building = job && (doc.status === 'skeleton' || doc.status === 'draft') && !doc.modules?.length
 
   return (
@@ -105,8 +115,12 @@ export default function Program() {
           <div className="small muted" title={doc.type ? TYPE_HINTS[doc.type] : undefined}>{doc.template || TYPE_LABEL[doc.type] || 'тип определяется'}{doc.volume_h ? ` · ${doc.volume_h} ак. ч` : ''} · версия {doc.version}</div>
         </div>
         <span className="chip chip-ok">{STATUS_LABEL[doc.status] || doc.status}</span>
+        {doc.archived_at && <span className="chip chip-warn"><Archive size={13} /> В архиве</span>}
         {doc.usage?.calls > 0 && <span className="chip"><Coins size={13} /> {doc.usage.cost_rub.toFixed(2)} ₽ · {doc.usage.calls} вызовов</span>}
+        {canArchive(role, doc.status, doc.archived_at) && <button className="btn btn-ghost btn-sm" onClick={() => toggleArchive(true)}><Archive size={14} /> Убрать в архив</button>}
+        {role === 'methodist' && doc.archived_at && <button className="btn btn-soft btn-sm" onClick={() => toggleArchive(false)}><ArchiveRestore size={14} /> Вернуть из архива</button>}
       </div>
+      {doc.archived_at && <div className="callout warn small" style={{ marginBottom: 14 }}>Программа в архиве: её можно смотреть и выгружать, а изменять — только после возврата из архива.</div>}
 
       {role !== 'expert' && (
         <div className="stepper">
