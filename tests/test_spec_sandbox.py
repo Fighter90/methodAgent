@@ -176,7 +176,7 @@ def test_limits_degrade_on_macos(monkeypatch, runtime) -> None:
     r = sandbox.run_detailed('print(1)')
     assert r['ok'] and r['mode'] == 'run' and r['stdout'].strip() == '1'
     assert r['applied_limits'] == []
-    assert set(r['skipped_limits']) == {'RLIMIT_CPU', 'RLIMIT_AS', 'RLIMIT_NPROC'}
+    assert set(r['skipped_limits']) == {'RLIMIT_CPU', 'RLIMIT_AS', 'RLIMIT_NPROC', 'RLIMIT_FSIZE', 'RLIMIT_CORE'}
 
 
 def test_limits_reported(runtime) -> None:
@@ -188,7 +188,7 @@ def test_limits_reported(runtime) -> None:
     if os.name != 'posix':
         assert not applied and skipped == {'RLIMIT_CPU', 'RLIMIT_AS', 'RLIMIT_NPROC'}
         return
-    assert applied | skipped == {'RLIMIT_CPU', 'RLIMIT_AS', 'RLIMIT_NPROC'}
+    assert applied | skipped == {'RLIMIT_CPU', 'RLIMIT_AS', 'RLIMIT_NPROC', 'RLIMIT_FSIZE', 'RLIMIT_CORE'}
     assert 'RLIMIT_CPU' in applied
     if sys.platform == 'darwin':
         assert 'RLIMIT_AS' in skipped  # MET-17: macOS не даёт понизить RLIMIT_AS
