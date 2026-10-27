@@ -19,7 +19,7 @@ const FIELD_LABEL: Record<string, string> = { program_type: 'Тип програ
 /** Значения, которые агент принял сам по ответу «На ваше усмотрение» или в режиме auto (FR-13). */
 function assumptionsOf(doc: Doc): { label: string; value: string; source: string }[] {
   const src = doc.report?.assumptions?.length ? doc.report.assumptions : doc.assumptions || []
-  return src.map((a: any) => ({ label: a.label || FIELD_LABEL[a.field] || a.field, value: Array.isArray(a.value) ? a.value.join(', ') : typeof a.value === 'object' ? JSON.stringify(a.value) : String(a.value), source: a.source }))
+  return src.map((a: any) => ({ label: FIELD_LABEL[a.field] || (a.label && a.label !== a.field ? a.label : a.field), value: Array.isArray(a.value) ? a.value.join(', ') : typeof a.value === 'object' ? JSON.stringify(a.value) : String(a.value), source: a.source }))
 }
 const TYPE_LABEL: Record<string, string> = { dpp_pk: 'ДПП повышения квалификации', dpp_pk_internship: 'ДПП ПК в форме стажировки', doop: 'Дополнительная общеразвивающая' }
 
@@ -104,7 +104,8 @@ export default function Program() {
       load()
     } catch (e: any) { toast(e.message, true) }
   }
-  const building = job && (doc.status === 'skeleton' || doc.status === 'draft') && !doc.modules?.length
+  // После ответов на вопросы документ в памяти ещё в статусе questions, пока задание собирает каркас: показываем сборку, а не вопросы
+  const building = job && ['draft', 'questions', 'skeleton'].includes(doc.status) && !doc.modules?.length
 
   return (
     <div>
@@ -268,8 +269,8 @@ function QuestionsView({ doc, onJob }: { doc: Doc; onJob: (j: string) => void })
     try {
       const body = all ? Object.fromEntries(qs.map((q: any) => [q.id, ans[q.id] || 'На ваше усмотрение'])) : ans
       const r = await api(`/programs/${doc.id}/answers`, { method: 'POST', json: { answers: body } })
-      onJob(r.job_id)
-    } catch (e: any) { toast(e.message, true) } finally { setBusy(false) }
+      onJob(r.job_id) // кнопка остаётся занятой: ответы приняты, повторная отправка дала бы 409 «Вопросов нет»
+    } catch (e: any) { toast(e.message, true); setBusy(false) }
   }
 
   if (!qs.length) return <div className="card empty"><CheckCircle2 size={34} color="var(--accent)" /><p>Все обязательные параметры есть, уточнять нечего.</p></div>
