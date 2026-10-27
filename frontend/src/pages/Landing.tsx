@@ -88,9 +88,10 @@ export default function Landing() {
             <div className="float-card fc-plan" style={layer(-26, -0.08)}>
               <h5>Учебный план · 72 ч</h5>
               <div className="mini-row" style={{ color: '#7d8792' }}><span>Модуль</span><span>ЛК</span><span>ПР</span><span>СРС</span><span>Σ</span></div>
-              {[['Основы Python для аналитика', 4, 6, 2, 12], ['pandas: обработка данных', 6, 9, 3, 18], ['Визуализация', 4, 6, 2, 12], ['SQL для выгрузки', 3, 5, 2, 10], ['Основы статистики', 4, 5, 3, 12]].map((r) => (
+              {[['Основы Python для аналитика', 4, 6, 2, 12], ['pandas: обработка данных', 6, 9, 3, 18], ['Визуализация', 4, 6, 2, 12], ['SQL для выгрузки', 3, 5, 2, 10], ['Основы статистики', 4, 5, 3, 12], ['Итоговый проект', 0, 2, 2, 4]].map((r) => (
                 <div className="mini-row" key={r[0] as string}><span>{r[0]}</span><span>{r[1]}</span><span>{r[2]}</span><span>{r[3]}</span><span>{r[4]}</span></div>
               ))}
+              <div className="mini-row"><span>Итоговая аттестация</span><span></span><span></span><span></span><span>4</span></div>
               <div className="mini-row t"><span>Итого с аттестацией</span><span>21</span><span>33</span><span>14</span><span>72</span></div>
             </div>
             <div className="float-card fc-agent" style={{ ...layer(34, -0.18), animation: 'float 6s ease-in-out infinite' }}>
@@ -157,8 +158,8 @@ export default function Landing() {
           ))}
         </div>
         <div className="stats">
-          <Reveal><div className="stat"><b><CountUp to={7} /></b><span>рабочих дней вместо 25 на одну программу</span></div></Reveal>
-          <Reveal delay={80}><div className="stat"><b><CountUp to={63} /><span className="unit">ч</span></b><span>работы команды вместо 426</span></div></Reveal>
+          <Reveal><div className="stat"><b><CountUp to={44} /><span className="unit">ч</span></b><span>экономия методиста на программе 72 ч, оценка по нормам</span></div></Reveal>
+          <Reveal delay={80}><div className="stat"><b><CountUp to={21} /><span className="unit">с</span></b><span>каркас программы 72 ч на стенде (норма кейса — 3 мин)</span></div></Reveal>
           <Reveal delay={160}><div className="stat"><b><CountUp to={27} /></b><span>правил автопроверки, 10 блокирующих</span></div></Reveal>
           <Reveal delay={240}><div className="stat"><b><CountUp to={180} /><span className="unit">с</span></b><span>предел на сборку каркаса</span></div></Reveal>
         </div>
