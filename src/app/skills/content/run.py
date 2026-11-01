@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import logging
@@ -286,6 +287,26 @@ async def _detail_lecture(doc: ProgramDoc, m: Module, los: list[LearningOutcome]
     return lec.model_copy(update={'slides': slides})
 
 
+def _trivial_code(code: str) -> bool:
+    """Пример без логики: только print() строковых литералов (или пусто). Такой пример ничего не показывает — не берём."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False  # синтаксис проверит песочница (V-24)
+
+    def _literal(node: ast.AST) -> bool:
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, str)
+        return isinstance(node, ast.JoinedStr) and not any(isinstance(v, ast.FormattedValue) for v in node.values)
+
+    for st in tree.body:
+        call = st.value if isinstance(st, ast.Expr) else None
+        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == 'print'
+                and all(_literal(a) for a in call.args)):
+            return False
+    return True
+
+
 def _lo_ids(codes: list[str], los: list[LearningOutcome], default: list[str]) -> list[str]:
     by_code = {lo.code.replace(' ', ''): lo.id for lo in los}
     ids = [by_code[c.replace(' ', '')] for c in codes if c.replace(' ', '') in by_code]
@@ -358,7 +379,7 @@ def _from_llm(
         lectures.append(
             Lecture(
                 id=f'lec{t.n}', topic_id=t.id, module_id=m.id, title=t.title, duration_min=max(45, t.hours.lk * 45),
-                plan=plan or _default_plan(t.title), code_examples=[lec.code] if lec.code else [], slides=slides,
+                plan=plan or _default_plan(t.title), code_examples=[lec.code] if lec.code and not _trivial_code(lec.code) else [], slides=slides,
                 origin='llm',
             )
         )

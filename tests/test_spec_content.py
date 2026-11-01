@@ -333,3 +333,13 @@ async def test_top_up_failure_falls_back_to_template(monkeypatch) -> None:
     mc = await _run(monkeypatch, llm, n=2)
     assert len([c for c in llm.calls if 'missing' in json.loads(c['user'])]) == 1
     assert [q.origin for q in mc.questions] == ['llm', 'template'] and [t.origin for t in mc.tasks] == ['template']
+
+
+def test_trivial_code_example_is_dropped() -> None:
+    """Пример из одного print со строкой ничего не показывает — в лекцию не попадает; пример с вычислением остаётся."""
+    assert content._trivial_code("print('Пример задачи кредитного скоринга: оценка вероятности дефолта заёмщика.')")
+    assert content._trivial_code("print('a')\nprint(f'b')")
+    assert not content._trivial_code("x = [1, 2, 3]\nprint(sum(x))")
+    assert not content._trivial_code("print(f'итого: {2 + 2}')")
+    assert not content._trivial_code("from sklearn.metrics import accuracy_score\nprint(accuracy_score([0, 1], [0, 1]))")
+    assert not content._trivial_code('print(')  # синтаксис проверяет песочница

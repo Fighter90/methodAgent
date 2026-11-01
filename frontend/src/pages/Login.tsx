@@ -135,7 +135,7 @@ export default function Login() {
             <h5>Проверка каркаса</h5>
             <div className="mini-check"><i>✓</i>Часы 72 из 72</div>
             <div className="mini-check"><i>✓</i>ПС 06.042 из реестра</div>
-            <div className="mini-check"><i style={{ background: 'rgba(242,177,19,.18)', color: '#F5C451' }}>!</i>РО 4.2 — нужно решение</div>
+            <div className="mini-check"><i>✓</i>Каждый РО — 2 средства проверки</div>
           </div>
           <div className="float-card auth-layer" style={{ ...L(-24), width: 240, left: 300, bottom: 30, animation: 'float 7s ease-in-out infinite' }}>
             <div className="row" style={{ gap: 10 }}>
